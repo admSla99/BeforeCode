@@ -8,7 +8,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 
 - Go + Bubble Tea (Bubbles, Lip Gloss, Glamour, Huh). One static binary, command name `bfc`.
 - Plans are plain Markdown/YAML files stored in the hidden git ref `refs/beforecode/plans`. No Dolt, no server. SQLite is a disposable local cache only.
-- Only `.beforecode/config.yaml` and `.beforecode/skills/` live on normal branches.
+- Only `.beforecode/config.yaml`, `.beforecode/skills/` and `.beforecode/templates/` live on normal branches.
 - Git is driven through the system `git` binary (subprocess), never a Go git library.
 - GitHub only, single repository. No GitLab, no multi-repo plans.
 - Two documents per plan: short `intent.md` (human) and `plan.md` (for agents, with acceptance criteria `AC-1`, `AC-2`, …).
@@ -59,6 +59,6 @@ internal/tui/     Bubble Tea screens
 ## Rules for the hidden ref
 
 - Never touch the user's working tree, index, or current branch when reading or writing plans. Use `hash-object`, a temporary index (`GIT_INDEX_FILE`), `write-tree`, `commit-tree`, `update-ref`.
-- Messages, questions, events, handoffs and checks are append-only: one new file per item, named by ULID. Never rewrite them.
+- Events, messages, handoffs and checks are append-only: one new file per item, named by ULID. Never rewrite them. The file formats are in `docs/adr/0002-data-format-v1.md`.
 - Plan state is derived from `events/`, never stored.
 - Never force-push the ref. On a rejected push: fetch, merge in memory with `git merge-tree --write-tree`, retry.

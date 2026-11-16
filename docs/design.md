@@ -75,14 +75,18 @@ stateDiagram-v2
     [*] --> draft: bfc new (intent.md)
     draft --> draft: grill, edit, questions
     draft --> in_review: submit
-    in_review --> draft: changes requested
+    in_review --> draft: changes requested, withdraw
     in_review --> approved: approve (not the author)
     approved --> in_review: plan.md edited
+    approved --> draft: changes requested, withdraw
     approved --> in_progress: task claimed
     in_progress --> in_progress: plan check finding
     in_progress --> done: PR merged, check clean or acknowledged
     done --> [*]
+    closed --> [*]
 ```
+
+A plan can be closed from any state; `closed` is final. The exact file formats and the state derivation rules are in `docs/adr/0002-data-format-v1.md`.
 
 ### TUI screens
 
@@ -123,14 +127,13 @@ The source of truth is plain text files in Git. SQLite is only a local index for
 # In the hidden ref refs/beforecode/plans (managed only by bfc)
 format-version
 plans/
-  01JD3K-payments-via-stripe/   # short ID for people: bfc-a1b2
+  01JD3K8Q2W5V7X9Y0Z1A2B3C4D/   # plan ULID; short ID for people: bfc-5v7x
     intent.md
     plan.md
-    events/01JD3M….yaml         # created, submitted, approved, changes-requested, claimed, checked, done
-    questions/01JD3N….md        # one question per file, answer in the same file
-    threads/01JD3P….md          # one message per file (author, time, section reference)
-    handoff/01JD3Q….md          # agent notes after a task
-    checks/01JD3R….md           # plan check result from GitHub Actions
+    events/01JD3M….yaml         # created, submitted, withdrawn, approved, changes-requested, closed
+    messages/01JD3N….md         # one message per file; questions, answers and threads
+    handoff/01JD3Q….md          # agent notes after a task (phase 2)
+    checks/01JD3R….md           # plan check result from GitHub Actions (phase 3)
 ```
 
 ### Why this shape
@@ -268,6 +271,6 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 and 1 
 ## 8. Open points
 
 - **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
-- **Exact `plan.md` template.** Refined on the first real plan.
+- **Exact `plan.md` template.** The v1 template is in `.beforecode/templates/` (ADR 0002); refined on the first real plan.
 - **Splitting a plan into tasks.** A task list in `plan.md` for now; detail in phase 3.
 - **How Beads makes a claim atomic across machines** is not documented; our rule is "first claim to reach the remote wins".

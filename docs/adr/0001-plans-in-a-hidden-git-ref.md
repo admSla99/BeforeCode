@@ -4,7 +4,7 @@ Date: 2026-11-16. Status: accepted. Verified on real GitHub on 2026-11-16 (issue
 
 ## Decision
 
-All plans, questions, threads, events, handoffs and checks are stored as plain files in the tree of `refs/beforecode/plans` on the same remote as the code. Only `.beforecode/config.yaml` and `.beforecode/skills/` live on normal branches.
+All plans, messages, events, handoffs and checks are stored as plain files in the tree of `refs/beforecode/plans` on the same remote as the code. Only `.beforecode/config.yaml`, `.beforecode/skills/` and `.beforecode/templates/` live on normal branches. The file formats are in ADR 0002.
 
 ## Why
 

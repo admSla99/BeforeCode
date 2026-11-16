@@ -1,0 +1,30 @@
+## Context
+
+<!-- What an agent needs to know before starting: background, constraints, links. -->
+
+## Approach
+
+<!-- How the change will be made, and why this way. -->
+
+## Affected areas
+
+<!-- Packages, files, modules, APIs or data that change. -->
+
+## Out of scope
+
+<!-- What must not be changed as part of this plan. -->
+
+## Tasks
+
+<!-- A list of units of work, in order. -->
+
+-
+
+## Acceptance criteria
+
+<!--
+One verifiable statement per item: "- AC-<n>: <text>". Indent continuation lines.
+IDs are never reused or renumbered; leave a gap when you remove one.
+-->
+
+- AC-1:
