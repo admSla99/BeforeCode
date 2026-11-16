@@ -27,14 +27,18 @@ Suggested skills (mattpocock/skills): `grilling` for unclear issues, `prototype`
 
 ## Commands
 
-These exist once the "Bootstrap Go module" issue is done. Update this section in that pull request if they differ.
+Requires Go 1.27+ and golangci-lint v2 (`go install github.com/golangci/golangci-lint/v2/cmd/golangci-lint@latest`).
 
 ```
 go build ./...
 go test ./...
 golangci-lint run
-go run ./cmd/bfc
+go run ./cmd/bfc                                          # usage
+go run ./cmd/bfc version                                  # prints "bfc dev"
+go build -ldflags "-X main.version=v0.1.0" ./cmd/bfc      # inject the version
 ```
+
+The CLI uses Cobra (`github.com/spf13/cobra`). Commands live in `cmd/bfc/`.
 
 ## Package layout (target)
 
