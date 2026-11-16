@@ -1,0 +1,17 @@
+version: "2"
+
+# A small, explicit set. Add a linter only in a pull request that says why.
+linters:
+  default: none
+  enable:
+    - errcheck     # unchecked errors (git subprocess calls must not fail silently)
+    - govet        # suspicious constructs reported by go vet
+    - ineffassign  # assignments that are never used
+    - staticcheck  # bugs, simplifications and deprecated APIs
+    - unused       # unused code
+    - misspell     # misspelled words in comments and strings
+
+formatters:
+  enable:
+    - gofmt
+    - goimports
