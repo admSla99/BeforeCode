@@ -1,0 +1,58 @@
+# BeforeCode
+
+`bfc` is a Go TUI/CLI for managing plans for AI coding agents. Read `docs/design.md` before any design-affecting change and `CONTEXT.md` for the vocabulary. Use those terms exactly in code, issues and docs.
+
+## Decisions that are settled
+
+Do not reopen these without the maintainer asking. Details and reasons are in `docs/design.md`.
+
+- Go + Bubble Tea (Bubbles, Lip Gloss, Glamour, Huh). One static binary, command name `bfc`.
+- Plans are plain Markdown/YAML files stored in the hidden git ref `refs/beforecode/plans`. No Dolt, no server. SQLite is a disposable local cache only.
+- Only `.beforecode/config.yaml` and `.beforecode/skills/` live on normal branches.
+- Git is driven through the system `git` binary (subprocess), never a Go git library.
+- GitHub only, single repository. No GitLab, no multi-repo plans.
+- Two documents per plan: short `intent.md` (human) and `plan.md` (for agents, with acceptance criteria `AC-1`, `AC-2`, …).
+- Identity is the git commit author. No signing or extra trust rules yet.
+- Apache-2.0.
+
+## Workflow
+
+1. Work only on a GitHub issue. Each issue is one thin vertical slice with acceptance criteria. If the issue is unclear, grill the maintainer before writing code.
+2. One issue, one branch, one small pull request that says `Closes #<n>`.
+3. Test first. Storage and sync code is tested against temporary git repositories, with a local bare repository as the remote. No network in unit tests.
+4. Run the checks below before opening a pull request, then review the diff against the issue's acceptance criteria.
+5. If the implementation must depart from the issue or from `docs/design.md`, say so in the pull request and update the document in the same pull request. Record a non-obvious decision as an ADR in `docs/adr/`.
+
+Suggested skills (mattpocock/skills): `grilling` for unclear issues, `prototype` for TUI and state-model questions, `tdd` for implementation, `code-review` before a pull request, `domain-modeling` when touching `CONTEXT.md` or ADRs.
+
+## Commands
+
+These exist once the "Bootstrap Go module" issue is done. Update this section in that pull request if they differ.
+
+```
+go build ./...
+go test ./...
+golangci-lint run
+go run ./cmd/bfc
+```
+
+## Package layout (target)
+
+```
+cmd/bfc/          entry point
+internal/core/    plan lifecycle, events, approval policy (no I/O)
+internal/store/   hidden-ref storage through git plumbing
+internal/index/   SQLite cache rebuilt from the ref
+internal/agent/   Agent interface and harness adapters
+internal/mcp/     MCP server
+internal/tui/     Bubble Tea screens
+```
+
+`core` must not import `store`, `agent`, `tui` or `mcp`. `core` does not know which harness is running.
+
+## Rules for the hidden ref
+
+- Never touch the user's working tree, index, or current branch when reading or writing plans. Use `hash-object`, a temporary index (`GIT_INDEX_FILE`), `write-tree`, `commit-tree`, `update-ref`.
+- Messages, questions, events, handoffs and checks are append-only: one new file per item, named by ULID. Never rewrite them.
+- Plan state is derived from `events/`, never stored.
+- Never force-push the ref. On a rejected push: fetch, merge in memory with `git merge-tree --write-tree`, retry.
