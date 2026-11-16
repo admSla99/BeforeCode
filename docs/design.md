@@ -44,7 +44,7 @@ Plannotator (plan review UI with annotations fed back to the agent), GitHub Spec
 | License | Apache-2.0 |
 | Command | `bfc` |
 | Storage | Hidden git ref `refs/beforecode/plans`, Beads-style, without Dolt |
-| Hosting | GitHub only. The hidden ref must be verified on real GitHub |
+| Hosting | GitHub only. The hidden ref is verified on real GitHub (ADR 0001) |
 | Scope | One repository. No plans spanning repositories |
 | Plan format | Two documents: a short `intent.md` and a `plan.md` for agents with acceptance criteria |
 | Approval | Configurable; one approver for now |
@@ -146,7 +146,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 
 - **Write** without touching the working tree: `git hash-object -w`, a temporary index via `GIT_INDEX_FILE`, `git write-tree`, `git commit-tree`, `git update-ref refs/beforecode/plans`.
 - **Share**: `git push origin refs/beforecode/plans`. Fetch with the refspec `+refs/beforecode/*:refs/beforecode-remote/*`, which `bfc init` and `bfc bootstrap` write to `.git/config`.
-- **Concurrent writes**: a rejected non-fast-forward push triggers fetch, an in-memory merge with `git merge-tree --write-tree`, a merge commit, and a retry. Never force-push.
+- **Concurrent writes**: a rejected push (GitHub reports `fetch first`) triggers fetch, an in-memory merge with `git merge-tree --write-tree`, a merge commit, and a retry. Never force-push.
 - **Sync cadence**: every change is a commit to the ref. The TUI fetches and pushes automatically while a plan is open (every 10 to 30 seconds). `bfc push` and `bfc pull` exist for scripts and agents.
 
 ### What we take from Beads
@@ -267,7 +267,7 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 and 1 
 
 ## 8. Open points
 
-- **GitHub verification** of the hidden ref, including read and write from GitHub Actions with `GITHUB_TOKEN`. First task of phase 0.
+- **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
 - **Exact `plan.md` template.** Refined on the first real plan.
 - **Splitting a plan into tasks.** A task list in `plan.md` for now; detail in phase 3.
 - **How Beads makes a claim atomic across machines** is not documented; our rule is "first claim to reach the remote wins".
