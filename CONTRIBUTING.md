@@ -24,6 +24,19 @@ go run ./cmd/bfc version
 
 On Windows, `.gitattributes` keeps Go files with LF line endings so `gofmt` passes. If you cloned before that file existed, run `git add --renormalize .` once.
 
+### Claude Code skills (optional)
+
+The workflow below names skills from [mattpocock/skills](https://github.com/mattpocock/skills) (MIT): `grilling`, `prototype`, `tdd`, `code-review`, `domain-modeling`, `diagnosing-bugs` and `codebase-design`. They are not part of this repository. If you use Claude Code, install the plugin once for your user:
+
+```
+/plugin marketplace add mattpocock/skills
+/plugin install mattpocock-skills@mattpocock
+```
+
+Last checked with plugin version 1.3.2. Update with `/plugin marketplace update mattpocock`. If you already have the plugin through another source, for example synced with your Claude account, do not install it a second time, or every skill will appear twice.
+
+These skills are for developing BeforeCode. They are different from the skills BeforeCode itself ships in `.beforecode/skills/`.
+
 ## The workflow
 
 1. **One issue.** All work starts from a GitHub issue. Each issue is one thin vertical slice with acceptance criteria (`AC-1`, `AC-2`, …). If an issue is unclear, ask in the issue before writing code.
