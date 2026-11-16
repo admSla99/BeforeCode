@@ -1,6 +1,6 @@
 # ADR 0001: Plans live in a hidden git ref
 
-Date: 2026-11-16. Status: accepted, pending verification on GitHub (see the phase 0 spike issue).
+Date: 2026-11-16. Status: accepted. Verified on real GitHub on 2026-11-16 (issue #4).
 
 ## Decision
 
@@ -19,15 +19,28 @@ All plans, questions, threads, events, handoffs and checks are stored as plain f
 - A plain `git clone` does not fetch the ref; the refspec `+refs/beforecode/*:refs/beforecode-remote/*` does.
 - A concurrent second push is rejected as non-fast-forward; fetch + `git merge-tree --write-tree` + push succeeds without conflict when both sides only added files.
 
+## Verified on GitHub (git 2.54, 2026-11-16)
+
+Run with `scripts/spike-hidden-ref/run.sh admSla99/bfc-ref-spike` against a public scratch repository, three runs, all passing. Workflow runs 43961166899, 43961482623 and 43961746731.
+
+- **Push and fetch.** A plumbing commit pushed to `refs/beforecode/plans` from one clone is fetched in a second clone with `+refs/beforecode/*:refs/beforecode-remote/*` and its files are readable with `git show`. `git status`, `HEAD` and branches stay untouched.
+- **Concurrent writes.** The second of two concurrent pushes is rejected. GitHub reports it as `! [rejected] … (fetch first)`, not with the literal word `non-fast-forward`. Fetch, `git merge-tree --write-tree`, a two-parent `commit-tree` and a new push succeed and keep the files from both sides.
+- **Read from Actions.** A workflow triggered by `pull_request` fetches the ref with the same refspec after `actions/checkout` and reads a file from it.
+- **Write from Actions.** The same workflow writes a file through plumbing and pushes it with `GITHUB_TOKEN`. The workflow must declare `permissions: contents: write`, because the repository default for `GITHUB_TOKEN` is `read`, both in the scratch repository and in BeforeCode. The commit author is `github-actions[bot]`.
+- **No workflow triggers.** A probe workflow on `[push, create, delete]` without filters ran for branch pushes, branch creation and branch deletion, but never for any push to `refs/beforecode/plans` (checked in the first and third runs; in the second the run listing lagged, so the script now waits for it).
+- **REST API.** `GET /repos/{owner}/{repo}/git/matching-refs/beforecode` lists `refs/beforecode/plans`. `GET /branches` does not.
+- **Web UI.** `github.com/{owner}/{repo}/tree/refs/beforecode/plans` returns 404, and the ref does not appear in branch or tag lists. The commits are still viewable by SHA (`/tree/<sha>` returns 200).
+- **Clones.** A plain `git clone` does not carry the ref; `git ls-remote` shows it. `git clone --mirror` does carry it.
+
+Not verified: whether a GitHub fork carries the ref. GitHub does not allow forking a repository into the account that owns it, and the maintainer account has no organization. Running the plan check on pull requests from forks is a separate, documented limit (see Consequences).
+
 ## Consequences
 
-- The ref is invisible in the GitHub web UI. Reading plans needs `bfc` (or `bfc export`).
-- Forks and plain clones do not carry it. New team members run `bfc bootstrap`.
+- The ref is invisible in the GitHub web UI. Reading plans needs `bfc` (or `bfc export`). The REST API can list and read it, which a later web view can use.
+- Plain clones do not carry it (forks: not verified). New team members run `bfc bootstrap`. Mirror clones and backups made with `--mirror` do carry it.
 - Branch protection does not apply. Anyone with write access can rewrite the ref. Accepted for now.
 - Pushes to the ref do not trigger GitHub Actions. The plan check runs from the pull request and fetches the ref itself.
+- The plan check workflow must declare `permissions: contents: write` to write `checks/` into the ref.
+- The sync code must treat any rejected push of the ref (`fetch first` or `non-fast-forward`) as "fetch, merge in memory, retry", not match one message.
+- On pull requests from forks GitHub gives `GITHUB_TOKEN` read-only access (GitHub documentation; not tested here). The plan check cannot write to the ref or label such a pull request. Acceptable because BeforeCode users have write access and push branches to the same repository.
 - Everyone who uses `bfc` needs write access to the repository.
-
-## Not yet verified
-
-- Push and fetch of the ref against real GitHub.
-- Reading and writing the ref from GitHub Actions with `GITHUB_TOKEN`.
