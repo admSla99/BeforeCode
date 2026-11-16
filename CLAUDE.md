@@ -23,7 +23,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 4. Run the checks below before opening a pull request, then review the diff against the issue's acceptance criteria.
 5. If the implementation must depart from the issue or from `docs/design.md`, say so in the pull request and update the document in the same pull request. Record a non-obvious decision as an ADR in `docs/adr/`.
 
-Suggested skills (mattpocock/skills): `grilling` for unclear issues, `prototype` for TUI and state-model questions, `tdd` for implementation, `code-review` before a pull request, `domain-modeling` when touching `CONTEXT.md` or ADRs.
+Suggested skills (mattpocock/skills): `grilling` for unclear issues, `prototype` for TUI and state-model questions, `tdd` for implementation, `code-review` before a pull request, `domain-modeling` when touching `CONTEXT.md` or ADRs. They come from the user-installed `mattpocock-skills` plugin, not from this repository; see `CONTRIBUTING.md`. If they are missing, say so instead of guessing their content.
 
 ## Commands
 
