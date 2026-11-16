@@ -1,0 +1,2 @@
+# Go tooling (gofmt) expects LF. Keep LF on every platform, including Windows.
+* text=auto eol=lf
