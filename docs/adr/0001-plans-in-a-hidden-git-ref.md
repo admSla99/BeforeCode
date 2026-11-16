@@ -32,7 +32,7 @@ Run with `scripts/spike-hidden-ref/run.sh admSla99/bfc-ref-spike` against a publ
 - **Web UI.** `github.com/{owner}/{repo}/tree/refs/beforecode/plans` returns 404, and the ref does not appear in branch or tag lists. The commits are still viewable by SHA (`/tree/<sha>` returns 200).
 - **Clones.** A plain `git clone` does not carry the ref; `git ls-remote` shows it. `git clone --mirror` does carry it.
 
-Not verified: whether a GitHub fork carries the ref. GitHub does not allow forking a repository into the account that owns it, and the maintainer account has no organization. Running the plan check on pull requests from forks is a separate, documented limit (see Consequences).
+Not verified: whether a GitHub fork carries the ref. GitHub does not allow forking a repository into the account that owns it, and the maintainer account has no organization. Tracked in #29. Running the plan check on pull requests from forks is a separate, documented limit (see Consequences).
 
 ## Consequences
 
@@ -42,5 +42,5 @@ Not verified: whether a GitHub fork carries the ref. GitHub does not allow forki
 - Pushes to the ref do not trigger GitHub Actions. The plan check runs from the pull request and fetches the ref itself.
 - The plan check workflow must declare `permissions: contents: write` to write `checks/` into the ref.
 - The sync code must treat any rejected push of the ref (`fetch first` or `non-fast-forward`) as "fetch, merge in memory, retry", not match one message.
-- On pull requests from forks GitHub gives `GITHUB_TOKEN` read-only access (GitHub documentation; not tested here). The plan check cannot write to the ref or label such a pull request. Acceptable because BeforeCode users have write access and push branches to the same repository.
+- On pull requests from forks GitHub gives `GITHUB_TOKEN` read-only access (GitHub documentation; not tested here). The plan check cannot write to the ref or label such a pull request. Acceptable because BeforeCode users have write access and push branches to the same repository. Follow-up: #29.
 - Everyone who uses `bfc` needs write access to the repository.

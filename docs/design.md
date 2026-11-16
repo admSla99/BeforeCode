@@ -267,7 +267,7 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 and 1 
 
 ## 8. Open points
 
-- **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; revisit before accepting outside contributions through `bfc`. See ADR 0001.
+- **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
 - **Exact `plan.md` template.** Refined on the first real plan.
 - **Splitting a plan into tasks.** A task list in `plan.md` for now; detail in phase 3.
 - **How Beads makes a claim atomic across machines** is not documented; our rule is "first claim to reach the remote wins".
