@@ -10,8 +10,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The review gate (ADR 0002 section 4): who may write submitted, approved
-// and changes-requested, and in which Plan state. These checks run when bfc
+// The review gate and the end of a plan (ADR 0002 section 4): who may write
+// submitted, withdrawn, approved, changes-requested and closed, and in which
+// Plan state. These checks run when bfc
 // writes an event; Derive applies the same rules when it reads them.
 
 // stateError names the current state of a plan that a command does not fit.

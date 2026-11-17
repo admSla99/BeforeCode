@@ -147,8 +147,8 @@ var reviewActions = map[core.EventType]reviewAction{
 }
 
 // runReview checks that the event fits the plan and its author, writes it
-// (with a Message for the reason of changes-requested) as one commit, and
-// prints the new state.
+// (with the reason as a Message for changes-requested, and for closed when
+// one is given) as one commit, and prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {
@@ -167,8 +167,8 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 }
 
 // writeReview checks that the event fits the plan and the current user,
-// writes it (with a Message for the reason of changes-requested) as one
-// commit, and returns the plan afterwards. It prints nothing, so the CLI
+// writes it (with the reason as a Message for changes-requested, and for
+// closed when one is given) as one commit, and returns the plan afterwards. It prints nothing, so the CLI
 // and the TUI share it.
 func writeReview(ctx context.Context, s *store.Store, query string, typ core.EventType, reason string) (index.Plan, error) {
 	action := reviewActions[typ]
@@ -179,6 +179,11 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	actor, err := currentUser(ctx, s)
 	if err != nil {
 		return index.Plan{}, err
+	}
+	// An invalid plan has no stored Short ID; name it in refusals by the
+	// one bfc list shows.
+	if v.Status.ShortID == "" {
+		v.Status.ShortID = v.ShortID
 	}
 	if err := action.check(v, actor, reason); err != nil {
 		return index.Plan{}, err

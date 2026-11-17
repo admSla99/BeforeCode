@@ -5,6 +5,8 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/oklog/ulid/v2"
+
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
@@ -95,5 +97,18 @@ func TestListHidesClosedPlansByDefault(t *testing.T) {
 	}
 	if out, err := bfcIn(t, dir, "list", "--all", "--state", "draft"); err == nil {
 		t.Errorf("--all with --state succeeded:\n%s", out)
+	}
+}
+
+// A plan without a valid created event cannot be closed, and the refusal
+// names it by the Short ID bfc list shows.
+func TestCloseRefusesAnInvalidPlanByName(t *testing.T) {
+	dir := newLocalRepo(t)
+	id := ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D")
+	writeRef(t, dir, "orphan", map[string][]byte{core.PlanDir(id) + "/intent.md": []byte("---\ntitle: Orphan\n---\n")})
+
+	out, err := bfcIn(t, dir, "close", id.String())
+	if err == nil || !strings.Contains(out, "bfc-5v7x is invalid") || !strings.Contains(out, "bfc doctor") {
+		t.Errorf("close of an invalid plan: %v\n%s", err, out)
 	}
 }
