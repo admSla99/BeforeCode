@@ -92,7 +92,7 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 
 1. **Inbox**: what waits on me (reviews, questions, plan check findings).
 2. **Plan list**: filter by state, author, label; full-text search. `bfc` (or `bfc tui`) opens it. Plans are grouped by state (in-review, approved, draft, then closed and invalid), two lines each: the title, then Short ID, author and last activity. The `s` key cycles the state filter, starting at "open", which hides closed plans; `/` searches title, Short ID and author; `n` asks for a title and runs `bfc new`. The layout was chosen with a prototype; see issue #16.
-3. **Plan detail**: rendered Markdown on the left, questions and threads on the right, editing through `$EDITOR`.
+3. **Plan detail**: Enter on the list opens it. One header line holds the Short ID, the title and the `intent.md` and `plan.md` tabs (Tab switches). The document is rendered with Glamour in a scrollable viewport. A status bar shows state, Approvals, author and the sync status, with the help line below it. `e` edits the shown document through `bfc edit` (not on a closed plan). `s`, `a` and `r` submit, approve and request changes with the CLI's checks, and appear only when the current user may take the action; a refusal is shown as a message. `r` asks for the reason on one line. Esc returns to the list. Questions and threads come in phase 3. The layout was chosen with a prototype; see issue #17.
 4. **Grill**: chat with the AI over the plan; every answer is saved.
 5. **Build**: pick a harness, start an agent on a task, live output.
 
@@ -187,7 +187,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 - **Minimum git: 2.38**, because of `git merge-tree --write-tree`; every other plumbing command is much older. `store.Open` refuses an older git with an error that names the minimum. Sources in `docs/research/minimum-git-version.md`.
 - **Share**: `git push origin refs/beforecode/plans`. Fetch with the refspec `+refs/beforecode/*:refs/beforecode-remote/*`, which `bfc init` and `bfc bootstrap` write to `.git/config`.
 - **Concurrent writes**: a rejected push (GitHub reports `fetch first`) triggers fetch, an in-memory merge with `git merge-tree --write-tree`, a merge commit, and a retry, at most 5 attempts. Never force-push. A real conflict in `intent.md` or `plan.md` commits nothing and lists both versions; `bfc pull --keep local|remote` resolves it file by file. Details in `docs/adr/0004-sync-merge-and-retry.md`.
-- **Sync cadence**: every change is a commit to the ref. The TUI fetches and pushes automatically while a plan is open (every 10 to 30 seconds). `bfc push`, `bfc pull` and `bfc sync` (pull, then push) exist for scripts and agents. All of them use `sync.remote` from the config, or `origin` without a config file.
+- **Sync cadence**: every change is a commit to the ref. While the TUI is open it syncs in the background every `sync.interval` seconds (default 15) and after every local change; one sync runs at a time, and offline or conflict never block local work. The status is synced, syncing, offline (with git's message) or conflict (with the `bfc pull --keep` hint). The state model was settled with a prototype; see issue #17. `bfc push`, `bfc pull` and `bfc sync` (pull, then push) exist for scripts and agents. All of them use `sync.remote` from the config, or `origin` without a config file.
 
 ### What we take from Beads
 

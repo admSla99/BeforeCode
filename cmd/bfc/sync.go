@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 
@@ -157,17 +158,34 @@ func syncRemote(s *store.Store, flag string, flagSet bool) (string, error) {
 		}
 		return flag, nil
 	}
-	cfg, found, err := readConfig(s)
+	set, err := syncSettings(s)
 	if err != nil {
 		return "", err
 	}
-	if !found {
-		return defaultRemote, nil
-	}
-	if !cfg.SyncEnabled {
+	if set.local {
 		return "", fmt.Errorf("sync is off in %s (local mode); plans stay in this clone. Use --remote to sync anyway", config.Path)
 	}
-	return cfg.Remote, nil
+	return set.remote, nil
+}
+
+// syncConfig is what the config file says about sync.
+type syncConfig struct {
+	remote   string        // the remote to sync with
+	local    bool          // local mode: never sync
+	interval time.Duration // between background syncs in the TUI
+}
+
+// syncSettings reads sync from the config file; without one it syncs with
+// origin every DefaultSyncInterval.
+func syncSettings(s *store.Store) (syncConfig, error) {
+	cfg, found, err := readConfig(s)
+	switch {
+	case err != nil:
+		return syncConfig{}, err
+	case !found:
+		return syncConfig{remote: defaultRemote, interval: config.DefaultSyncInterval}, nil
+	}
+	return syncConfig{remote: cfg.Remote, local: !cfg.SyncEnabled, interval: cfg.Interval()}, nil
 }
 
 // syncError explains a failed sync. A conflict lists both versions of each

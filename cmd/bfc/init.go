@@ -68,7 +68,7 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string, remo
 	case local:
 		cfg = config.Config{RequiredApprovals: 1}
 	default:
-		cfg = config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: remote}
+		cfg = config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: remote, SyncInterval: config.DefaultSyncInterval}
 	}
 	if cfg.SyncEnabled {
 		ok, err := s.HasRemote(ctx, cfg.Remote)

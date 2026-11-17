@@ -7,12 +7,17 @@ import (
 	"io"
 	"os"
 	"os/exec"
+	"path"
+	"slices"
 	"strings"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
 	"github.com/spf13/cobra"
 
+	"github.com/admSla99/BeforeCode/internal/config"
+	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/store"
 	"github.com/admSla99/BeforeCode/internal/tui"
 )
 
@@ -48,13 +53,28 @@ func runTUI(cmd *cobra.Command) error {
 		cmd.SetErr(stderr)
 		_, _ = io.Copy(stderr, &warnings)
 	}()
-	_, err := tea.NewProgram(tui.NewPlanList(&tuiPlans{cmd: cmd}),
-		tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
+	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{}, tuiOptions())
+	_, err := tea.NewProgram(app, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
 	return err
 }
 
-// tuiPlans is the Plans adapter of the TUI on the Plans ref. It reads plans
-// the way bfc list does and creates them by running bfc new.
+// tuiOptions reads the sync interval and local mode from the config file.
+// Without a repository or a readable config file, the defaults apply.
+func tuiOptions() tui.AppOptions {
+	opts := tui.AppOptions{Interval: config.DefaultSyncInterval}
+	if wd, err := os.Getwd(); err == nil {
+		if s, err := store.Open(wd); err == nil {
+			if set, err := syncSettings(s); err == nil {
+				opts.Interval, opts.Local = set.interval, set.local
+			}
+		}
+	}
+	return opts
+}
+
+// tuiPlans is the Plans adapter of the TUI on the Plans ref. It reads and
+// writes plans with the code of the CLI commands, and runs bfc new and
+// bfc edit for anything that needs the editor.
 type tuiPlans struct {
 	cmd *cobra.Command
 }
@@ -89,12 +109,47 @@ func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
 // while the screen is suspended. A failure carries the last line bfc new
 // printed to stderr.
 func (p *tuiPlans) NewPlan(title string) tea.Cmd {
+	return runSelf([]string{"new", title}, func(err error) tea.Msg { return tui.PlanCreatedMsg{Err: err} })
+}
+
+// Edit runs bfc edit on the document, which opens the editor while the
+// screen is suspended.
+// Edit reports Changed when the Plans ref moved, so that an editor closed
+// without a change does not count as a local change.
+func (p *tuiPlans) Edit(shortID string, doc tui.Doc) tea.Cmd {
+	args := []string{"edit", shortID}
+	if doc == tui.DocIntent {
+		args = append(args, "--intent")
+	}
+	before := p.tip()
+	return runSelf(args, func(err error) tea.Msg {
+		return tui.PlanEditedMsg{Err: err, Changed: err == nil && p.tip() != before}
+	})
+}
+
+// tip is the commit of the Plans ref, or "" when it cannot be read.
+func (p *tuiPlans) tip() string {
+	wd, err := os.Getwd()
+	if err != nil {
+		return ""
+	}
+	s, err := store.Open(wd)
+	if err != nil {
+		return ""
+	}
+	tip, _ := s.Tip(context.Background())
+	return tip
+}
+
+// runSelf runs this bfc with args while the screen is suspended. A failure
+// carries the last line the command printed to stderr.
+func runSelf(args []string, done func(error) tea.Msg) tea.Cmd {
 	self, err := os.Executable()
 	if err != nil {
-		return func() tea.Msg { return tui.PlanCreatedMsg{Err: err} }
+		return func() tea.Msg { return done(err) }
 	}
 	var stderr bytes.Buffer
-	c := exec.Command(self, "new", title)
+	c := exec.Command(self, args...)
 	c.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
@@ -103,6 +158,105 @@ func (p *tuiPlans) NewPlan(title string) tea.Cmd {
 				err = errors.New(last)
 			}
 		}
-		return tui.PlanCreatedMsg{Err: err}
+		return done(err)
 	})
+}
+
+// reviewEvents maps the TUI's review actions to their events.
+var reviewEvents = map[tui.ReviewAction]core.EventType{
+	tui.ActionSubmit:         core.Submitted,
+	tui.ActionApprove:        core.Approved,
+	tui.ActionRequestChanges: core.ChangesRequested,
+}
+
+// Detail returns one plan with the review actions the current user may
+// take, checked with the same rules as the CLI commands.
+func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, error) {
+	s, err := openPlans(p.cmd, forReading)
+	if err != nil {
+		return tui.PlanDetail{}, err
+	}
+	v, err := resolvePlan(ctx, s, shortID)
+	if err != nil {
+		return tui.PlanDetail{}, err
+	}
+	actor, err := currentUser(ctx, s)
+	if err != nil {
+		return tui.PlanDetail{}, err
+	}
+	d := tui.PlanDetail{
+		ShortID: v.ShortID, Title: v.Title, State: v.Status.State, Author: v.Status.Author.Email,
+		RequiredApprovals: v.Status.RequiredApprovals, Approvers: v.Status.Approvers,
+		Intent: v.Intent, Plan: v.Plan, Editable: v.Status.State != core.StateClosed,
+	}
+	if core.CheckSubmit(v.Status, actor, v.Plan) == nil {
+		d.Actions = append(d.Actions, tui.ActionSubmit)
+	}
+	if core.CheckApprove(v.Status, actor) == nil {
+		d.Actions = append(d.Actions, tui.ActionApprove)
+	}
+	if core.CheckRequestChanges(v.Status, actor, "a reason") == nil {
+		d.Actions = append(d.Actions, tui.ActionRequestChanges)
+	}
+	return d, nil
+}
+
+// Review writes a review event the way the CLI command does.
+func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewAction, reason string) error {
+	s, err := openPlans(p.cmd, forWriting)
+	if err != nil {
+		return err
+	}
+	_, err = writeReview(ctx, s, shortID, reviewEvents[a], reason)
+	return err
+}
+
+// tuiSyncer is the Syncer of the TUI: bfc sync without printing, on the
+// remote of the config file.
+type tuiSyncer struct{}
+
+// Sync pulls, then pushes, and reports how it went.
+func (tuiSyncer) Sync(ctx context.Context) tui.SyncResult {
+	offline := func(err error) tui.SyncResult {
+		return tui.SyncResult{Outcome: tui.SyncOffline, Message: firstLine(err.Error())}
+	}
+	wd, err := os.Getwd()
+	if err != nil {
+		return offline(err)
+	}
+	s, err := store.Open(wd)
+	if err != nil {
+		return offline(err)
+	}
+	set, err := syncSettings(s)
+	switch {
+	case err != nil:
+		return offline(err)
+	case set.local:
+		return tui.SyncResult{Outcome: tui.SyncLocalOnly}
+	}
+	pulled, _, err := s.Sync(ctx, set.remote, store.KeepNeither)
+	var ce *store.ConflictError
+	var re *store.RemoteError
+	switch {
+	case errors.As(err, &ce):
+		var files []string
+		for _, c := range ce.Conflicts {
+			if name := path.Base(c.Path); !slices.Contains(files, name) {
+				files = append(files, name)
+			}
+		}
+		return tui.SyncResult{Outcome: tui.SyncConflict, Message: strings.Join(files, ", ")}
+	case errors.As(err, &re):
+		return tui.SyncResult{Outcome: tui.SyncOffline, Message: strings.TrimPrefix(firstLine(re.Message), "fatal: ")}
+	case err != nil:
+		return offline(err)
+	}
+	changed := pulled.Outcome == store.PullCreated || pulled.Outcome == store.PullFastForward || pulled.Outcome == store.PullMerged
+	return tui.SyncResult{Outcome: tui.SyncOK, Changed: changed}
+}
+
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return line
 }

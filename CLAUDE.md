@@ -64,10 +64,12 @@ Set by the plan list (`internal/tui/planlist.go`, issue #16); every new screen f
 
 - Bubble Tea v2: import `charm.land/bubbletea/v2`, `charm.land/bubbles/v2`, `charm.land/lipgloss/v2`, not the older `github.com/charmbracelet/...` paths.
 - One screen per file in `internal/tui`: a value-type model with an exported constructor that takes its dependencies.
-- A screen gets data through a small interface that `tui` defines (`Plans`), implemented in `cmd/bfc` (`tuiPlans` in `tui.go`) and faked in tests. `tui` imports `core` only, never `store`; all I/O runs inside a `tea.Cmd`. Anything that needs the terminal, such as the editor, runs through `tea.ExecProcess` in the adapter.
-- Keys: one key map per screen in `keys.go`, built with `bubbles/key`; the help line is rendered from the bindings. Styles: shared Lip Gloss styles in `styles.go`, 16 basic ANSI colors.
+- A screen gets data through a small interface that `tui` defines (`Plans`), implemented in `cmd/bfc` (`tuiPlans` in `tui.go`) and faked in tests. `tui` imports `core` only, never `store`; all I/O runs inside a `tea.Cmd`. Anything that needs the terminal, such as the editor, runs through `tea.ExecProcess` in the adapter. Writes reuse the CLI's code (`writeReview`), never a copy of it.
+- The root model `tui.App` switches screens and owns the background sync (`Syncer`, the `syncState` reducer in `sync.go`). Screens know nothing about sync: they receive the status text from the app and reload on its messages. A screen reports a local change by returning its result message (`PlanCreatedMsg`, `PlanEditedMsg`, `reviewDoneMsg`); the app syncs after it.
+- A screen shows only the actions the current user may take now; the adapter decides them with the `core.Check*` rules.
+- Keys: one key map per screen in `keys.go`, built with `bubbles/key`; the help line is rendered from the bindings. Styles: shared Lip Gloss styles in `styles.go`, 16 basic ANSI colors. Plan documents are rendered with Glamour's standard "dark" style through `renderMarkdown`; theming is a later issue.
 - Every view fits 80x24: the help line sits on the bottom row and lines are cut with `truncate`.
-- Tests drive the screen with `teatest/v2` and the fake adapter, then compare the final view, stripped of styling, with `testdata/<test name>.golden`. Review each golden file by eye; regenerate them with `go test ./internal/tui -update`.
+- Tests drive the screen with `teatest/v2` and the fake adapter, then compare the final view, stripped of styling, with `testdata/<test name>.golden`. Review each golden file by eye; regenerate them with `go test ./internal/tui -update`. Wait for text that only the expected screen shows before quitting, because results arrive asynchronously and the renderer redraws only changed cells. Keep timer-dependent text such as the sync status out of golden files. Run the TUI tests with `-race`.
 - `bfc` without a command opens the TUI only when stdin and stdout are a terminal; otherwise it prints usage.
 
 ## Rules for the hidden ref

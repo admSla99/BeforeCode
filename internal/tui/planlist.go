@@ -15,42 +15,6 @@ import (
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
-// PlanRow is what the plan list shows of one Plan.
-type PlanRow struct {
-	ShortID      string
-	State        core.State
-	Title        string
-	Author       string // email; empty for an invalid plan
-	LastActivity time.Time
-}
-
-// Plans is where the screens get plans from and create them. cmd/bfc
-// implements it on the Plans ref; tests use a fake.
-type Plans interface {
-	// Load returns every plan, newest activity first. It returns a
-	// *NotSetUpError when the repository has no Plans ref.
-	Load(ctx context.Context) ([]PlanRow, error)
-	// NewPlan returns a command that creates a plan with this title, the
-	// way bfc new does (the editor opens on intent.md), and then produces a
-	// PlanCreatedMsg.
-	NewPlan(title string) tea.Cmd
-}
-
-// PlanCreatedMsg reports the end of a NewPlan command. Err is nil when a
-// plan was created.
-type PlanCreatedMsg struct{ Err error }
-
-// NotSetUpError means the repository has no Plans ref. Advice, when set, is
-// the CLI's precise advice, for example that the remote already has plans.
-type NotSetUpError struct{ Advice string }
-
-func (e *NotSetUpError) Error() string {
-	if e.Advice == "" {
-		return "BeforeCode is not set up in this repository"
-	}
-	return e.Advice
-}
-
 // stateFilter is one step of the state filter that the s key cycles.
 type stateFilter struct {
 	name  string
@@ -95,6 +59,9 @@ type PlanList struct {
 	loadErr error
 	status  string // one line of feedback, such as a failed bfc new
 
+	syncText string // set by the app: the sync status
+	syncHint string // set by the app: why sync is offline or in conflict
+
 	cursor    int // index into visible()
 	filterAt  int // index into stateFilters
 	search    string
@@ -107,6 +74,9 @@ type PlanList struct {
 func NewPlanList(plans Plans) PlanList {
 	return PlanList{plans: plans, keys: newListKeys(), help: help.New()}
 }
+
+// openPlanMsg asks the app to show the detail of a plan.
+type openPlanMsg struct{ shortID string }
 
 type plansLoadedMsg struct {
 	plans []PlanRow
@@ -172,6 +142,11 @@ func (m PlanList) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = max(m.cursor-1, 0)
 	case key.Matches(msg, m.keys.Down):
 		m.cursor = min(m.cursor+1, max(len(m.visible())-1, 0))
+	case key.Matches(msg, m.keys.Open):
+		if vis := m.visible(); len(vis) > 0 {
+			short := vis[m.cursor].ShortID
+			return m, func() tea.Msg { return openPlanMsg{short} }
+		}
 	case key.Matches(msg, m.keys.Search):
 		m.typing = typingSearch
 	case key.Matches(msg, m.keys.ClearSearch):
@@ -253,7 +228,14 @@ func (m PlanList) header() string {
 	case search == "":
 		search = styleDim.Render("(/ to search)")
 	}
-	return styleTitle.Render("BeforeCode · plans") + "   state: " + stateFilters[m.filterAt].name + "   search: " + search
+	left := styleTitle.Render("BeforeCode · plans") + "   state: " + stateFilters[m.filterAt].name + "   search: " + search
+	if m.syncText == "" {
+		return left
+	}
+	// The sync status keeps its place on the right; the header gives way.
+	right := "  " + m.syncText
+	left = truncate(left, max(m.width-lipgloss.Width(right), 1))
+	return left + strings.Repeat(" ", max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 0)) + right
 }
 
 func (m PlanList) footer() []string {
@@ -263,6 +245,9 @@ func (m PlanList) footer() []string {
 	}
 	if m.status != "" {
 		lines = append(lines, styleError.Render(m.status))
+	}
+	if m.syncHint != "" {
+		lines = append(lines, styleError.Render(m.syncHint))
 	}
 	return append(lines, m.help.View(m.keys))
 }

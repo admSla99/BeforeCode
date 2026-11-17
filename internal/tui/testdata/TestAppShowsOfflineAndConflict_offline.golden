@@ -1,0 +1,24 @@
+bfc-5v7x  Payments via Stripe   intent.md   plan.md
+  ## Context                                                                    
+                                                                                
+  The checkout calls payments.Charge, which wraps the old provider.             
+                                                                                
+  ## Approach                                                                   
+                                                                                
+  Add a Stripe client behind the payments.Provider interface and switch EU      
+  traffic with a feature flag.                                                  
+                                                                                
+  ## Affected areas                                                             
+                                                                                
+  • payments/                                                                   
+  • checkout/handler.go                                                         
+                                                                                
+  ## Out of scope                                                               
+                                                                                
+  Refunds.                                                                      
+                                                                                
+  ## Tasks                                                                      
+approve: done
+Offline: Could not resolve host: github.com
+ in-review · 1/2 approvals (peter) · jana@example… ○ offline · 1 change waiting 
+tab intent/plan • e edit • a approve • r changes • ↑↓ scroll • esc back • q quit

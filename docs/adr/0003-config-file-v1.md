@@ -1,4 +1,4 @@
-# ADR 0003: `.beforecode/config.yaml` version 1
+# ADR 0003: `.beforecode/config.yaml` version 1 (and version 2)
 
 Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #8 (`bfc init`).
 
@@ -55,3 +55,16 @@ sync:
 - The `ls-remote` check runs only while the plans ref is missing locally. A repository that started in local mode and later turns sync on is not checked against an unrelated plans ref on the remote; the first `bfc push` will reveal it.
 - Changing `required_approvals` does not change the state of plans already submitted, because the count is fixed in each `submitted` event.
 - Every new key bumps `version`, so an older binary stops with "update bfc" instead of an unknown-key error.
+
+## Version 2 (2026-11-17, issue #17)
+
+Version 2 adds one optional key, following the rule above that every new key bumps `version`:
+
+| Key | Type | Rule |
+| --- | --- | --- |
+| `sync.interval` | integer, optional | Seconds between background syncs while the TUI is open, 5 to 3600. Missing means 15. Allowed only in version 2 and only when `sync.enabled` is `true`. |
+
+- `bfc` reads versions 1 and 2. A version 1 file keeps working unchanged, with an interval of 15 seconds.
+- `bfc init` writes version 2, and `interval: 15` when sync is on.
+- A version 1 binary stops on a version 2 file with "update bfc".
+- The interval is in the committed file, so the whole team shares it. A per-clone setting was not needed.
