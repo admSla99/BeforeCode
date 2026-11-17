@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -10,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/store"
 )
 
 func newShowCmd() *cobra.Command {
@@ -21,34 +23,43 @@ intent.md and, if it exists, plan.md. The ID is a Short ID (bfc-5v7x), a
 prefix of at least four characters, or the full ULID.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
 			s, err := openPlans(cmd, forReading)
 			if err != nil {
 				return err
 			}
-			views, err := loadPlans(ctx, s)
+			v, err := resolvePlan(cmd.Context(), s, args[0])
 			if err != nil {
 				return err
 			}
-			byID := make(map[ulid.ULID]planView, len(views))
-			refs := make([]core.PlanHandle, len(views))
-			for i, v := range views {
-				byID[v.ID] = v
-				refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
-			}
-			id, err := core.ResolveID(args[0], refs)
-			var amb *core.AmbiguousIDError
-			switch {
-			case errors.As(err, &amb):
-				return ambiguousError(amb, byID)
-			case errors.Is(err, core.ErrUnknownID):
-				return fmt.Errorf("no plan %q; bfc list shows the plans", args[0])
-			case err != nil:
-				return err
-			}
-			return printPlan(cmd.OutOrStdout(), byID[id])
+			return printPlan(cmd.OutOrStdout(), v)
 		},
 	}
+}
+
+// resolvePlan loads the plans and returns the one the query names (see
+// core.ResolveID), with errors that list candidates or point to bfc list.
+func resolvePlan(ctx context.Context, s *store.Store, query string) (planView, error) {
+	views, err := loadPlans(ctx, s)
+	if err != nil {
+		return planView{}, err
+	}
+	byID := make(map[ulid.ULID]planView, len(views))
+	refs := make([]core.PlanHandle, len(views))
+	for i, v := range views {
+		byID[v.ID] = v
+		refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
+	}
+	id, err := core.ResolveID(query, refs)
+	var amb *core.AmbiguousIDError
+	switch {
+	case errors.As(err, &amb):
+		return planView{}, ambiguousError(amb, byID)
+	case errors.Is(err, core.ErrUnknownID):
+		return planView{}, fmt.Errorf("no plan %q; bfc list shows the plans", query)
+	case err != nil:
+		return planView{}, err
+	}
+	return byID[id], nil
 }
 
 // ambiguousError lists the candidates with their Short IDs, ULIDs and
