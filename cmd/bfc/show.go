@@ -30,52 +30,37 @@ prefix of at least four characters, or the full ULID.`,
 			if err != nil {
 				return err
 			}
-			refs := make([]core.PlanRef, len(views))
+			byID := make(map[ulid.ULID]planView, len(views))
+			refs := make([]core.PlanHandle, len(views))
 			for i, v := range views {
-				refs[i] = core.PlanRef{ID: v.ID, ShortID: v.Status.ShortID}
+				byID[v.ID] = v
+				refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
 			}
 			id, err := core.ResolveID(args[0], refs)
 			var amb *core.AmbiguousIDError
 			switch {
 			case errors.As(err, &amb):
-				return ambiguousError(amb, views)
+				return ambiguousError(amb, byID)
 			case errors.Is(err, core.ErrUnknownID):
 				return fmt.Errorf("no plan %q; bfc list shows the plans", args[0])
 			case err != nil:
 				return err
 			}
-			for _, v := range views {
-				if v.ID == id {
-					return printPlan(cmd.OutOrStdout(), v)
-				}
-			}
-			return nil
+			return printPlan(cmd.OutOrStdout(), byID[id])
 		},
 	}
 }
 
-// ambiguousError lists the candidates with their titles.
-func ambiguousError(amb *core.AmbiguousIDError, views []planView) error {
+// ambiguousError lists the candidates with their Short IDs, ULIDs and
+// titles. The ULID always tells them apart.
+func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]planView) error {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches several plans; give a longer ID:", amb.Query)
+	fmt.Fprintf(&b, "%q matches several plans; give a longer ID or the ULID:", amb.Query)
 	for _, c := range amb.Candidates {
-		for _, v := range views {
-			if v.ID == c.ID {
-				fmt.Fprintf(&b, "\n  %s  %s  %s", core.ShortID(c.ID, otherIDs(views)), c.ID, v.Title)
-			}
-		}
+		v := byID[c.ID]
+		fmt.Fprintf(&b, "\n  %s  %s  %s", v.ShortID, c.ID, v.Title)
 	}
 	return errors.New(b.String())
-}
-
-// otherIDs returns the IDs of all plans, so that ShortID gives the shortest
-// prefix that tells a candidate apart.
-func otherIDs(views []planView) []ulid.ULID {
-	ids := make([]ulid.ULID, len(views))
-	for i, v := range views {
-		ids[i] = v.ID
-	}
-	return ids
 }
 
 func printPlan(w io.Writer, v planView) error {
@@ -91,7 +76,7 @@ func printPlan(w io.Writer, v planView) error {
 		author = fmt.Sprintf("%s <%s>", v.Status.Author.Name, v.Status.Author.Email)
 	}
 	var b strings.Builder
-	fmt.Fprintf(&b, "%s  %s\n", v.Status.ShortID, v.Title)
+	fmt.Fprintf(&b, "%s  %s\n", v.ShortID, v.Title)
 	fmt.Fprintf(&b, "ID:         %s\n", v.ID)
 	fmt.Fprintf(&b, "State:      %s\n", v.Status.State)
 	fmt.Fprintf(&b, "Author:     %s\n", author)

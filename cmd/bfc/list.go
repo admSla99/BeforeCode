@@ -52,7 +52,7 @@ file of the plan.`,
 			}
 			w := tabwriter.NewWriter(cmd.OutOrStdout(), 0, 0, 2, ' ', 0)
 			for _, v := range views {
-				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", v.Status.ShortID, v.Status.State, v.Title, v.Status.Author.Email, formatTime(v.LastActivity))
+				_, _ = fmt.Fprintf(w, "%s\t%s\t%s\t%s\t%s\n", v.ShortID, v.Status.State, v.Title, orDash(v.Status.Author.Email), formatTime(v.LastActivity))
 			}
 			return w.Flush()
 		},
@@ -79,7 +79,7 @@ func printJSON(cmd *cobra.Command, views []planView) error {
 	out := make([]planJSON, 0, len(views))
 	for _, v := range views {
 		out = append(out, planJSON{
-			ID: v.ID.String(), ShortID: v.Status.ShortID, State: v.Status.State,
+			ID: v.ID.String(), ShortID: v.ShortID, State: v.Status.State,
 			Title: v.Title, Labels: v.Labels, Author: v.Status.Author,
 			LastActivity: v.LastActivity.UTC().Format(time.RFC3339),
 			Approvals:    len(v.Status.Approvers), RequiredApprovals: v.Status.RequiredApprovals,
@@ -96,6 +96,13 @@ func joinStates(states []core.State) string {
 		names[i] = string(s)
 	}
 	return strings.Join(names, ", ")
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }
 
 func formatTime(t time.Time) string {

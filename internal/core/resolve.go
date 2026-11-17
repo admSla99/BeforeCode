@@ -8,8 +8,8 @@ import (
 	"github.com/oklog/ulid/v2"
 )
 
-// PlanRef is what ResolveID needs to know about a plan.
-type PlanRef struct {
+// PlanHandle is what ResolveID needs to know about a plan.
+type PlanHandle struct {
 	ID      ulid.ULID
 	ShortID string
 }
@@ -20,7 +20,7 @@ var ErrUnknownID = errors.New("no plan with this ID")
 // AmbiguousIDError is returned when several plans match a query.
 type AmbiguousIDError struct {
 	Query      string
-	Candidates []PlanRef
+	Candidates []PlanHandle
 }
 
 func (e *AmbiguousIDError) Error() string {
@@ -31,7 +31,7 @@ func (e *AmbiguousIDError) Error() string {
 // a full ULID, a Short ID, or a prefix of at least four characters of the
 // random part of a plan's ULID, with or without "bfc-", in any case. An
 // exact Short ID wins over longer Short IDs it is a prefix of.
-func ResolveID(query string, plans []PlanRef) (ulid.ULID, error) {
+func ResolveID(query string, plans []PlanHandle) (ulid.ULID, error) {
 	if id, err := ulid.ParseStrict(strings.ToUpper(query)); err == nil {
 		for _, p := range plans {
 			if p.ID == id {
@@ -44,7 +44,7 @@ func ResolveID(query string, plans []PlanRef) (ulid.ULID, error) {
 	if len(prefix) < minShortIDLen {
 		return ulid.ULID{}, fmt.Errorf("plan ID %q is too short: give at least %d characters after %s", query, minShortIDLen, ShortIDPrefix)
 	}
-	var exact, byPrefix []PlanRef
+	var exact, byPrefix []PlanHandle
 	for _, p := range plans {
 		if strings.EqualFold(p.ShortID, ShortIDPrefix+prefix) {
 			exact = append(exact, p)
@@ -53,7 +53,7 @@ func ResolveID(query string, plans []PlanRef) (ulid.ULID, error) {
 			byPrefix = append(byPrefix, p)
 		}
 	}
-	for _, matches := range [][]PlanRef{exact, byPrefix} {
+	for _, matches := range [][]PlanHandle{exact, byPrefix} {
 		switch len(matches) {
 		case 0:
 			continue

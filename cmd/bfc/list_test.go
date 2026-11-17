@@ -312,3 +312,22 @@ func TestListAndShowCarryTheIntentLabels(t *testing.T) {
 		t.Errorf("bfc show labels: %v\n%s", err, out)
 	}
 }
+
+func TestListShowsAnInvalidPlanWithAComputedShortID(t *testing.T) {
+	dir := newLocalRepo(t)
+	id := ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D")
+	writeRef(t, dir, "no created event", map[string][]byte{
+		core.PlanDir(id) + "/intent.md": []byte("---\ntitle: Orphan\n---\n"),
+	})
+
+	out, err := bfcIn(t, dir, "list")
+	if err != nil {
+		t.Fatalf("bfc list: %v\n%s", err, out)
+	}
+	if !strings.HasPrefix(out, "bfc-5v7x  invalid  Orphan  -  ") {
+		t.Errorf("invalid plan line = %q", out)
+	}
+	if out, err := bfcIn(t, dir, "show", "bfc-5v7x"); err != nil || !strings.Contains(out, "State:      invalid\n") {
+		t.Errorf("bfc show of the invalid plan: %v\n%s", err, out)
+	}
+}

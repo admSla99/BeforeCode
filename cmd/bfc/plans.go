@@ -52,6 +52,8 @@ func openPlans(cmd *cobra.Command, mode access) (*store.Store, error) {
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("the plans ref has an unreadable format-version %q", data)
+	case v < core.FormatVersion && mode == forReading:
+		// An older format reads the same way; only writing needs a migration.
 	case v > core.FormatVersion && mode == forReading:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the plans ref has format-version %d, newer than this bfc (%d); update bfc\n", v, core.FormatVersion)
 	case v > core.FormatVersion:

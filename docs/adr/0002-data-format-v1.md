@@ -76,7 +76,7 @@ plan_blob: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad
 | `type` | Extra fields | Who may write it | Transition |
 | --- | --- | --- | --- |
 | `created` | `short_id` | anyone; this person becomes the **plan author** | none → `draft` |
-| `submitted` | `plan_blob`, `required_approvals` (integer ≥ 1, from the approval policy at submit time, default 1) | plan author | `draft` → `in-review` |
+| `submitted` | `plan_blob`, `required_approvals` (integer ≥ 1, from the approval policy at submit time, default 1; a missing or smaller value is read as 1) | plan author | `draft` → `in-review` |
 | `withdrawn` | none | plan author | `in-review` or `approved` → `draft` |
 | `approved` | `plan_blob` | anyone but the plan author, and not with `agent` | `in-review` → `approved` once enough valid Approvals exist |
 | `changes-requested` | `plan_blob`, `message` (ULID of the Message with the reasons) | anyone but the plan author | `in-review` or `approved` → `draft` |

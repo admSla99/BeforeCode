@@ -12,14 +12,14 @@ import (
 // Two plans whose random parts share "5v7x": A was created first and got
 // bfc-5v7x, B later got bfc-5v7x9.
 var (
-	planA = core.PlanRef{ID: ulid.MustParse("01JD3K8Q2W5V7X1Y0Z1A2B3C4D"), ShortID: "bfc-5v7x"}
-	planB = core.PlanRef{ID: ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D"), ShortID: "bfc-5v7x9"}
-	planC = core.PlanRef{ID: ulid.MustParse("01JD3K8Q2WZZZZ0000000000AA"), ShortID: "bfc-zzzz"}
-	refs  = []core.PlanRef{planA, planB, planC}
+	planA = core.PlanHandle{ID: ulid.MustParse("01JD3K8Q2W5V7X1Y0Z1A2B3C4D"), ShortID: "bfc-5v7x"}
+	planB = core.PlanHandle{ID: ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D"), ShortID: "bfc-5v7x9"}
+	planC = core.PlanHandle{ID: ulid.MustParse("01JD3K8Q2WZZZZ0000000000AA"), ShortID: "bfc-zzzz"}
+	refs  = []core.PlanHandle{planA, planB, planC}
 )
 
 func TestResolveIDFindsExactlyOnePlan(t *testing.T) {
-	for query, want := range map[string]core.PlanRef{
+	for query, want := range map[string]core.PlanHandle{
 		"01JD3K8Q2W5V7X9Y0Z1A2B3C4D": planB, // full ULID
 		"01jd3k8q2w5v7x9y0z1a2b3c4d": planB, // ULIDs are case-insensitive
 		"bfc-5v7x":                   planA, // exact Short ID wins over B's prefix
@@ -41,7 +41,7 @@ func TestResolveIDFindsExactlyOnePlan(t *testing.T) {
 
 func TestResolveIDListsCandidatesWhenAmbiguous(t *testing.T) {
 	// Two plans created offline at the same time with the same Short ID.
-	twin := core.PlanRef{ID: ulid.MustParse("01JD3K8Q2W5V7X2000000000AA"), ShortID: "bfc-5v7x"}
+	twin := core.PlanHandle{ID: ulid.MustParse("01JD3K8Q2W5V7X2000000000AA"), ShortID: "bfc-5v7x"}
 
 	_, err := core.ResolveID("bfc-5v7x", append(refs, twin))
 

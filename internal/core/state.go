@@ -42,8 +42,9 @@ func Derive(plan ulid.ULID, events []Event, planBlob string) Status {
 		}
 		switch e.Type {
 		case Submitted:
-			if isAuthor(e.Author) && !inRound && e.RequiredApprovals >= 1 {
-				inRound, round, st.RequiredApprovals = true, nil, e.RequiredApprovals
+			if isAuthor(e.Author) && !inRound {
+				// A missing count means the policy default of 1 (ADR 0002 §4).
+				inRound, round, st.RequiredApprovals = true, nil, max(e.RequiredApprovals, 1)
 			}
 		case Withdrawn:
 			if isAuthor(e.Author) && inRound {

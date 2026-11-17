@@ -117,6 +117,15 @@ func TestDeriveFollowsTheDataFormat(t *testing.T) {
 		{"closed in review", []string{"created ada", "submitted ada v1 1", "closed jana"}, blobV1, core.StateClosed, nil},
 		{"closed is final", []string{"created ada", "closed jana", "submitted ada v1 1", "approved peter v1"}, blobV1, core.StateClosed, nil},
 
+		{"closed after approval", []string{"created ada", "submitted ada v1 1", "approved jana v1", "closed peter"}, blobV1, core.StateClosed, nil},
+		{"submitted without required_approvals counts as 1", []string{"created ada", "submitted ada v1", "approved jana v1"}, blobV1, core.StateApproved, []string{"jana@example.com"}},
+
+		// Events of another plan.
+		{"approval for another plan", []string{"created ada", "submitted ada v1 1", "approved jana v1 otherplan"}, blobV1, core.StateInReview, nil},
+		{"withdrawal for another plan", []string{"created ada", "submitted ada v1 1", "withdrawn ada otherplan"}, blobV1, core.StateInReview, nil},
+		{"objection for another plan", []string{"created ada", "submitted ada v1 1", "changes-requested jana v1 otherplan"}, blobV1, core.StateInReview, nil},
+		{"closing another plan", []string{"created ada", "closed jana otherplan"}, "", core.StateDraft, nil},
+
 		// Other events.
 		{"reserved and unknown types are skipped", []string{"created ada", "claimed jana", "renamed ada"}, "", core.StateDraft, nil},
 		{"second created is skipped", []string{"created ada", "created jana", "submitted jana v1 1"}, blobV1, core.StateDraft, nil},

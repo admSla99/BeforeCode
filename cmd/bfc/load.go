@@ -19,7 +19,10 @@ const unreadableTitle = "(unreadable intent.md)"
 
 // planView is everything list and show print about a plan.
 type planView struct {
-	ID           ulid.ULID
+	ID ulid.ULID
+	// ShortID is the stored Short ID, or for an invalid plan one computed
+	// from its ULID, so that every listed plan can be shown.
+	ShortID      string
 	Status       core.Status
 	Title        string
 	Labels       []string
@@ -45,6 +48,10 @@ func loadPlans(ctx context.Context, s *store.Store) ([]planView, error) {
 			return nil, err
 		}
 		v.LastActivity = changed[id.String()]
+		v.ShortID = v.Status.ShortID
+		if v.ShortID == "" {
+			v.ShortID = core.ShortID(id, ids)
+		}
 		views = append(views, v)
 	}
 	sort.SliceStable(views, func(i, j int) bool {

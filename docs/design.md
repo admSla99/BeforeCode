@@ -116,7 +116,7 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 }
 ```
 
-`approvals` counts the valid Approvals of the open review round, and `required_approvals` is 0 outside a round. A plan without a valid `created` event has state `invalid`; one whose `intent.md` cannot be read has the title `(unreadable intent.md)`.
+`approvals` counts the valid Approvals of the open review round, and `required_approvals` is 0 outside a round. An invalid plan (no valid `created` event) is listed with state `invalid` and a Short ID computed from its ULID; a plan whose `intent.md` cannot be read has the title `(unreadable intent.md)`.
 
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text.
 
