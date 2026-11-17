@@ -14,6 +14,7 @@ import (
 
 	"github.com/admSla99/BeforeCode/internal/config"
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
@@ -82,7 +83,7 @@ type reviewAction struct {
 	// planBlob says whether the event records the plan_blob of plan.md
 	// (ADR 0002 section 4).
 	planBlob bool
-	check    func(v planView, actor core.Person, reason string) error
+	check    func(v index.Plan, actor core.Person, reason string) error
 	// detail describes the plan after the event; nil prints the
 	// Approvals.
 	detail func(st core.Status) string
@@ -91,7 +92,9 @@ type reviewAction struct {
 var reviewActions = map[core.EventType]reviewAction{
 	core.Submitted: {
 		command: "submit", planBlob: true,
-		check: func(v planView, actor core.Person, _ string) error { return core.CheckSubmit(v.Status, actor, v.Plan) },
+		check: func(v index.Plan, actor core.Person, _ string) error {
+			return core.CheckSubmit(v.Status, actor, v.Plan)
+		},
 		detail: func(st core.Status) string {
 			if st.RequiredApprovals == 1 {
 				return "needs 1 approval"
@@ -101,18 +104,18 @@ var reviewActions = map[core.EventType]reviewAction{
 	},
 	core.Approved: {
 		command: "approve", planBlob: true,
-		check: func(v planView, actor core.Person, _ string) error { return core.CheckApprove(v.Status, actor) },
+		check: func(v index.Plan, actor core.Person, _ string) error { return core.CheckApprove(v.Status, actor) },
 	},
 	core.ChangesRequested: {
 		command: "request-changes", planBlob: true,
-		check: func(v planView, actor core.Person, reason string) error {
+		check: func(v index.Plan, actor core.Person, reason string) error {
 			return core.CheckRequestChanges(v.Status, actor, reason)
 		},
 		detail: func(core.Status) string { return "changes requested" },
 	},
 	core.Withdrawn: {
 		command: "withdraw",
-		check:   func(v planView, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
+		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
 		detail:  func(core.Status) string { return "withdrawn" },
 	},
 }

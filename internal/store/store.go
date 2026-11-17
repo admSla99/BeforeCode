@@ -60,11 +60,12 @@ func (s *Store) Read(ctx context.Context, path string) ([]byte, error) {
 	if err != nil {
 		return nil, err
 	}
-	return s.readAt(ctx, tip, path)
+	return s.ReadAt(ctx, tip, path)
 }
 
-// readAt returns the content of the file at path in commit.
-func (s *Store) readAt(ctx context.Context, commit, path string) ([]byte, error) {
+// ReadAt returns the content of the file at path in commit, so that a
+// reader can see one commit while the plans ref moves.
+func (s *Store) ReadAt(ctx context.Context, commit, path string) ([]byte, error) {
 	e, err := s.entry(ctx, commit, path)
 	if err != nil {
 		return nil, err

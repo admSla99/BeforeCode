@@ -127,3 +127,15 @@ func keys(m map[string][]byte) []string {
 	}
 	return out
 }
+
+func TestIntentBodyIsTheTextAfterTheFrontMatter(t *testing.T) {
+	for in, want := range map[string]string{
+		"---\ntitle: A\n---\n\nBody\n": "\nBody\n",
+		"---\n---\nBody\n":             "Body\n",
+		"No front matter\n":            "No front matter\n",
+	} {
+		if got := string(core.IntentBody([]byte(in))); got != want {
+			t.Errorf("IntentBody(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
