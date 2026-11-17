@@ -64,3 +64,17 @@ internal/tui/     Bubble Tea screens
 - Events, messages, handoffs and checks are append-only: one new file per item, named by ULID. Never rewrite them. The file formats are in `docs/adr/0002-data-format-v1.md`.
 - Plan state is derived from `events/`, never stored.
 - Never force-push the ref. On a rejected push: fetch, merge in memory with `git merge-tree --write-tree`, retry.
+
+## Agent skills
+
+### Issue tracker
+
+GitHub Issues in admSla99/BeforeCode (in cloud sessions through the GitHub MCP tools). See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+The five default roles, each label named after its role (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` and `docs/adr/` at the repository root. See `docs/agents/domain.md`.
