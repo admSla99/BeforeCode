@@ -45,7 +45,9 @@ CI (`.github/workflows/ci.yml`) runs build and `go test -race` on Linux and macO
 ## Package layout (target)
 
 ```
+templates.go      default templates embedded from .beforecode/templates
 cmd/bfc/          entry point
+internal/config/  .beforecode/config.yaml parsing (ADR 0003, no I/O)
 internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref

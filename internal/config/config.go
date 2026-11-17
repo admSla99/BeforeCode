@@ -76,7 +76,6 @@ func Parse(data []byte) (Config, error) {
 func Render(c Config) []byte {
 	var b bytes.Buffer
 	fmt.Fprintf(&b, `# BeforeCode configuration. Change it through a pull request.
-# Format: docs/adr/0003-config-file-v1.md in the BeforeCode repository.
 version: %d
 
 approval:
@@ -88,7 +87,7 @@ sync:
   enabled: %t
 `, Version, c.RequiredApprovals, c.SyncEnabled)
 	if c.SyncEnabled {
-		fmt.Fprintf(&b, "  # The git remote that receives refs/beforecode/plans.\n  remote: %s\n", quote(c.Remote))
+		fmt.Fprintf(&b, "  # The git remote that receives refs/beforecode/plans. Only when enabled.\n  remote: %s\n", quote(c.Remote))
 	}
 	return b.Bytes()
 }

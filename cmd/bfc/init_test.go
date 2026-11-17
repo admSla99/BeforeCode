@@ -352,3 +352,39 @@ func TestInitFromASubdirectoryWritesAtTheRepositoryRoot(t *testing.T) {
 		t.Errorf("config.yaml not at the repository root: %v", err)
 	}
 }
+
+func TestInitWithAConfigInPlaceSaysFlagsAreIgnored(t *testing.T) {
+	clone, _ := newClone(t)
+	if out, err := bfcIn(t, clone, "init"); err != nil {
+		t.Fatalf("bfc init: %v\n%s", err, out)
+	}
+
+	out, err := bfcIn(t, clone, "init", "--local")
+	if err != nil {
+		t.Fatalf("bfc init --local: %v\n%s", err, out)
+	}
+
+	if !strings.Contains(out, "--local is ignored") {
+		t.Errorf("output does not say --local had no effect:\n%s", out)
+	}
+}
+
+func TestInitWithAConfigNamingAMissingRemoteSaysHowToFixIt(t *testing.T) {
+	clone, _ := newClone(t)
+	writeFile(t, filepath.Join(clone, ".beforecode", "config.yaml"), string(config.Render(
+		config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "upstream"})))
+
+	out, err := bfcIn(t, clone, "init")
+
+	if err == nil {
+		t.Fatalf("bfc init succeeded with a missing remote:\n%s", out)
+	}
+	for _, want := range []string{"git remote add upstream", ".beforecode/config.yaml"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output does not mention %q:\n%s", want, out)
+		}
+	}
+	if strings.Contains(out, "--local") {
+		t.Errorf("output suggests a flag that has no effect here:\n%s", out)
+	}
+}

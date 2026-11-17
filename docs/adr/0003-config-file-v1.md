@@ -38,6 +38,7 @@ sync:
 - Before creating the plans ref, `init` runs `git ls-remote <remote> refs/beforecode/plans`. If the ref is there, `init` refuses and points to `bfc bootstrap`. If the remote cannot be reached, `init` fails and suggests retrying or `--local`, because skipping the check could create a second, unrelated plans ref.
 - `init` never pushes. It ends by telling the user to commit `.beforecode/` and run `bfc push`.
 - `init` never overwrites. An existing `config.yaml`, template or plans ref is kept and reported as already there. The fetch refspec is added only when the config in place has `sync.enabled: true` and the refspec is missing.
+- With a `config.yaml` in place, `--local` and `--remote` have no effect and `init` says so. If that config names a remote missing from this clone, the error says to add the remote or edit the file.
 - The default templates are embedded in the binary from this repository's own `.beforecode/templates/` through a small package at the module root, so there is one copy of each file.
 
 ## Considered options
@@ -51,5 +52,6 @@ sync:
 ## Consequences
 
 - Local mode is committed, so everyone who clones the repository also gets `sync.enabled: false`. Turning sync on later is a pull request that changes this file, followed by `bfc init` again to add the refspec.
+- The `ls-remote` check runs only while the plans ref is missing locally. A repository that started in local mode and later turns sync on is not checked against an unrelated plans ref on the remote; the first `bfc push` will reveal it.
 - Changing `required_approvals` does not change the state of plans already submitted, because the count is fixed in each `submitted` event.
 - Every new key bumps `version`, so an older binary stops with "update bfc" instead of an unknown-key error.

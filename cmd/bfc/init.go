@@ -42,7 +42,7 @@ running init again is safe. If the remote already has plans, use bfc bootstrap.`
 			if err != nil {
 				return err
 			}
-			return runInit(cmd, s, local, remote)
+			return runInit(cmd, s, local, remote, cmd.Flags().Changed("remote"))
 		},
 	}
 	cmd.Flags().BoolVar(&local, "local", false, "keep plans in this clone only; no remote, no sync")
@@ -50,7 +50,7 @@ running init again is safe. If the remote already has plans, use bfc bootstrap.`
 	return cmd
 }
 
-func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string) error {
+func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string, remoteSet bool) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	root := s.Root()
@@ -77,6 +77,9 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string) erro
 		if err != nil {
 			return err
 		}
+		if !ok && cfgExists {
+			return fmt.Errorf("%s names git remote %q, which does not exist in this clone; add it with git remote add %s <url>, or change sync in %s", config.Path, cfg.Remote, cfg.Remote, config.Path)
+		}
 		if !ok {
 			return fmt.Errorf("git remote %q does not exist; name another with --remote, or use --local to keep plans in this clone", cfg.Remote)
 		}
@@ -100,6 +103,14 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string) erro
 
 	if cfgExists {
 		report(out, "kept", config.Path)
+		for _, f := range []struct {
+			name string
+			set  bool
+		}{{"--local", local}, {"--remote", remoteSet}} {
+			if f.set {
+				report(out, "note", f.name+" is ignored because "+config.Path+" exists; edit that file to change sync")
+			}
+		}
 	} else {
 		if err := writeNew(cfgFile, config.Render(cfg)); err != nil {
 			return err

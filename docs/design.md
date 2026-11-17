@@ -175,7 +175,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 | Language | Go | One static binary for macOS, Linux and Windows; simple distribution; low barrier for contributors |
 | TUI | Bubble Tea, Bubbles, Lip Gloss | Elm architecture, testable, ready-made components |
 | Markdown in the TUI | Glamour | Render the plan in the terminal |
-| Forms | Huh | `bfc init` and wizards |
+| Forms | Huh | Interactive wizards when they come; `bfc init` takes flags only (issue #8, ADR 0003) |
 | Plan editing | `$EDITOR` | Developers write in their own editor; the TUI textarea is for short messages |
 | Git | System `git` through a subprocess | Respects SSH keys, credential helpers, commit signing and user hooks |
 | Data format | Markdown + YAML front matter, ULID IDs | Readable by people and agents; ULIDs sort by time |
