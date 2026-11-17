@@ -61,11 +61,68 @@ func newRequestChangesCmd() *cobra.Command {
 	return cmd
 }
 
+func newWithdrawCmd() *cobra.Command {
+	return &cobra.Command{
+		Use:   "withdraw <id>",
+		Short: "Take your plan back out of review, to draft",
+		Long: `Take a plan in review or approved back to draft, to change it without
+waiting for a reviewer. Only the plan author can withdraw. The review round
+ends: its Approvals no longer count, and the next bfc submit needs new ones.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReview(cmd, args[0], core.Withdrawn, "")
+		},
+	}
+}
+
+// reviewAction is one review command: the event type it writes, how it is
+// checked, and how its result is reported.
+type reviewAction struct {
+	command string // the bfc command, also used in the commit message
+	// planBlob says whether the event records the plan_blob of plan.md
+	// (ADR 0002 section 4).
+	planBlob bool
+	check    func(v planView, actor core.Person, reason string) error
+	// detail describes the plan after the event; nil prints the
+	// Approvals.
+	detail func(st core.Status) string
+}
+
+var reviewActions = map[core.EventType]reviewAction{
+	core.Submitted: {
+		command: "submit", planBlob: true,
+		check: func(v planView, actor core.Person, _ string) error { return core.CheckSubmit(v.Status, actor, v.Plan) },
+		detail: func(st core.Status) string {
+			if st.RequiredApprovals == 1 {
+				return "needs 1 approval"
+			}
+			return fmt.Sprintf("needs %d approvals", st.RequiredApprovals)
+		},
+	},
+	core.Approved: {
+		command: "approve", planBlob: true,
+		check: func(v planView, actor core.Person, _ string) error { return core.CheckApprove(v.Status, actor) },
+	},
+	core.ChangesRequested: {
+		command: "request-changes", planBlob: true,
+		check: func(v planView, actor core.Person, reason string) error {
+			return core.CheckRequestChanges(v.Status, actor, reason)
+		},
+		detail: func(core.Status) string { return "changes requested" },
+	},
+	core.Withdrawn: {
+		command: "withdraw",
+		check:   func(v planView, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
+		detail:  func(core.Status) string { return "withdrawn" },
+	},
+}
+
 // runReview checks that the event fits the plan and its author, writes it
 // (with a Message for the reason of changes-requested) as one commit, and
 // prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
 	ctx := cmd.Context()
+	action := reviewActions[typ]
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {
 		return err
@@ -79,38 +136,33 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 		return err
 	}
 	actor := core.Person{Name: name, Email: email}
-
-	required := 0
-	switch typ {
-	case core.Submitted:
-		err = core.CheckSubmit(v.Status, actor, v.Plan)
-		if err == nil {
-			required, err = requiredApprovals(s)
-		}
-	case core.Approved:
-		err = core.CheckApprove(v.Status, actor)
-	case core.ChangesRequested:
-		err = core.CheckRequestChanges(v.Status, actor, reason)
-	}
-	if err != nil {
-		return err
-	}
-	blob, err := s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
-	switch {
-	case errors.Is(err, store.ErrNotFound) && typ == core.Approved:
-		return fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
-	case errors.Is(err, store.ErrNotFound):
-		blob = ""
-	case err != nil:
+	if err := action.check(v, actor, reason); err != nil {
 		return err
 	}
 
 	now := time.Now()
+	e := core.Event{Type: typ, Plan: v.ID, Author: actor, At: now}
+	if typ == core.Submitted {
+		if e.RequiredApprovals, err = requiredApprovals(s); err != nil {
+			return err
+		}
+	}
+	if action.planBlob {
+		e.PlanBlob, err = s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
+		switch {
+		case errors.Is(err, store.ErrNotFound) && typ == core.Approved:
+			return fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
+		case errors.Is(err, store.ErrNotFound):
+			e.PlanBlob = ""
+		case err != nil:
+			return err
+		}
+	}
+
 	entropy := ulid.Monotonic(rand.Reader, 0)
 	newID := func() ulid.ULID { return ulid.MustNew(ulid.Timestamp(now), entropy) }
 	dir := core.PlanDir(v.ID)
 	files := map[string][]byte{}
-	e := core.Event{Type: typ, Plan: v.ID, Author: actor, At: now, PlanBlob: blob, RequiredApprovals: required}
 	if typ == core.ChangesRequested {
 		msg := newID()
 		files[dir+"/messages/"+msg.String()+".md"] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
@@ -118,7 +170,7 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 	}
 	e.ID = newID()
 	files[dir+"/events/"+e.ID.String()+".yaml"] = core.EncodeEvent(e)
-	if _, err := s.Write(ctx, fmt.Sprintf("bfc %s %s", command(typ), v.ShortID), files); err != nil {
+	if _, err := s.Write(ctx, "bfc "+action.command+" "+v.ShortID, files); err != nil {
 		return err
 	}
 
@@ -126,35 +178,11 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 	if err != nil {
 		return err
 	}
-	return reportReview(cmd, v.ShortID, after.Status, typ)
-}
-
-// command is the bfc command that writes an event type.
-func command(typ core.EventType) string {
-	switch typ {
-	case core.Submitted:
-		return "submit"
-	case core.Approved:
-		return "approve"
-	default:
-		return string(typ)
+	detail := fmt.Sprintf("%d of %d approvals", len(after.Status.Approvers), after.Status.RequiredApprovals)
+	if action.detail != nil {
+		detail = action.detail(after.Status)
 	}
-}
-
-func reportReview(cmd *cobra.Command, short string, st core.Status, typ core.EventType) error {
-	detail := ""
-	switch {
-	case typ == core.ChangesRequested:
-		detail = "changes requested"
-	case typ == core.Submitted:
-		detail = fmt.Sprintf("needs %d approval", st.RequiredApprovals)
-		if st.RequiredApprovals != 1 {
-			detail += "s"
-		}
-	case st.RequiredApprovals > 0:
-		detail = fmt.Sprintf("%d of %d approvals", len(st.Approvers), st.RequiredApprovals)
-	}
-	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (%s)\n", short, st.State, detail)
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (%s)\n", v.ShortID, after.Status.State, detail)
 	return err
 }
 
