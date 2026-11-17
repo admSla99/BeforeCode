@@ -224,3 +224,21 @@ func TestEditUnknownPlan(t *testing.T) {
 		t.Errorf("bfc edit of an unknown plan: %v\n%s", err, out)
 	}
 }
+
+func TestEditingAPlanInReviewWithSomeApprovalsSaysNothingAboutReturning(t *testing.T) {
+	dir := newLocalRepo(t)
+	short, id := newPlan(t, dir, "Payments")
+	writeRef(t, dir, "plan", map[string][]byte{core.PlanDir(id) + "/plan.md": []byte(validPlan)})
+	blob := planBlob(t, dir, id)
+	addEvent(t, dir, id, core.Event{Type: core.Submitted, Author: adaP, PlanBlob: blob, RequiredApprovals: 2})
+	addEvent(t, dir, id, core.Event{Type: core.Approved, Author: janaP, PlanBlob: blob})
+	fakeEditor(t, `printf -- '- AC-2: More.\n' >> "$1"`)
+
+	out, err := bfcIn(t, dir, "edit", short)
+	if err != nil {
+		t.Fatalf("bfc edit: %v\n%s", err, out)
+	}
+	if strings.Contains(out, "back in-review") {
+		t.Errorf("plan that never left review is said to be back:\n%s", out)
+	}
+}

@@ -75,6 +75,22 @@ func TestValidatePlanReportsEachProblem(t *testing.T) {
 			strings.Replace(goodPlan, "- AC-3: A successful payment sends exactly one email,\n  even when the webhook is delivered twice.\n", "- AC-3:\n", 1),
 			[]string{"AC-3 has no text"},
 		},
+		"duplicate of an empty criterion": {
+			strings.Replace(goodPlan, "- AC-3: A successful", "- AC-1:\n- AC-3: A successful", 1),
+			[]string{"AC-1 is used more than once"},
+		},
+		"other list styles": {
+			strings.Replace(goodPlan, "- AC-3:", "* AC-3:", 1) + "1. AC-4: numbered\n",
+			[]string{`not an acceptance criterion: "* AC-3:`, `not an acceptance criterion: "1. AC-4: numbered"`},
+		},
+		"no space after the colon": {
+			strings.Replace(goodPlan, "- AC-3: ", "- AC-3:", 1),
+			[]string{`not an acceptance criterion: "- AC-3:A successful`},
+		},
+		"heading inside a code fence": {
+			strings.Replace(goodPlan, "- AC-1:", "```\n## Context\n```\n\n- AC-1:", 1) + "- AC-1: dup\n",
+			[]string{"AC-1 is used more than once"},
+		},
 		"bad item": {
 			strings.Replace(goodPlan, "- AC-3:", "- AC-03:", 1),
 			[]string{`not an acceptance criterion: "- AC-03:`},

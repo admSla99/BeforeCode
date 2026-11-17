@@ -6,9 +6,9 @@ import (
 	"strings"
 )
 
-// RequiredPlanSections are the level-2 headings plan.md must have, matched
+// requiredPlanSections are the level-2 headings plan.md must have, matched
 // without regard to case (ADR 0002 section 6).
-var RequiredPlanSections = []string{"Context", "Approach", "Affected areas", "Out of scope", "Tasks", "Acceptance criteria"}
+var requiredPlanSections = []string{"Context", "Approach", "Affected areas", "Out of scope", "Tasks", "Acceptance criteria"}
 
 // Problem is something in a document that does not follow the data format.
 type Problem struct {
@@ -25,21 +25,30 @@ func (p Problem) String() string {
 
 var (
 	headingPattern   = regexp.MustCompile(`^##\s+(.*?)\s*$`)
-	criterionPattern = regexp.MustCompile(`^- AC-([1-9][0-9]*):(.*)$`)
+	criterionPattern = regexp.MustCompile(`^- AC-([1-9][0-9]*):(?: (.*))?$`)
+	listItemPattern  = regexp.MustCompile(`^(?:[-*+]|[0-9]+[.)])(?:\s|$)`)
 )
 
 // ValidatePlan checks plan.md against ADR 0002 section 6: every required
 // section is present, and the Acceptance criteria section holds at least one
 // criterion, each a top-level item "- AC-<n>: <text>" with a unique ID.
-// HTML comments are ignored.
+// HTML comments and fenced code blocks are ignored.
 func ValidatePlan(plan []byte) []Problem {
 	var problems []Problem
 	sections := map[string]bool{}
-	inCriteria, inComment := false, false
+	inCriteria, inComment, inFence := false, false, false
 	seen := map[string]int{} // criterion ID → line
 	for i, line := range strings.Split(strings.ReplaceAll(string(plan), "\r\n", "\n"), "\n") {
 		n := i + 1
-		if inComment || strings.HasPrefix(strings.TrimSpace(line), "<!--") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+			continue
+		}
+		if inFence {
+			continue
+		}
+		if inComment || strings.HasPrefix(trimmed, "<!--") {
 			inComment = !strings.Contains(line, "-->")
 			continue
 		}
@@ -49,25 +58,25 @@ func ValidatePlan(plan []byte) []Problem {
 			inCriteria = name == "acceptance criteria"
 			continue
 		}
-		if !inCriteria || !strings.HasPrefix(line, "- ") && line != "-" {
+		if !inCriteria || !listItemPattern.MatchString(line) {
 			continue
 		}
 		m := criterionPattern.FindStringSubmatch(line)
-		switch {
-		case m == nil:
+		if m == nil {
 			problems = append(problems, Problem{n, fmt.Sprintf("not an acceptance criterion: %q; write \"- AC-<n>: <text>\"", line)})
-		case strings.TrimSpace(m[2]) == "":
-			problems = append(problems, Problem{n, fmt.Sprintf("AC-%s has no text", m[1])})
-			seen["AC-"+m[1]] = n
-		default:
-			id := "AC-" + m[1]
-			if first, dup := seen[id]; dup {
-				problems = append(problems, Problem{n, fmt.Sprintf("%s is used more than once (first on line %d)", id, first)})
-			}
+			continue
+		}
+		id := "AC-" + m[1]
+		if first, dup := seen[id]; dup {
+			problems = append(problems, Problem{n, fmt.Sprintf("%s is used more than once (first on line %d)", id, first)})
+		} else {
 			seen[id] = n
 		}
+		if strings.TrimSpace(m[2]) == "" {
+			problems = append(problems, Problem{n, id + " has no text"})
+		}
 	}
-	for _, s := range RequiredPlanSections {
+	for _, s := range requiredPlanSections {
 		if !sections[strings.ToLower(s)] {
 			problems = append(problems, Problem{0, fmt.Sprintf("missing section \"## %s\"", s)})
 		}

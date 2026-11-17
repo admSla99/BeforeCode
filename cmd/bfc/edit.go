@@ -88,9 +88,7 @@ func runEdit(cmd *cobra.Command, query, doc string) error {
 		_, err := fmt.Fprintf(out, "no changes to %s of %s\n", doc, v.ShortID)
 		return err
 	}
-	keep := func(err error) error {
-		return fmt.Errorf("%w; nothing committed\nYour text is kept in %s", err, kept)
-	}
+	keep := func(err error) error { return textKept(err, "nothing committed", kept) }
 	if len(bytes.TrimSpace(edited)) == 0 {
 		return keep(fmt.Errorf("%s is empty", doc))
 	}
@@ -119,7 +117,7 @@ func runEdit(cmd *cobra.Command, query, doc string) error {
 	if doc != "plan.md" {
 		return nil
 	}
-	if len(v.Status.Approvers) > 0 {
+	if v.Status.State == core.StateApproved {
 		_, _ = fmt.Fprintf(out, "%s is back in-review: its approvals were for the previous version of plan.md\n", v.ShortID)
 	}
 	for _, p := range core.ValidatePlan(edited) {

@@ -80,3 +80,12 @@ func fileExists(path string) bool {
 	info, err := os.Stat(path)
 	return err == nil && !info.IsDir()
 }
+
+// textKept explains a failure after editing: what did not happen, and where
+// the user's text is, if it was edited.
+func textKept(err error, outcome, kept string) error {
+	if kept == "" {
+		return fmt.Errorf("%w; %s", err, outcome)
+	}
+	return fmt.Errorf("%w; %s\nYour text is kept in %s", err, outcome, kept)
+}

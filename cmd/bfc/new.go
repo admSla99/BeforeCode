@@ -72,12 +72,7 @@ func runNew(cmd *cobra.Command, title string, noEdit bool) error {
 		intent, kept = bytes.ReplaceAll(edited, []byte("\r\n"), []byte("\n")), path
 	}
 	// From here on, an error must not lose the user's edited text.
-	keep := func(err error) error {
-		if kept != "" {
-			return fmt.Errorf("%w; no plan created\nYour text is kept in %s", err, kept)
-		}
-		return fmt.Errorf("%w; no plan created", err)
-	}
+	keep := func(err error) error { return textKept(err, "no plan created", kept) }
 
 	existing, err := listPlanIDs(ctx, s)
 	if err != nil {
