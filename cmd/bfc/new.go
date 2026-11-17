@@ -16,7 +16,6 @@ import (
 
 	beforecode "github.com/admSla99/BeforeCode"
 	"github.com/admSla99/BeforeCode/internal/core"
-	"github.com/admSla99/BeforeCode/internal/store"
 )
 
 // intentTemplate is the path of the intent template, relative to the
@@ -45,7 +44,7 @@ The plan's Short ID and title are printed on the first line.`,
 
 func runNew(cmd *cobra.Command, title string, noEdit bool) error {
 	ctx := cmd.Context()
-	s, err := openPlans(ctx)
+	s, err := openPlans(cmd, forWriting)
 	if err != nil {
 		return err
 	}
@@ -80,7 +79,7 @@ func runNew(cmd *cobra.Command, title string, noEdit bool) error {
 		return fmt.Errorf("%w; no plan created", err)
 	}
 
-	existing, err := planIDs(cmd, s)
+	existing, err := listPlanIDs(ctx, s)
 	if err != nil {
 		return keep(err)
 	}
@@ -109,22 +108,4 @@ func readTemplate(root, rel string) ([]byte, error) {
 		return beforecode.Templates.ReadFile(rel)
 	}
 	return data, err
-}
-
-// planIDs returns the ULIDs of the plans in the plans ref.
-func planIDs(cmd *cobra.Command, s *store.Store) ([]ulid.ULID, error) {
-	names, err := s.List(cmd.Context(), core.PlansDir)
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var ids []ulid.ULID
-	for _, n := range names {
-		if id, err := ulid.ParseStrict(strings.TrimSuffix(n, "/")); err == nil {
-			ids = append(ids, id)
-		}
-	}
-	return ids, nil
 }

@@ -96,6 +96,30 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 4. **Grill**: chat with the AI over the plan; every answer is saved.
 5. **Build**: pick a harness, start an agent on a task, live output.
 
+### Reading plans from the command line
+
+`bfc list` prints one line per plan: Short ID, state, title, author email and last activity, newest activity first. Last activity is the commit time of the newest change to any file of the plan, so an edit of `plan.md` counts. `--state <state>` filters by derived state.
+
+`bfc list --json` is the stable shape for scripts and agents: an array, newest activity first, of
+
+```json
+{
+  "id": "01JD3K8Q2W5V7X9Y0Z1A2B3C4D",
+  "short_id": "bfc-5v7x",
+  "state": "in-review",
+  "title": "Payments via Stripe",
+  "labels": ["payments"],
+  "author": {"name": "Jana Nováková", "email": "jana@example.com"},
+  "last_activity": "2026-11-16T21:30:00Z",
+  "approvals": 1,
+  "required_approvals": 2
+}
+```
+
+`approvals` counts the valid Approvals of the open review round, and `required_approvals` is 0 outside a round. A plan without a valid `created` event has state `invalid`; one whose `intent.md` cannot be read has the title `(unreadable intent.md)`.
+
+`bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text.
+
 ### Plan check in GitHub Actions
 
 1. The pull request description carries the plan ID, for example `Plan: bfc-a1b2`. `bfc` or the agent adds it when opening the pull request.

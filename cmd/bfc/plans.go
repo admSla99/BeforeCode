@@ -1,12 +1,13 @@
 package main
 
 import (
-	"context"
 	"errors"
 	"fmt"
 	"os"
 	"strconv"
 	"strings"
+
+	"github.com/spf13/cobra"
 
 	"github.com/admSla99/BeforeCode/internal/core"
 	"github.com/admSla99/BeforeCode/internal/store"
@@ -15,10 +16,21 @@ import (
 // errNotInitialised tells the user how to get a plans ref.
 var errNotInitialised = errors.New("BeforeCode is not set up in this repository: run bfc init for a new project, or bfc bootstrap to join one that already uses BeforeCode")
 
-// openPlans opens the store of the repository around the working directory
-// for commands that write plans. It is the one place that checks that the
-// plans ref exists and has the format version this binary writes.
-func openPlans(ctx context.Context) (*store.Store, error) {
+// access says whether a command only reads plans or also writes them.
+type access int
+
+const (
+	forReading access = iota
+	forWriting
+)
+
+// openPlans opens the store of the repository around the working directory.
+// It is the one place that checks that the plans ref exists and has a
+// format version this binary can use: a writer refuses any other version, a
+// reader of a newer version warns and reads on a best-effort basis
+// (ADR 0002 section 2).
+func openPlans(cmd *cobra.Command, mode access) (*store.Store, error) {
+	ctx := cmd.Context()
 	wd, err := os.Getwd()
 	if err != nil {
 		return nil, err
@@ -40,6 +52,8 @@ func openPlans(ctx context.Context) (*store.Store, error) {
 	switch {
 	case err != nil:
 		return nil, fmt.Errorf("the plans ref has an unreadable format-version %q", data)
+	case v > core.FormatVersion && mode == forReading:
+		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the plans ref has format-version %d, newer than this bfc (%d); update bfc\n", v, core.FormatVersion)
 	case v > core.FormatVersion:
 		return nil, fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
 	case v != core.FormatVersion:

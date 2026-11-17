@@ -123,17 +123,3 @@ const (
 	StateClosed     State = "closed"
 	StateInvalid    State = "invalid"
 )
-
-// DeriveState computes the state of the plan with the given ID from its
-// Events, which must be sorted by ULID (ADR 0002 section 4).
-//
-// Only the created event is interpreted so far; the review lifecycle is
-// added with bfc submit, approve and request-changes (#14).
-func DeriveState(plan ulid.ULID, events []Event) State {
-	for _, e := range events {
-		if e.Type == Created && e.Plan == plan {
-			return StateDraft
-		}
-	}
-	return StateInvalid
-}

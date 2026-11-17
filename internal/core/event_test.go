@@ -70,8 +70,8 @@ func TestParseEventIgnoresUnknownFieldsButNeedsTheCommonOnes(t *testing.T) {
 func TestANewPlanIsADraft(t *testing.T) {
 	events := []core.Event{{ID: eventID, Type: core.Created, Plan: planID, Author: ada, At: at, ShortID: "bfc-5v7x"}}
 
-	if got := core.DeriveState(planID, events); got != core.StateDraft {
-		t.Errorf("DeriveState = %q, want %q", got, core.StateDraft)
+	if got := core.Derive(planID, events, "").State; got != core.StateDraft {
+		t.Errorf("Derive = %q, want %q", got, core.StateDraft)
 	}
 }
 
@@ -81,8 +81,8 @@ func TestAPlanWithoutAValidCreatedEventIsInvalid(t *testing.T) {
 		"no events":  nil,
 		"wrong plan": {{ID: eventID, Type: core.Created, Plan: other, Author: ada, At: at, ShortID: "bfc-0000"}},
 	} {
-		if got := core.DeriveState(planID, events); got != core.StateInvalid {
-			t.Errorf("%s: DeriveState = %q, want %q", name, got, core.StateInvalid)
+		if got := core.Derive(planID, events, "").State; got != core.StateInvalid {
+			t.Errorf("%s: Derive = %q, want %q", name, got, core.StateInvalid)
 		}
 	}
 }
