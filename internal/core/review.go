@@ -99,6 +99,19 @@ func CheckWithdraw(st Status, actor Person) error {
 	return nil
 }
 
+// CheckClose reports why actor cannot close the plan with Status st, or nil
+// if they can. Anyone may close a plan in any state (ADR 0002 section 4);
+// closed is final.
+func CheckClose(st Status, _ Person) error {
+	switch st.State {
+	case StateClosed:
+		return stateError(st, "closed is final")
+	case StateInvalid:
+		return stateError(st, "it has no valid created event to close; see bfc doctor")
+	}
+	return nil
+}
+
 // Message is one post in the discussion of a Plan, stored as
 // plans/<plan ULID>/messages/<message ULID>.md (ADR 0002 section 7). Only
 // the fields bfc writes so far are here.

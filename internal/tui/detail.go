@@ -27,13 +27,16 @@ type PlanDetailScreen struct {
 	width   int
 	height  int
 
-	detail   PlanDetail
-	loaded   bool
-	loadErr  error
-	doc      Doc
-	status   string // the last action's result or refusal
-	failed   bool   // status is a refusal or error
-	typing   bool   // the reason for request changes is being typed
+	detail  PlanDetail
+	loaded  bool
+	loadErr error
+	doc     Doc
+	status  string // the last action's result or refusal
+	failed  bool   // status is a refusal or error
+	// typing is the action whose reason is being typed on the line above
+	// the status bar, "" when none: request changes, or close, where the
+	// line is also the confirmation.
+	typing   ReviewAction
 	reason   string
 	syncText string // set by the app before each View
 	syncHint string // set by the app: why sync is offline or in conflict
@@ -110,17 +113,18 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	if msg.String() == "ctrl+c" {
 		return m, tea.Quit
 	}
-	if m.typing {
+	if m.typing != "" {
 		done, cancelled := editLine(&m.reason, msg)
 		if !done {
 			return m, nil
 		}
-		reason := strings.TrimSpace(m.reason)
-		m.typing, m.reason = false, ""
-		if cancelled || reason == "" {
+		a, reason := m.typing, strings.TrimSpace(m.reason)
+		m.typing, m.reason = "", ""
+		// Request changes needs a reason; for close it is optional.
+		if cancelled || reason == "" && a == ActionRequestChanges {
 			return m, nil
 		}
-		return m, m.review(ActionRequestChanges, reason)
+		return m, m.review(a, reason)
 	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
@@ -141,8 +145,8 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if !key.Matches(msg, m.keys.Review[a]) {
 			continue
 		}
-		if a == ActionRequestChanges {
-			m.typing, m.status = true, ""
+		if a == ActionRequestChanges || a == ActionClose {
+			m.typing, m.status = a, ""
 			return m, nil
 		}
 		return m, m.review(a, "")
@@ -162,8 +166,11 @@ func (m PlanDetailScreen) review(a ReviewAction, reason string) tea.Cmd {
 // footer returns the lines below the document.
 func (m PlanDetailScreen) footer() []string {
 	var lines []string
-	if m.typing {
+	switch m.typing {
+	case ActionRequestChanges:
 		lines = append(lines, "Reason: "+m.reason+"▌  "+styleDim.Render("(enter: request changes, esc: cancel)"))
+	case ActionClose:
+		lines = append(lines, "Close "+m.shortID+"? Reason (optional): "+m.reason+"▌  "+styleDim.Render("(enter: close, esc: cancel)"))
 	}
 	if m.status != "" {
 		style := styleDim

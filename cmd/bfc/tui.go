@@ -167,6 +167,7 @@ var reviewEvents = map[tui.ReviewAction]core.EventType{
 	tui.ActionSubmit:         core.Submitted,
 	tui.ActionApprove:        core.Approved,
 	tui.ActionRequestChanges: core.ChangesRequested,
+	tui.ActionClose:          core.Closed,
 }
 
 // Detail returns one plan with the review actions the current user may
@@ -197,6 +198,9 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 	}
 	if core.CheckRequestChanges(v.Status, actor, "a reason") == nil {
 		d.Actions = append(d.Actions, tui.ActionRequestChanges)
+	}
+	if core.CheckClose(v.Status, actor) == nil {
+		d.Actions = append(d.Actions, tui.ActionClose)
 	}
 	return d, nil
 }

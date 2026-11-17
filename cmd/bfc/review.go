@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -77,6 +78,25 @@ ends: its Approvals no longer count, and the next bfc submit needs new ones.`,
 	}
 }
 
+func newCloseCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "close <id> [-m <reason>]",
+		Short: "Close a plan for good",
+		Long: `Close a plan that will not be done, or that was finished outside BeforeCode.
+Anyone may close a plan, in any state. Closed is final: the plan can no
+longer be edited, submitted or reviewed, and bfc list hides it unless asked
+with --state closed or --all. The reason, if given, is stored as a Message
+of the plan.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReview(cmd, args[0], core.Closed, reason)
+		},
+	}
+	cmd.Flags().StringVarP(&reason, "message", "m", "", "the reason, stored as a Message of the plan")
+	return cmd
+}
+
 // reviewAction is one review command: the event type it writes, how it is
 // checked, and how its result is reported.
 type reviewAction struct {
@@ -118,6 +138,11 @@ var reviewActions = map[core.EventType]reviewAction{
 		command: "withdraw",
 		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
 		detail:  func(core.Status) string { return "withdrawn" },
+	},
+	core.Closed: {
+		command: "close",
+		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckClose(v.Status, actor) },
+		detail:  func(core.Status) string { return "final" },
 	},
 }
 
@@ -182,7 +207,9 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	newID := func() ulid.ULID { return ulid.MustNew(ulid.Timestamp(now), entropy) }
 	dir := core.PlanDir(v.ID)
 	files := map[string][]byte{}
-	if typ == core.ChangesRequested {
+	// The reason is a Message: always for changes-requested, and for
+	// closed when one is given.
+	if typ == core.ChangesRequested || typ == core.Closed && strings.TrimSpace(reason) != "" {
 		msg := newID()
 		files[dir+"/messages/"+msg.String()+".md"] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
 		e.Message = msg.String()

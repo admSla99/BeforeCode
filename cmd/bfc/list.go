@@ -25,17 +25,21 @@ const timeLayout = "2006-01-02 15:04"
 
 func newListCmd() *cobra.Command {
 	var state string
-	var asJSON bool
+	var all, asJSON bool
 	cmd := &cobra.Command{
 		Use:   "list",
 		Short: "List plans, newest activity first",
 		Long: `List plans, one per line: Short ID, state, title, author and last activity,
 newest activity first. Last activity is the time of the newest change to any
-file of the plan.`,
+file of the plan. Closed plans are left out unless asked for with --state
+closed or --all.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state != "" && !slices.Contains(listedStates, core.State(state)) {
 				return fmt.Errorf("unknown state %q; use one of %s", state, joinStates(listedStates))
+			}
+			if all && state != "" {
+				return fmt.Errorf("--all and --state cannot be used together")
 			}
 			s, err := openPlans(cmd, forReading)
 			if err != nil {
@@ -45,8 +49,11 @@ file of the plan.`,
 			if err != nil {
 				return err
 			}
-			if state != "" {
+			switch {
+			case state != "":
 				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State != core.State(state) })
+			case !all:
+				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State == core.StateClosed })
 			}
 			if asJSON {
 				return printJSON(cmd, views)
@@ -59,6 +66,7 @@ file of the plan.`,
 		},
 	}
 	cmd.Flags().StringVar(&state, "state", "", "show only plans in this state ("+joinStates(listedStates)+")")
+	cmd.Flags().BoolVar(&all, "all", false, "also show closed plans")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
 	return cmd
 }

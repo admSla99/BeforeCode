@@ -116,3 +116,17 @@ func TestCheckWithdraw(t *testing.T) {
 		wantErr(t, CheckWithdraw(status(st), ada), "bfc-abcd is "+string(st))
 	}
 }
+
+// #49 AC-1, AC-3: anyone closes a plan in any lifecycle state; a closed or
+// invalid plan cannot be closed.
+func TestCheckClose(t *testing.T) {
+	for _, st := range []State{StateDraft, StateInReview, StateApproved, StateInProgress, StateDone} {
+		for _, who := range []Person{ada, jana} {
+			if err := CheckClose(status(st), who); err != nil {
+				t.Errorf("%s closes in %s: %v", who.Email, st, err)
+			}
+		}
+	}
+	wantErr(t, CheckClose(status(StateClosed), jana), "bfc-abcd is closed")
+	wantErr(t, CheckClose(status(StateInvalid), jana), "bfc-abcd is invalid", "bfc doctor")
+}
