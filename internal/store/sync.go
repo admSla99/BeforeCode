@@ -171,7 +171,7 @@ func (s *Store) ReadRemote(ctx context.Context, path string) ([]byte, error) {
 	if theirs == "" {
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, RemoteRef)
 	}
-	return s.readAt(ctx, theirs, path)
+	return s.ReadAt(ctx, theirs, path)
 }
 
 // Integrate brings RemoteRef, as the last Fetch left it, into the local

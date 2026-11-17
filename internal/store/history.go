@@ -24,23 +24,25 @@ func (s *Store) ObjectID(ctx context.Context, path string) (string, error) {
 	return e.id, nil
 }
 
-// LastChanged returns, for each entry directly inside dir, the commit time
-// of the newest commit on the plans ref that changed anything beneath it.
-// It reads the history once, so it costs one git call for all entries.
-func (s *Store) LastChanged(ctx context.Context, dir string) (map[string]time.Time, error) {
-	tip, err := s.tip(ctx)
-	if err != nil {
-		return nil, err
-	}
+// LastChanged returns, for each entry directly inside dir, the newest
+// commit time among the commits reachable from commit that changed
+// anything beneath it. With since set, commits reachable from since are left
+// out, so a caller that knew the answer at since only reads what is new. It
+// reads the history once, so it costs one git call for all entries.
+func (s *Store) LastChanged(ctx context.Context, since, commit, dir string) (map[string]time.Time, error) {
 	dir = strings.TrimSuffix(dir, "/")
+	rev := commit
+	if since != "" {
+		rev = since + ".." + commit
+	}
 	// Each commit prints "\x00<unix time>" followed by the paths it changed.
-	out, err := s.git(ctx, nil, nil, "log", "--format=%x00%ct", "--name-only", "--no-renames", tip, "--", dir)
+	out, err := s.git(ctx, nil, nil, "log", "--format=%x00%ct", "--name-only", "--no-renames", rev, "--", dir)
 	if err != nil {
 		return nil, err
 	}
 	changed := map[string]time.Time{}
-	for _, commit := range strings.Split(string(out), "\x00")[1:] {
-		lines := strings.Split(strings.TrimSpace(commit), "\n")
+	for _, c := range strings.Split(string(out), "\x00")[1:] {
+		lines := strings.Split(strings.TrimSpace(c), "\n")
 		secs, err := strconv.ParseInt(lines[0], 10, 64)
 		if err != nil {
 			continue
@@ -51,8 +53,10 @@ func (s *Store) LastChanged(ctx context.Context, dir string) (map[string]time.Ti
 			if !ok {
 				continue
 			}
+			// The newest time, not the first one listed: commit times
+			// from other machines need not follow the history.
 			child, _, _ := strings.Cut(rest, "/")
-			if _, seen := changed[child]; !seen { // the log is newest first
+			if when.After(changed[child]) {
 				changed[child] = when
 			}
 		}

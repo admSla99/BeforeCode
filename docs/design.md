@@ -118,6 +118,10 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 
 `approvals` counts the valid Approvals of the open review round, and `required_approvals` is 0 outside a round. An invalid plan (no valid `created` event) is listed with state `invalid` and a Short ID computed from its ULID; a plan whose `intent.md` cannot be read has the title `(unreadable intent.md)`.
 
+`bfc search <text>` finds the plans whose title, `intent.md` or `plan.md` contain every word of the text, ignoring case and diacritics, best match first. Front matter and HTML comments (the templates' hints) are not searched. Each plan prints two lines: Short ID, state and title, then an indented snippet with the matches in `[brackets]`. Without a match it prints `no plans match "<text>"` to standard error and exits 0.
+
+All of these read from the index (section 4), which brings itself up to date with the plans ref first.
+
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text.
 
 ### Editing plans
@@ -138,6 +142,8 @@ Editing `plan.md` writes no event. Approvals name the `plan_blob` they approve (
 ## 4. Storage: Git is the database
 
 The source of truth is plain text files in Git. SQLite is only a local index for search and the Inbox; it can be deleted and rebuilt from Git at any time.
+
+The index is `.git/beforecode/index.db`. It records the plans ref commit it was built from; when the ref has moved it reads again only the plans whose directory changed. A missing, corrupt or outdated database is rebuilt without a message. Details in `docs/adr/0005-index-cache.md`.
 
 ### Layout
 
