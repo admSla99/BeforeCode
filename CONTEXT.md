@@ -10,7 +10,7 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Plan document** | `plan.md`. Written for agents after grilling: context, approach, affected areas, out of scope, tasks, acceptance criteria. This is what gets approved. |
 | **Acceptance criterion** | A verifiable statement in `plan.md` with a stable ID (`AC-1`, `AC-2`, …). The plan check reports on each one. |
 | **Event** | An append-only record of a state change (`created`, `submitted`, `withdrawn`, `approved`, `changes-requested`, `closed`; later `claimed`, `checked`, `done`). Plan state is derived from events. |
-| **Plan state** | `draft` → `in-review` → `approved` → `in-progress` → `done`, or `closed` from any state. Derived, never stored. |
+| **Plan state** | `draft` → `in-review` → `approved` → `in-progress` → `done`, or `closed` from any state. Derived, never stored. A Plan without a valid `created` Event has no state: it is an **invalid plan**, reported by `bfc doctor`. |
 | **Message** | One post in the discussion of a Plan, by a person or the AI. Messages are never edited. A Message can reply to another Message and can refer to a part of the Plan (a section or an acceptance criterion). |
 | **Question** | A Message addressed to a person or to the AI. It is open until it is answered. An open question blocks approval. |
 | **Thread** | A Message that replies to nothing, together with all replies to it. People and the AI both post. |

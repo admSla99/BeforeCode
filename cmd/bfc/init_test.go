@@ -58,6 +58,19 @@ func gitIn(t *testing.T, dir string, args ...string) string {
 	return out
 }
 
+// gitInStdin runs git in dir with stdin and returns its trimmed output.
+func gitInStdin(t *testing.T, dir, stdin string, args ...string) string {
+	t.Helper()
+	cmd := exec.Command("git", args...)
+	cmd.Dir = dir
+	cmd.Stdin = strings.NewReader(stdin)
+	out, err := cmd.Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
 func gitTry(dir string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
