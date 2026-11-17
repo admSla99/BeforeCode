@@ -114,7 +114,7 @@ The source of truth is plain text files in Git. SQLite is only a local index for
 ```
 # On normal branches (changed through pull requests)
 .beforecode/
-  config.yaml                 # approval policy, harnesses, sync.remote
+  config.yaml                 # approval policy, sync (ADR 0003); harnesses in phase 2
   skills/
     grill-intent/SKILL.md
     grill-architecture/SKILL.md
@@ -175,7 +175,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 | Language | Go | One static binary for macOS, Linux and Windows; simple distribution; low barrier for contributors |
 | TUI | Bubble Tea, Bubbles, Lip Gloss | Elm architecture, testable, ready-made components |
 | Markdown in the TUI | Glamour | Render the plan in the terminal |
-| Forms | Huh | `bfc init` and wizards |
+| Forms | Huh | Interactive wizards when they come; `bfc init` takes flags only (issue #8, ADR 0003) |
 | Plan editing | `$EDITOR` | Developers write in their own editor; the TUI textarea is for short messages |
 | Git | System `git` through a subprocess | Respects SSH keys, credential helpers, commit signing and user hooks |
 | Data format | Markdown + YAML front matter, ULID IDs | Readable by people and agents; ULIDs sort by time |
@@ -246,7 +246,9 @@ type Agent interface {
 ### Package layout
 
 ```
+templates.go      default templates embedded from .beforecode/templates (ADR 0003)
 cmd/bfc/          entry point
+internal/config/  .beforecode/config.yaml parsing and validation (ADR 0003, no I/O)
 internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref

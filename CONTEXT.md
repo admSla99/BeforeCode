@@ -17,6 +17,8 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Grill** | An interactive session where the AI challenges the developer one question at a time, driven by a skill. Answers are written into the plan; unanswered ones become Questions. |
 | **Skill** | A `SKILL.md` file in `.beforecode/skills/` that drives a grill, a review or a plan check. Versioned on normal branches. |
 | **Approval** | An `approved` event by someone other than the plan author. It approves one exact version of the Plan document; any later edit to `plan.md` makes it stale and the plan returns to `in-review`. Policy is in `.beforecode/config.yaml`; default is one approver. An agent never approves. |
+| **Approval policy** | How many Approvals a Plan needs, set in `.beforecode/config.yaml`. The number in force when the Plan is submitted is the one that counts. |
+| **Local mode** | A repository where the Plans ref is never pushed, for solo use. Set at `bfc init --local`. |
 | **Task** | A unit of implementation work listed in `plan.md`, taken by an agent after approval. |
 | **Claim** | An event that assigns a task to an agent or person. The first claim to reach the remote wins. |
 | **Handoff** | A note an agent leaves after working on a task. |

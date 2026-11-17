@@ -33,8 +33,9 @@ type Store struct {
 	dir string
 }
 
-// Open returns a Store for the git repository at dir. It fails if the system
-// git is missing or older than MinGitVersion.
+// Open returns a Store for the git repository whose working tree contains
+// dir. It fails if dir is not inside a git working tree, or if the system git
+// is missing or older than MinGitVersion.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir}
 	found, err := s.gitLine(context.Background(), nil, nil, "version")
@@ -44,6 +45,11 @@ func Open(dir string) (*Store, error) {
 	if !atLeast(found, MinGitVersion) {
 		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer, found %q", MinGitVersion, found)
 	}
+	root, err := s.gitLine(context.Background(), nil, nil, "rev-parse", "--show-toplevel")
+	if err != nil {
+		return nil, fmt.Errorf("store: %s is not inside a git working tree", dir)
+	}
+	s.dir = root
 	return s, nil
 }
 
