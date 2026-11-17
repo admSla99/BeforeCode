@@ -18,6 +18,8 @@ Sources are git's own release notes (`Documentation/RelNotes/`), man pages and s
 | `update-ref <ref> <new> <old>` with 40 `0`s or an empty string as `<old>`, meaning "the ref must not exist yet" | 1.8.0 or earlier | https://github.com/git/git/blob/v1.8.0/Documentation/git-update-ref.txt (lines 21-25) |
 | `cat-file -p` / `cat-file <type>`, `ls-tree` | 1.8.0 or earlier | https://github.com/git/git/blob/v1.8.0/Documentation/git-cat-file.txt |
 | `rev-parse --verify --quiet <ref>^{commit}` | 1.8.0 or earlier | https://github.com/git/git/blob/v1.8.0/Documentation/git-rev-parse.txt, https://github.com/git/git/blob/v1.8.0/Documentation/revisions.txt (line 112) |
+| `rev-parse --path-format=absolute --git-common-dir` (index location, ADR 0005) | 2.31.0 | https://github.com/git/git/blob/master/Documentation/RelNotes/2.31.0.adoc |
+| `merge-base --is-ancestor` (index update, ADR 0005) | 1.8.0 | https://github.com/git/git/blob/v1.8.0/Documentation/git-merge-base.txt |
 
 "1.8.0 or earlier" means the feature is documented at the v1.8.0 tag. We did not look for the exact version that added it, because it does not affect the minimum.
 

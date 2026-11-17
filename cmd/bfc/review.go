@@ -15,6 +15,7 @@ import (
 
 	"github.com/admSla99/BeforeCode/internal/config"
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
@@ -83,7 +84,7 @@ type reviewAction struct {
 	// planBlob says whether the event records the plan_blob of plan.md
 	// (ADR 0002 section 4).
 	planBlob bool
-	check    func(v planView, actor core.Person, reason string) error
+	check    func(v index.Plan, actor core.Person, reason string) error
 	// detail describes the plan after the event; nil prints the
 	// Approvals.
 	detail func(st core.Status) string
@@ -92,7 +93,9 @@ type reviewAction struct {
 var reviewActions = map[core.EventType]reviewAction{
 	core.Submitted: {
 		command: "submit", planBlob: true,
-		check: func(v planView, actor core.Person, _ string) error { return core.CheckSubmit(v.Status, actor, v.Plan) },
+		check: func(v index.Plan, actor core.Person, _ string) error {
+			return core.CheckSubmit(v.Status, actor, v.Plan)
+		},
 		detail: func(st core.Status) string {
 			if st.RequiredApprovals == 1 {
 				return "needs 1 approval"
@@ -102,18 +105,18 @@ var reviewActions = map[core.EventType]reviewAction{
 	},
 	core.Approved: {
 		command: "approve", planBlob: true,
-		check: func(v planView, actor core.Person, _ string) error { return core.CheckApprove(v.Status, actor) },
+		check: func(v index.Plan, actor core.Person, _ string) error { return core.CheckApprove(v.Status, actor) },
 	},
 	core.ChangesRequested: {
 		command: "request-changes", planBlob: true,
-		check: func(v planView, actor core.Person, reason string) error {
+		check: func(v index.Plan, actor core.Person, reason string) error {
 			return core.CheckRequestChanges(v.Status, actor, reason)
 		},
 		detail: func(core.Status) string { return "changes requested" },
 	},
 	core.Withdrawn: {
 		command: "withdraw",
-		check:   func(v planView, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
+		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
 		detail:  func(core.Status) string { return "withdrawn" },
 	},
 }
@@ -142,36 +145,36 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 // writes it (with a Message for the reason of changes-requested) as one
 // commit, and returns the plan afterwards. It prints nothing, so the CLI
 // and the TUI share it.
-func writeReview(ctx context.Context, s *store.Store, query string, typ core.EventType, reason string) (planView, error) {
+func writeReview(ctx context.Context, s *store.Store, query string, typ core.EventType, reason string) (index.Plan, error) {
 	action := reviewActions[typ]
 	v, err := resolvePlan(ctx, s, query)
 	if err != nil {
-		return planView{}, err
+		return index.Plan{}, err
 	}
 	actor, err := currentUser(ctx, s)
 	if err != nil {
-		return planView{}, err
+		return index.Plan{}, err
 	}
 	if err := action.check(v, actor, reason); err != nil {
-		return planView{}, err
+		return index.Plan{}, err
 	}
 
 	now := time.Now()
 	e := core.Event{Type: typ, Plan: v.ID, Author: actor, At: now}
 	if typ == core.Submitted {
 		if e.RequiredApprovals, err = requiredApprovals(s); err != nil {
-			return planView{}, err
+			return index.Plan{}, err
 		}
 	}
 	if action.planBlob {
 		e.PlanBlob, err = s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
 		switch {
 		case errors.Is(err, store.ErrNotFound) && typ == core.Approved:
-			return planView{}, fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
+			return index.Plan{}, fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
 		case errors.Is(err, store.ErrNotFound):
 			e.PlanBlob = ""
 		case err != nil:
-			return planView{}, err
+			return index.Plan{}, err
 		}
 	}
 
@@ -187,7 +190,7 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	e.ID = newID()
 	files[dir+"/events/"+e.ID.String()+".yaml"] = core.EncodeEvent(e)
 	if _, err := s.Write(ctx, "bfc "+action.command+" "+v.ShortID, files); err != nil {
-		return planView{}, err
+		return index.Plan{}, err
 	}
 
 	after, err := loadPlan(ctx, s, v.ID)

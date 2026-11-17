@@ -86,6 +86,15 @@ func ParseIntent(data []byte) (Intent, error) {
 	return in, nil
 }
 
+// IntentBody returns the text of intent.md after its front matter, or all
+// of it when there is no front matter.
+func IntentBody(data []byte) []byte {
+	if _, body, ok := splitFrontMatter(data); ok {
+		return body
+	}
+	return data
+}
+
 // FillIntentTemplate returns the intent.md template with its title set.
 // The rest of the template is kept as it is.
 func FillIntentTemplate(template []byte, title string) []byte {

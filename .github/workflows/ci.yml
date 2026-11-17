@@ -28,6 +28,10 @@ jobs:
       # Storage tests shell out to the system git binary.
       - run: git --version
       - run: go build ./...
+      # The SQLite driver is pure Go; the binary must build without a C toolchain.
+      - run: go build ./...
+        env:
+          CGO_ENABLED: "0"
       - run: go test -race ./...
 
   test-windows:

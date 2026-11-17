@@ -30,5 +30,6 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Sync** | Pull, then push of the Plans ref. Pull fetches the remote's Plans ref and fast-forwards or merges it into the local one; push sends the local one, merging and retrying when someone pushed first. Never forced. |
 | **Conflict** | A file that the local and the remote Plans ref changed differently, so they do not merge on their own. Only `intent.md` and `plan.md` can conflict; nothing is committed until one side is kept with `--keep local` or `--keep remote`. |
 | **Plans ref** | The hidden git ref `refs/beforecode/plans` that stores all plans. Not a branch, not a tag. |
+| **Index** | The local SQLite cache of the Plans ref in `.git/beforecode/index.db`, used to list and search plans. Never a source of truth: deleting it loses nothing. |
 | **Harness** | An agent runtime such as Claude Code or Codex. |
 | **Agent adapter** | The Go implementation of the `Agent` interface for one harness. |
