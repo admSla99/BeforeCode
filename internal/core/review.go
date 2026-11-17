@@ -19,6 +19,12 @@ func stateError(st Status, what string) error {
 	return fmt.Errorf("%s is %s; %s", st.ShortID, st.State, what)
 }
 
+// inReviewRound reports whether the plan has an open review round, which
+// changes-requested and withdrawn end.
+func inReviewRound(st Status) bool {
+	return st.State == StateInReview || st.State == StateApproved
+}
+
 func samePerson(a, b Person) bool {
 	return strings.EqualFold(a.Email, b.Email)
 }
@@ -69,9 +75,7 @@ func CheckApprove(st Status, actor Person) error {
 // CheckRequestChanges reports why actor cannot request changes to the plan
 // with Status st for the given reason, or nil if they can.
 func CheckRequestChanges(st Status, actor Person, reason string) error {
-	switch st.State {
-	case StateInReview, StateApproved:
-	default:
+	if !inReviewRound(st) {
 		return stateError(st, "changes can be requested only for a plan in review or approved")
 	}
 	if samePerson(actor, st.Author) {
@@ -79,6 +83,18 @@ func CheckRequestChanges(st Status, actor Person, reason string) error {
 	}
 	if strings.TrimSpace(reason) == "" {
 		return errors.New("give the reason for the changes")
+	}
+	return nil
+}
+
+// CheckWithdraw reports why actor cannot withdraw the plan with Status st
+// from review, or nil if they can.
+func CheckWithdraw(st Status, actor Person) error {
+	if !inReviewRound(st) {
+		return stateError(st, "only a plan in review or approved can be withdrawn")
+	}
+	if !samePerson(actor, st.Author) {
+		return fmt.Errorf("only the plan author (%s) can withdraw %s; to send it back use bfc request-changes", st.Author.Email, st.ShortID)
 	}
 	return nil
 }

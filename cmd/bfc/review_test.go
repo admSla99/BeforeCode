@@ -247,3 +247,100 @@ func TestSubmitWithoutAConfigFileNeedsOneApproval(t *testing.T) {
 		t.Errorf("required approvals = %d, want 1", n)
 	}
 }
+
+// AC-1 and AC-4: withdrawing ends the round; a new submit needs new
+// Approvals.
+func TestWithdrawReturnsToDraftAndEndsTheRound(t *testing.T) {
+	dir, short, id := draftWithPlan(t)
+	mustBfc(t, dir, "submit", short)
+	as(t, dir, janaP)
+	mustBfc(t, dir, "approve", short)
+
+	as(t, dir, adaP)
+	out := mustBfc(t, dir, "withdraw", short)
+	if !strings.Contains(out, short+"  draft (withdrawn)") {
+		t.Errorf("withdraw: %s", out)
+	}
+	if e := last(t, dir, id); e.Type != core.Withdrawn || e.Author.Email != adaP.Email || e.PlanBlob != "" {
+		t.Errorf("event = %+v", e)
+	}
+	if got := state(t, dir, short); got != "draft" {
+		t.Errorf("state = %s", got)
+	}
+
+	// plan.md is unchanged, yet jana's Approval from the ended round does
+	// not carry over.
+	out = mustBfc(t, dir, "submit", short)
+	if !strings.Contains(out, short+"  in-review") {
+		t.Errorf("resubmit: %s", out)
+	}
+	as(t, dir, janaP)
+	if out := mustBfc(t, dir, "approve", short); !strings.Contains(out, "approved (1 of 1") {
+		t.Errorf("approve in the new round: %s", out)
+	}
+}
+
+func TestWithdrawFromInReview(t *testing.T) {
+	dir, short, _ := draftWithPlan(t)
+	mustBfc(t, dir, "submit", short)
+	if out := mustBfc(t, dir, "withdraw", short); !strings.Contains(out, "draft") {
+		t.Errorf("withdraw: %s", out)
+	}
+}
+
+// AC-2 and AC-3
+func TestWithdrawIsForTheAuthorAndOnlyInReviewOrApproved(t *testing.T) {
+	dir, short, _ := draftWithPlan(t)
+	if out, err := bfcIn(t, dir, "withdraw", short); err == nil || !strings.Contains(out, short+" is draft") {
+		t.Errorf("withdraw a draft: %v\n%s", err, out)
+	}
+	mustBfc(t, dir, "submit", short)
+	before := planCommits(t, dir)
+	as(t, dir, janaP)
+	if out, err := bfcIn(t, dir, "withdraw", short); err == nil || !strings.Contains(out, "only the plan author") {
+		t.Errorf("withdraw by jana: %v\n%s", err, out)
+	}
+	if planCommits(t, dir) != before {
+		t.Error("a refused withdraw wrote to the plans ref")
+	}
+}
+
+// AC-5: an Approval written concurrently, after the withdrawal in ULID
+// order, is skipped.
+func TestAConcurrentApprovalAfterWithdrawIsSkipped(t *testing.T) {
+	dir, short, id := draftWithPlan(t)
+	mustBfc(t, dir, "submit", short)
+	mustBfc(t, dir, "withdraw", short)
+	// jana approved the version she saw before the withdrawal reached her.
+	addEvent(t, dir, id, core.Event{Type: core.Approved, Author: janaP, PlanBlob: planBlob(t, dir, id)})
+	if got := state(t, dir, short); got != "draft" {
+		t.Errorf("state = %s, want draft", got)
+	}
+	mustBfc(t, dir, "submit", short)
+	if got := state(t, dir, short); got != "in-review" {
+		t.Errorf("state after resubmit = %s, want in-review (the skipped Approval must not count)", got)
+	}
+}
+
+// Each review command names itself in the commit message on the plans ref.
+func TestReviewCommitsAreNamedAfterTheCommand(t *testing.T) {
+	dir, short, _ := draftWithPlan(t)
+	subject := func() string { return gitIn(t, dir, "log", "-1", "--format=%s", plansRef) }
+	steps := []struct {
+		who  core.Person
+		args []string
+	}{
+		{adaP, []string{"submit", short}},
+		{janaP, []string{"approve", short}},
+		{benP, []string{"request-changes", short, "-m", "x"}},
+		{adaP, []string{"submit", short}},
+		{adaP, []string{"withdraw", short}},
+	}
+	for _, step := range steps {
+		as(t, dir, step.who)
+		mustBfc(t, dir, step.args...)
+		if got, want := subject(), "bfc "+step.args[0]+" "+short; got != want {
+			t.Errorf("commit message = %q, want %q", got, want)
+		}
+	}
+}

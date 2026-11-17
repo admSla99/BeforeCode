@@ -104,3 +104,15 @@ func TestReviewEventsDriveTheState(t *testing.T) {
 		t.Errorf("after changes requested: %s", st.State)
 	}
 }
+
+func TestCheckWithdraw(t *testing.T) {
+	for _, st := range []State{StateInReview, StateApproved} {
+		if err := CheckWithdraw(status(st), Person{Email: "ADA@example.com"}); err != nil {
+			t.Errorf("withdraw in %s: %v", st, err)
+		}
+	}
+	wantErr(t, CheckWithdraw(status(StateInReview), jana), "only the plan author", "ada@example.com", "request-changes")
+	for _, st := range []State{StateDraft, StateClosed, StateInvalid} {
+		wantErr(t, CheckWithdraw(status(st), ada), "bfc-abcd is "+string(st))
+	}
+}
