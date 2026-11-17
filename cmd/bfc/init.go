@@ -12,11 +12,9 @@ import (
 
 	beforecode "github.com/admSla99/BeforeCode"
 	"github.com/admSla99/BeforeCode/internal/config"
+	"github.com/admSla99/BeforeCode/internal/core"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
-
-// formatVersion is the content of the format-version file (ADR 0002).
-const formatVersion = "1\n"
 
 func newInitCmd() *cobra.Command {
 	var local bool
@@ -123,7 +121,7 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string, remo
 	if initialised {
 		report(out, "kept", store.Ref)
 	} else {
-		if _, err := s.Write(ctx, "bfc init", map[string][]byte{"format-version": []byte(formatVersion)}); err != nil {
+		if _, err := s.Write(ctx, "bfc init", map[string][]byte{"format-version": fmt.Appendf(nil, "%d\n", core.FormatVersion)}); err != nil {
 			return err
 		}
 		report(out, "created", store.Ref)
