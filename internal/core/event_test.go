@@ -1,6 +1,7 @@
 package core_test
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -83,6 +84,61 @@ func TestAPlanWithoutAValidCreatedEventIsInvalid(t *testing.T) {
 	} {
 		if got := core.Derive(planID, events, "").State; got != core.StateInvalid {
 			t.Errorf("%s: Derive = %q, want %q", name, got, core.StateInvalid)
+		}
+	}
+}
+
+// bfc doctor validates every event file against the data format (ADR 0002
+// sections 1, 3 and 4).
+func TestValidateEventFollowsTheDataFormat(t *testing.T) {
+	const name = "01JD3K8Q2X0000000000000000.yaml"
+	const common = "plan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T21:30:00Z\n"
+	const blob = "plan_blob: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad\n"
+	const message = "message: 01JD3K8Q2Y0000000000000000\n"
+	valid := map[string]string{
+		"created":                    "type: created\n" + common + "short_id: bfc-5v7x\n",
+		"created, longer short ID":   "type: created\n" + common + "short_id: bfc-5v7x9y\n",
+		"submitted":                  "type: submitted\n" + common + blob + "required_approvals: 2\n",
+		"submitted without a count":  "type: submitted\n" + common + blob,
+		"withdrawn":                  "type: withdrawn\n" + common,
+		"approved":                   "type: approved\n" + common + blob,
+		"approved, SHA-256 blob":     "type: approved\n" + common + "plan_blob: " + strings.Repeat("ab", 32) + "\n",
+		"changes-requested":          "type: changes-requested\n" + common + blob + message,
+		"closed":                     "type: closed\n" + common,
+		"closed with a message":      "type: closed\n" + common + message,
+		"unknown fields are ignored": "type: withdrawn\n" + common + "future: x\n",
+	}
+	for what, data := range valid {
+		if err := core.ValidateEvent(planID, name, []byte(data)); err != nil {
+			t.Errorf("%s: %v", what, err)
+		}
+	}
+
+	invalid := []struct{ what, name, data, want string }{
+		{"name not a ULID", "nope.yaml", "type: withdrawn\n" + common, "file name"},
+		{"name in lower case", "01jd3k8q2x0000000000000000.yaml", "type: withdrawn\n" + common, "file name"},
+		{"name without .yaml", "01JD3K8Q2X0000000000000000.yml", "type: withdrawn\n" + common, "file name"},
+		{"not YAML", name, "type: [", "event"},
+		{"no author email", name, "type: withdrawn\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A}\nat: 2026-11-16T21:30:00Z\n", "author.email"},
+		{"another plan", name, "type: withdrawn\nplan: 01JA0000000000000000000000\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T21:30:00Z\n", "plan"},
+		{"unknown type", name, "type: renamed\n" + common, "unknown type"},
+		{"reserved type", name, "type: claimed\n" + common, "reserved"},
+		{"created without short_id", name, "type: created\n" + common, "short_id"},
+		{"short_id of another ULID", name, "type: created\n" + common + "short_id: bfc-aaaa\n", "short_id"},
+		{"short_id too short", name, "type: created\n" + common + "short_id: bfc-5v7\n", "short_id"},
+		{"submitted without plan_blob", name, "type: submitted\n" + common, "plan_blob"},
+		{"approved with a bad plan_blob", name, "type: approved\n" + common + "plan_blob: xyz\n", "plan_blob"},
+		{"changes-requested without message", name, "type: changes-requested\n" + common + blob, "message"},
+		{"closed with a bad message", name, "type: closed\n" + common + "message: hello\n", "message"},
+		{"message in lower case", name, "type: closed\n" + common + "message: 01jd3k8q2y0000000000000000\n", "message"},
+		{"plan in lower case", name, "type: withdrawn\nplan: 01jd3k8q2w5v7x9y0z1a2b3c4d\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T21:30:00Z\n", "plan"},
+		{"at with an offset", name, "type: withdrawn\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T22:30:00+01:00\n", "at"},
+		{"at without a time", name, "type: withdrawn\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16\n", "at"},
+	}
+	for _, c := range invalid {
+		err := core.ValidateEvent(planID, c.name, []byte(c.data))
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: ValidateEvent = %v, want an error about %q", c.what, err, c.want)
 		}
 	}
 }

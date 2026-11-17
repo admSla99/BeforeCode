@@ -38,19 +38,33 @@ type Store struct {
 // is missing or older than MinGitVersion.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir}
-	found, err := s.gitLine(context.Background(), nil, nil, "version")
+	found, ok, err := GitVersion(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
+		return nil, err
 	}
-	if !atLeast(found, MinGitVersion) {
+	if !ok {
 		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer, found %q", MinGitVersion, found)
 	}
-	root, err := s.gitLine(context.Background(), nil, nil, "rev-parse", "--show-toplevel")
+	out, stderr, err := s.run(context.Background(), nil, nil, "rev-parse", "--show-toplevel")
 	if err != nil {
-		return nil, fmt.Errorf("store: %s is not inside a git working tree", dir)
+		// git's own message tells "not a git repository" from, say, a
+		// repository git refuses because of its owner (safe.directory).
+		return nil, fmt.Errorf("store: %s is not inside a git working tree (git: %s)", dir, firstGitLine(stderr, err))
 	}
-	s.dir = root
+	s.dir = strings.TrimSpace(string(out))
 	return s, nil
+}
+
+// GitVersion returns what `git version` prints, such as "git version
+// 2.45.1", and whether that release is at least MinGitVersion. It fails when
+// no git is on PATH.
+func GitVersion(ctx context.Context) (version string, ok bool, err error) {
+	out, err := exec.CommandContext(ctx, "git", "version").Output()
+	if err != nil {
+		return "", false, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
+	}
+	version = strings.TrimSpace(string(out))
+	return version, atLeast(version, MinGitVersion), nil
 }
 
 // Read returns the content of the file at path at the current tip of the
@@ -348,4 +362,14 @@ func majorMinor(v string) ([2]int, bool) {
 		return [2]int{}, false
 	}
 	return [2]int{major, minor}, true
+}
+
+// firstGitLine returns the first line of what git printed to standard
+// error, or err when it printed nothing.
+func firstGitLine(stderr []byte, err error) string {
+	msg, _, _ := strings.Cut(strings.TrimSpace(string(stderr)), "\n")
+	if msg == "" {
+		return err.Error()
+	}
+	return strings.TrimSpace(msg)
 }

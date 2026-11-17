@@ -1,6 +1,6 @@
 # BeforeCode design
 
-Last updated: 2026-11-16. Decisions marked **confirmed** were made by the maintainer and are not open for redesign.
+Last updated: 2026-11-17. Decisions marked **confirmed** were made by the maintainer and are not open for redesign.
 
 BeforeCode (`bfc`) is an open source TUI where a team writes, challenges ("grills"), approves and shares plans for AI coding agents. Agents implement only against an approved plan. It packages an AI-native software development lifecycle into one tool that works with nothing but Git.
 
@@ -122,6 +122,8 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 
 All of these read from the index (section 4), which brings itself up to date with the plans ref first.
 
+`bfc doctor` checks the setup, one line per check: `ok`, `warn`, `FAIL` or `skip`. The checks are git version, inside a repository, `config.yaml` valid, local plans ref present, fetch refspec, remote reachable and has the plans ref, local plans ref not behind or diverged, `format-version` supported, index readable, every event file valid, every plan with a valid `created` event, skipped events and duplicate Short IDs. A failure prints the command that fixes it, and the exit code is 1 when any check fails; skipped events and duplicate Short IDs are warnings, because concurrent work produces them by design. `bfc doctor --fix` adds the refspec, pulls when the plans ref is behind or diverged, and rebuilds an unreadable index; it never pushes and never rewrites the ref. Details in `docs/adr/0006-doctor.md`.
+
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text.
 
 ### Editing plans
@@ -202,7 +204,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 | Push at session end before it is safe to stop | A Stop hook in Claude Code checks that the handoff is written and the ref is pushed |
 | `issues.jsonl` export for viewers | `bfc export` renders a plan to Markdown or HTML |
 | `bd init --stealth`, `--contributor` | `bfc init --local` for solo use without sharing; configurable `sync.remote` |
-| `bd doctor --fix`, schema version guard | `bfc doctor` checks refspec, ref and index. `format-version` lives in the ref; an older binary refuses to write a newer format |
+| `bd doctor --fix`, schema version guard | `bfc doctor` checks git, the config, the plans ref, refspec, remote, `format-version`, the index and every event file; `--fix` adds the refspec, pulls and rebuilds the index (ADR 0006). `format-version` lives in the ref; an older binary refuses to write a newer format |
 
 ## 5. Technology stack
 
@@ -288,6 +290,7 @@ internal/config/  .beforecode/config.yaml parsing and validation (ADR 0003, no I
 internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref
+internal/doctor/  bfc doctor: setup checks and safe fixes (ADR 0006)
 internal/agent/   Agent interface and harness adapters
 internal/mcp/     MCP server
 internal/tui/     Bubble Tea screens

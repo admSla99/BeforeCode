@@ -64,8 +64,11 @@ type fakeTeam struct {
 	edits    []string // "shortID doc"
 	reviewFn func(a ReviewAction) error
 	noChange bool // the editor closes without a change
-	syncs    int
-	syncFn   func() SyncResult
+	// editFn, when set, is what the editor does to the plan before it
+	// closes; it runs with mu held.
+	editFn func(shortID string, doc Doc)
+	syncs  int
+	syncFn func() SyncResult
 }
 
 func newFakeTeam() *fakeTeam {
@@ -96,6 +99,9 @@ func (f *fakeTeam) Edit(shortID string, doc Doc) tea.Cmd {
 	return func() tea.Msg {
 		f.mu.Lock()
 		f.edits = append(f.edits, shortID+" "+doc.String())
+		if f.editFn != nil {
+			f.editFn(shortID, doc)
+		}
 		changed := !f.noChange
 		f.mu.Unlock()
 		return PlanEditedMsg{Changed: changed}
@@ -270,17 +276,34 @@ func TestAppRequestChangesAsksForTheReason(t *testing.T) {
 // AC-2: e opens the shown document in the editor, then the screen reloads.
 func TestAppEditOpensTheShownDocument(t *testing.T) {
 	f := newFakeTeam()
+	f.editFn = func(shortID string, doc Doc) {
+		if doc == DocIntent {
+			d := f.details[shortID]
+			d.Intent = []byte(intentMD + "\nAlso Apple Pay.\n")
+			f.details[shortID] = d
+		}
+	}
 	tm := openDetail(t, f)
-	send(tm, "e", "tab", "e")
-	f.mu.Lock()
-	d := f.details["bfc-5v7x"]
-	d.Intent = []byte(intentMD + "\nAlso Apple Pay.\n")
-	f.details["bfc-5v7x"] = d
-	f.mu.Unlock()
+	// Each edit command runs in its own goroutine. The real editor blocks
+	// the terminal until it exits, so wait for one edit before the next.
+	send(tm, "e")
+	waitEdits(t, f, 1)
+	send(tm, "tab", "e")
 	waitFor(t, tm, "Apple Pay")
 	screen(t, tm)
 	if got := f.count(&f.edits); len(got) != 2 || got[0] != "bfc-5v7x plan.md" || got[1] != "bfc-5v7x intent.md" {
 		t.Errorf("edits = %q", got)
+	}
+}
+
+// waitEdits waits until the fake has seen n edit commands.
+func waitEdits(t *testing.T, f *fakeTeam, n int) {
+	t.Helper()
+	for deadline := time.Now().Add(3 * time.Second); len(f.count(&f.edits)) < n; {
+		if time.Now().After(deadline) {
+			t.Fatalf("saw %d edits, want %d", len(f.count(&f.edits)), n)
+		}
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
