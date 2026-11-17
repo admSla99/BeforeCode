@@ -147,7 +147,8 @@ plans/
 
 See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the consequences.
 
-- **Write** without touching the working tree: `git hash-object -w`, a temporary index via `GIT_INDEX_FILE`, `git write-tree`, `git commit-tree`, `git update-ref refs/beforecode/plans`.
+- **Write** without touching the working tree: `git hash-object -w`, a temporary index via `GIT_INDEX_FILE`, `git write-tree`, `git commit-tree`, `git update-ref refs/beforecode/plans <new> <old>` (the old value makes a concurrent local writer fail instead of losing a commit).
+- **Minimum git: 2.38**, because of `git merge-tree --write-tree`; every other plumbing command is much older. `store.Open` refuses an older git with an error that names the minimum. Sources in `docs/research/minimum-git-version.md`.
 - **Share**: `git push origin refs/beforecode/plans`. Fetch with the refspec `+refs/beforecode/*:refs/beforecode-remote/*`, which `bfc init` and `bfc bootstrap` write to `.git/config`.
 - **Concurrent writes**: a rejected push (GitHub reports `fetch first`) triggers fetch, an in-memory merge with `git merge-tree --write-tree`, a merge commit, and a retry. Never force-push.
 - **Sync cadence**: every change is a commit to the ref. The TUI fetches and pushes automatically while a plan is open (every 10 to 30 seconds). `bfc push` and `bfc pull` exist for scripts and agents.
