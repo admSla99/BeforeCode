@@ -58,6 +58,18 @@ internal/tui/     Bubble Tea screens
 
 `core` must not import `store`, `agent`, `tui` or `mcp`. `core` does not know which harness is running.
 
+## TUI conventions
+
+Set by the plan list (`internal/tui/planlist.go`, issue #16); every new screen follows them.
+
+- Bubble Tea v2: import `charm.land/bubbletea/v2`, `charm.land/bubbles/v2`, `charm.land/lipgloss/v2`, not the older `github.com/charmbracelet/...` paths.
+- One screen per file in `internal/tui`: a value-type model with an exported constructor that takes its dependencies.
+- A screen gets data through a small interface that `tui` defines (`Plans`), implemented in `cmd/bfc` (`tuiPlans` in `tui.go`) and faked in tests. `tui` imports `core` only, never `store`; all I/O runs inside a `tea.Cmd`. Anything that needs the terminal, such as the editor, runs through `tea.ExecProcess` in the adapter.
+- Keys: one key map per screen in `keys.go`, built with `bubbles/key`; the help line is rendered from the bindings. Styles: shared Lip Gloss styles in `styles.go`, 16 basic ANSI colors.
+- Every view fits 80x24: the help line sits on the bottom row and lines are cut with `truncate`.
+- Tests drive the screen with `teatest/v2` and the fake adapter, then compare the final view, stripped of styling, with `testdata/<test name>.golden`. Review each golden file by eye; regenerate them with `go test ./internal/tui -update`.
+- `bfc` without a command opens the TUI only when stdin and stdout are a terminal; otherwise it prints usage.
+
 ## Rules for the hidden ref
 
 - Never touch the user's working tree, index, or current branch when reading or writing plans. Use `hash-object`, a temporary index (`GIT_INDEX_FILE`), `write-tree`, `commit-tree`, `update-ref`.
