@@ -1,0 +1,14 @@
+# BeforeCode configuration. Change it through a pull request.
+version: 2
+
+approval:
+  # Approvals by people other than the plan author needed before a plan is approved.
+  required_approvals: 1
+
+sync:
+  # false: plans stay in this clone and are never pushed (bfc init --local).
+  enabled: true
+  # The git remote that receives refs/beforecode/plans. Only when enabled.
+  remote: origin
+  # Seconds between background syncs while the TUI is open (5 to 3600).
+  interval: 15

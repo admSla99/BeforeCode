@@ -294,6 +294,7 @@ internal/doctor/  bfc doctor: setup checks and safe fixes (ADR 0006)
 internal/agent/   Agent interface and harness adapters
 internal/mcp/     MCP server
 internal/tui/     Bubble Tea screens
+e2e/              end-to-end test: the bfc binary in two clones of one bare remote
 ```
 
 ## 7. Implementation phases
