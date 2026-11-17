@@ -114,7 +114,7 @@ The source of truth is plain text files in Git. SQLite is only a local index for
 ```
 # On normal branches (changed through pull requests)
 .beforecode/
-  config.yaml                 # approval policy, harnesses, sync.remote
+  config.yaml                 # approval policy, sync (ADR 0003); harnesses in phase 2
   skills/
     grill-intent/SKILL.md
     grill-architecture/SKILL.md
@@ -246,7 +246,9 @@ type Agent interface {
 ### Package layout
 
 ```
+templates.go      default templates embedded from .beforecode/templates (ADR 0003)
 cmd/bfc/          entry point
+internal/config/  .beforecode/config.yaml parsing and validation (ADR 0003, no I/O)
 internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref
