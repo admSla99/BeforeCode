@@ -8,6 +8,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"reflect"
+	"runtime"
 	"strings"
 	"testing"
 	"time"
@@ -141,14 +142,21 @@ func TestPlansReadsThePlansRefNewestActivityFirst(t *testing.T) {
 	if want := []string{"Old draft", "Payments"}; !reflect.DeepEqual(titles(got), want) {
 		t.Fatalf("titles = %v, want %v", titles(got), want)
 	}
-	if got[0].ID != old || !got[0].LastActivity.Equal(t3) || string(got[0].Plan) != "## Context\n" {
+	if got[0].ID != old || !got[0].LastActivity.Equal(t3) {
 		t.Errorf("old draft = %+v", got[0])
 	}
 	p := got[1]
-	if p.ID != pay || !p.LastActivity.Equal(t2) || p.Plan != nil || p.Status.State != core.StateDraft ||
+	if p.ID != pay || !p.LastActivity.Equal(t2) || p.Status.State != core.StateDraft ||
 		p.Status.Author != ada || !strings.HasPrefix(p.ShortID, "bfc-") || p.ShortID != p.Status.ShortID ||
-		!reflect.DeepEqual(p.Labels, []string{"search"}) || !strings.Contains(string(p.Intent), "Charge cards.") {
+		!reflect.DeepEqual(p.Labels, []string{"search"}) {
 		t.Errorf("payments = %+v", p)
+	}
+	ctx := context.Background()
+	if d, err := ix.Plan(ctx, old); err != nil || string(d.Plan) != "## Context\n" {
+		t.Errorf("old draft documents = %+v, %v", d, err)
+	}
+	if d, err := ix.Plan(ctx, pay); err != nil || d.Plan != nil || !strings.Contains(string(d.Intent), "Charge cards.") {
+		t.Errorf("payments documents = %+v, %v", d, err)
 	}
 	if _, err := os.Stat(ix.Path()); err != nil {
 		t.Errorf("no database file: %v", err)
@@ -188,8 +196,11 @@ func TestUpdateRecordsTheRefCommitAndRereadsOnlyChangedPlans(t *testing.T) {
 		t.Errorf("after editing B, reread %v, want only %s", moved.Reread, b)
 	}
 	got := plans(t, ix)
-	if got[0].ID != b || !got[0].LastActivity.Equal(t5) || string(got[0].Plan) != "## Context\n" || got[1].ID != a {
+	if got[0].ID != b || !got[0].LastActivity.Equal(t5) || got[1].ID != a {
 		t.Errorf("plans after the edit = %+v", got)
+	}
+	if d, err := ix.Plan(ctx, b); err != nil || string(d.Plan) != "## Context\n" {
+		t.Errorf("B after the edit = %+v, %v", d, err)
 	}
 }
 
@@ -473,5 +484,119 @@ func TestAReplacedHistoryRereadsOnlyChangedPlans(t *testing.T) {
 	got := plans(t, ix)
 	if got[0].ID != changed || got[0].LastActivity.Minute() != 4 || got[1].LastActivity.Minute() != 3 {
 		t.Errorf("last activity not recomputed from the new history: %+v", got)
+	}
+}
+
+func TestAnEmptyFileIsNotAMissingOne(t *testing.T) {
+	s := newStore(t)
+	clock(t, 1)
+	id := newPlan(t, s, "Empty plan", "x\n")
+	write(t, s, map[string]string{core.PlanDir(id) + "/plan.md": ""})
+	ix := openIndex(t, s)
+
+	p, err := ix.Plan(context.Background(), id)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if p.Plan == nil || len(p.Plan) != 0 {
+		t.Errorf("plan.md = %#v, want an empty, non-nil slice", p.Plan)
+	}
+}
+
+func TestAPlanDirectoryWithALowercaseULIDIsListed(t *testing.T) {
+	s := newStore(t)
+	clock(t, 1)
+	newPlan(t, s, "Normal", "n\n")
+	odd := ulid.MustNew(ulid.Now(), rand.Reader)
+	write(t, s, map[string]string{"plans/" + strings.ToLower(odd.String()) + "/plan.md": "## Context\n"})
+	ix := openIndex(t, s)
+
+	got := plans(t, ix)
+	if len(got) != 2 {
+		t.Fatalf("plans = %v", titles(got))
+	}
+	p, err := ix.Plan(context.Background(), odd)
+	if err != nil || p.Status.State != core.StateInvalid || string(p.Plan) != "## Context\n" || !strings.HasPrefix(p.ShortID, "bfc-") {
+		t.Errorf("the lowercase plan = %+v, %v; want it invalid, with its plan.md", p, err)
+	}
+	if u, err := ix.Update(context.Background()); err != nil || len(u.Reread) != 0 {
+		t.Errorf("second update = %+v, %v; want nothing read again", u, err)
+	}
+}
+
+func TestAnIndexBuiltFromACommitThatIsGoneIsRebuilt(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	clock(t, 1)
+	newPlan(t, s, "Old", "o\n")
+	ix := openIndex(t, s)
+	plans(t, ix)
+
+	// The plans ref is replaced and the old commits are pruned.
+	other := newStore(t)
+	newPlan(t, other, "New", "n\n")
+	otherTip, _ := other.Tip(ctx)
+	git(t, s, "fetch", "-q", other.Root(), store.Ref+":refs/other")
+	git(t, s, "update-ref", store.Ref, otherTip)
+	git(t, s, "update-ref", "-d", "refs/other")
+	git(t, s, "reflog", "expire", "--expire=now", "--all")
+	git(t, s, "gc", "-q", "--prune=now")
+
+	if got := titles(plans(t, ix)); !reflect.DeepEqual(got, []string{"New"}) {
+		t.Errorf("titles = %v", got)
+	}
+}
+
+func TestSearchForTextWithoutWordsIsAnEmptyQuery(t *testing.T) {
+	s := newStore(t)
+	newPlan(t, s, "Any", "a\n")
+	ix := openIndex(t, s)
+	for _, q := range []string{"-", "!! --", `"`} {
+		if _, err := ix.Search(context.Background(), q); !errors.Is(err, index.ErrEmptyQuery) {
+			t.Errorf("Search(%q) = %v, want ErrEmptyQuery", q, err)
+		}
+	}
+}
+
+func TestPlansLeavesOutTheDocuments(t *testing.T) {
+	s := newStore(t)
+	id := newPlan(t, s, "Docs", "body\n")
+	write(t, s, map[string]string{core.PlanDir(id) + "/plan.md": "plan\n"})
+	ix := openIndex(t, s)
+	got := plans(t, ix)
+	if got[0].Intent != nil || got[0].Plan != nil {
+		t.Errorf("Plans returned the documents: %+v", got[0])
+	}
+	p, err := ix.Plan(context.Background(), id)
+	if err != nil || p.Intent == nil || string(p.Plan) != "plan\n" {
+		t.Errorf("Plan = %+v, %v; want both documents", p, err)
+	}
+}
+
+func TestARepositoryPathWithAQuestionMark(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("Windows paths cannot contain '?'")
+	}
+	parent := filepath.Join(t.TempDir(), "what?#x")
+	if err := os.Mkdir(parent, 0o755); err != nil {
+		t.Fatal(err)
+	}
+	out, err := exec.Command("git", "-C", parent, "init", "-q").CombinedOutput()
+	if err != nil {
+		t.Fatalf("git init: %v\n%s", err, out)
+	}
+	s, err := store.Open(parent)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for k, v := range map[string]string{"GIT_AUTHOR_NAME": ada.Name, "GIT_AUTHOR_EMAIL": ada.Email, "GIT_COMMITTER_NAME": ada.Name, "GIT_COMMITTER_EMAIL": ada.Email} {
+		t.Setenv(k, v)
+	}
+	write(t, s, map[string]string{"format-version": "1\n"})
+	newPlan(t, s, "Odd path", "p\n")
+	ix := openIndex(t, s)
+	plans(t, ix)
+	if _, err := os.Stat(filepath.Join(parent, ".git", "beforecode", "index.db")); err != nil {
+		t.Errorf("the database is not where it belongs: %v", err)
 	}
 }

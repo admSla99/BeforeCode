@@ -37,30 +37,35 @@ prefix of at least four characters, or the full ULID.`,
 	}
 }
 
-// resolvePlan loads the plans and returns the one the query names (see
-// core.ResolveID), with errors that list candidates or point to bfc list.
+// resolvePlan returns the plan the query names (see core.ResolveID), with
+// its documents, and errors that list candidates or point to bfc list.
 func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan, error) {
-	views, err := loadPlans(ctx, s)
-	if err != nil {
-		return index.Plan{}, err
-	}
-	byID := make(map[ulid.ULID]index.Plan, len(views))
-	refs := make([]core.PlanHandle, len(views))
-	for i, v := range views {
-		byID[v.ID] = v
-		refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
-	}
-	id, err := core.ResolveID(query, refs)
-	var amb *core.AmbiguousIDError
-	switch {
-	case errors.As(err, &amb):
-		return index.Plan{}, ambiguousError(amb, byID)
-	case errors.Is(err, core.ErrUnknownID):
-		return index.Plan{}, fmt.Errorf("no plan %q; bfc list shows the plans", query)
-	case err != nil:
-		return index.Plan{}, err
-	}
-	return byID[id], nil
+	var p index.Plan
+	err := withIndex(ctx, s, func(ix *index.Index) error {
+		views, err := ix.Plans(ctx)
+		if err != nil {
+			return err
+		}
+		byID := make(map[ulid.ULID]index.Plan, len(views))
+		refs := make([]core.PlanHandle, len(views))
+		for i, v := range views {
+			byID[v.ID] = v
+			refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
+		}
+		id, err := core.ResolveID(query, refs)
+		var amb *core.AmbiguousIDError
+		switch {
+		case errors.As(err, &amb):
+			return ambiguousError(amb, byID)
+		case errors.Is(err, core.ErrUnknownID):
+			return fmt.Errorf("no plan %q; bfc list shows the plans", query)
+		case err != nil:
+			return err
+		}
+		p, err = ix.Plan(ctx, id)
+		return err
+	})
+	return p, err
 }
 
 // ambiguousError lists the candidates with their Short IDs, ULIDs and

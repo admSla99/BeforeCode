@@ -6,11 +6,13 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"path/filepath"
 	"regexp"
 	"strings"
 	"time"
+	"unicode"
 
 	"github.com/oklog/ulid/v2"
 	"modernc.org/sqlite"
@@ -25,7 +27,7 @@ import (
 // meaning of a column changes, and whenever reading a plan gives another
 // result for the same files (core.Derive, core.ParseIntent, searchText):
 // plans whose directory did not change are not read again.
-const schemaVersion = 1
+const schemaVersion = 2
 
 // File is where the index lives, relative to the git common directory.
 const File = "beforecode/index.db"
@@ -136,14 +138,14 @@ func (ix *Index) Plans(ctx context.Context) ([]Plan, error) {
 		if _, err := ix.update(ctx); err != nil {
 			return err
 		}
-		rows, err := ix.db.QueryContext(ctx, `SELECT `+planColumns+` FROM plans p ORDER BY p.last_activity DESC, p.id DESC`)
+		rows, err := ix.db.QueryContext(ctx, `SELECT `+headerColumns+` FROM plans p ORDER BY p.last_activity DESC, p.id DESC`)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = rows.Close() }()
 		plans = nil
 		for rows.Next() {
-			p, err := scanPlan(rows)
+			p, err := scanPlan(rows, false)
 			if err != nil {
 				return err
 			}
@@ -167,7 +169,7 @@ func (ix *Index) Plan(ctx context.Context, id ulid.ULID) (Plan, error) {
 		if _, err := ix.update(ctx); err != nil {
 			return err
 		}
-		rows, err := ix.db.QueryContext(ctx, `SELECT `+planColumns+` FROM plans p WHERE p.id = ?`, id.String())
+		rows, err := ix.db.QueryContext(ctx, `SELECT `+docColumns+` FROM plans p WHERE p.id = ?`, id.String())
 		if err != nil {
 			return err
 		}
@@ -178,7 +180,7 @@ func (ix *Index) Plan(ctx context.Context, id ulid.ULID) (Plan, error) {
 			}
 			return fmt.Errorf("%w: %s", ErrUnknownPlan, id)
 		}
-		if p, err = scanPlan(rows); err != nil {
+		if p, err = scanPlan(rows, true); err != nil {
 			return err
 		}
 		ps := []Plan{p}
@@ -206,7 +208,7 @@ func (ix *Index) Search(ctx context.Context, text string) ([]Hit, error) {
 			return err
 		}
 		rows, err := ix.db.QueryContext(ctx, `
-			SELECT `+planColumns+`, snippet(plan_text, -1, '[', ']', '…', 12)
+			SELECT `+headerColumns+`, snippet(plan_text, -1, '[', ']', '…', 12)
 			FROM plan_text JOIN plans p ON p.rowid = plan_text.rowid
 			WHERE plan_text MATCH ?
 			ORDER BY bm25(plan_text), p.last_activity DESC, p.id DESC`, match)
@@ -218,7 +220,7 @@ func (ix *Index) Search(ctx context.Context, text string) ([]Hit, error) {
 		var plans []Plan
 		for rows.Next() {
 			var snippet string
-			p, err := scanPlan(rows, &snippet)
+			p, err := scanPlan(rows, false, &snippet)
 			if err != nil {
 				return err
 			}
@@ -244,6 +246,10 @@ func (ix *Index) Search(ctx context.Context, text string) ([]Hit, error) {
 func matchQuery(text string) string {
 	var terms []string
 	for _, w := range strings.Fields(text) {
+		// A word without a letter or digit has no token to look for.
+		if !strings.ContainsFunc(w, func(r rune) bool { return unicode.IsLetter(r) || unicode.IsDigit(r) }) {
+			continue
+		}
 		terms = append(terms, `"`+strings.ReplaceAll(w, `"`, `""`)+`"`)
 	}
 	return strings.Join(terms, " ")
@@ -266,50 +272,48 @@ CREATE TABLE plans (
 	required_approvals INTEGER NOT NULL,
 	approvers          TEXT NOT NULL,    -- JSON array
 	last_activity      INTEGER NOT NULL, -- Unix seconds; 0 when unknown
-	intent             BLOB,             -- NULL when missing
-	plan               BLOB              -- NULL when missing
+	intent             TEXT,             -- NULL when missing
+	plan               TEXT              -- NULL when missing
 );
 CREATE VIRTUAL TABLE plan_text USING fts5(title, intent, plan, tokenize = 'unicode61 remove_diacritics 2');
 `
 
-const planColumns = `p.id, p.short_id, p.state, p.title, p.labels, p.author_name, p.author_email,
-	p.required_approvals, p.approvers, p.last_activity, p.intent, p.plan`
+// headerColumns are what Plans and Search return; docColumns adds the
+// documents, which only Plan returns.
+const (
+	headerColumns = `p.id, p.short_id, p.state, p.title, p.labels, p.author_name, p.author_email,
+	p.required_approvals, p.approvers, p.last_activity`
+	docColumns = headerColumns + `, p.intent, p.plan`
+)
 
 // connect opens the database file and checks or creates its schema.
 func (ix *Index) connect(ctx context.Context) error {
 	// _txlock=immediate takes the write lock at BEGIN, so two bfc processes
 	// updating at once wait for each other instead of failing midway.
-	db, err := sql.Open("sqlite", ix.path+"?_pragma=busy_timeout(10000)&_txlock=immediate")
+	// A file: URI with an escaped path, so that '?' or '#' in the path is
+	// not taken for the start of the parameters.
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(ix.path),
+		RawQuery: "_pragma=busy_timeout(10000)&_txlock=immediate"}
+	if !strings.HasPrefix(u.Path, "/") {
+		u.Path = "/" + u.Path // a Windows drive letter: file:///C:/...
+	}
+	db, err := sql.Open("sqlite", u.String())
 	if err != nil {
 		return err
 	}
 	ix.db = db
+	// Checking the schema only reads, so readers do not queue for the
+	// write lock; only creating it takes the lock.
+	if done, err := ix.checkSchema(ctx, db); done || err != nil {
+		return err
+	}
 	tx, err := db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	var version, tables int
-	if err := tx.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
-		return err
-	}
-	if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema`).Scan(&tables); err != nil {
-		return err
-	}
-	switch {
-	case version == schemaVersion:
-		// A damaged file can carry the right version without its tables.
-		var ours int
-		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema
-			WHERE type = 'table' AND name IN ('meta', 'plans', 'plan_text')`).Scan(&ours); err != nil {
-			return err
-		}
-		if ours != 3 {
-			return errOutdated
-		}
-		return nil
-	case version != 0 || tables != 0:
-		return errOutdated
+	if done, err := ix.checkSchema(ctx, tx); done || err != nil {
+		return err // another process created it meanwhile
 	}
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
 		return err
@@ -320,14 +324,83 @@ func (ix *Index) connect(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// querier is a *sql.DB or a *sql.Tx.
+type querier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+// checkSchema reports whether the database has the schema of this version
+// (done), or is new and empty (not done, no error). Any other content is
+// errOutdated.
+func (ix *Index) checkSchema(ctx context.Context, q querier) (done bool, err error) {
+	var version, tables, ours int
+	if err := q.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
+		return false, err
+	}
+	if err := q.QueryRowContext(ctx, `SELECT count(*),
+		count(CASE WHEN type = 'table' AND name IN ('meta', 'plans', 'plan_text') THEN 1 END)
+		FROM sqlite_schema`).Scan(&tables, &ours); err != nil {
+		return false, err
+	}
+	switch {
+	case version == schemaVersion && ours == 3:
+		return true, nil
+	case version == 0 && tables == 0:
+		return false, nil
+	default:
+		// Another version, or a damaged file that has the right version
+		// without its tables.
+		return false, errOutdated
+	}
+}
+
 // reset deletes the database file and creates a new one.
 func (ix *Index) reset(ctx context.Context) error {
 	_ = ix.Close()
 	for _, suffix := range []string{"", "-journal", "-wal", "-shm"} {
 		if err := os.Remove(ix.path + suffix); err != nil && !errors.Is(err, os.ErrNotExist) {
+			// On Windows a file another bfc has open cannot be deleted.
+			// Empty it instead, which works for an outdated schema.
+			return ix.wipe(ctx)
+		}
+	}
+	return ix.connect(ctx)
+}
+
+// wipe drops everything in the database file and creates the schema anew.
+func (ix *Index) wipe(ctx context.Context) error {
+	err := ix.connect(ctx)
+	if !discardable(err) {
+		return err
+	}
+	tx, err := ix.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer func() { _ = tx.Rollback() }()
+	for {
+		// Virtual tables first: dropping one drops its shadow tables.
+		var kind, name string
+		err := tx.QueryRowContext(ctx, `SELECT type, name FROM sqlite_schema
+			WHERE type IN ('table', 'view', 'trigger') AND name NOT LIKE 'sqlite_%'
+			ORDER BY sql LIKE 'CREATE VIRTUAL%' DESC LIMIT 1`).Scan(&kind, &name)
+		if errors.Is(err, sql.ErrNoRows) {
+			break
+		}
+		if err != nil {
+			return err
+		}
+		if _, err := tx.ExecContext(ctx, `DROP `+strings.ToUpper(kind)+` "`+strings.ReplaceAll(name, `"`, `""`)+`"`); err != nil {
 			return err
 		}
 	}
+	if _, err := tx.ExecContext(ctx, `PRAGMA user_version = 0`); err != nil {
+		return err
+	}
+	if err := tx.Commit(); err != nil {
+		return err
+	}
+	_ = ix.Close()
 	return ix.connect(ctx)
 }
 
@@ -383,9 +456,9 @@ func (ix *Index) update(ctx context.Context) (Updated, error) {
 	}
 	since := u.From
 	if since != "" && tip != "" {
-		if ok, err := ix.s.IsAncestor(ctx, since, tip); err != nil {
-			return Updated{}, err
-		} else if !ok {
+		// An error, such as a pruned ref_commit, also means: not the same
+		// history any more.
+		if ok, err := ix.s.IsAncestor(ctx, since, tip); err != nil || !ok {
 			since = ""
 		}
 	}
@@ -426,12 +499,12 @@ func (ix *Index) update(ctx context.Context) (Updated, error) {
 		if err != nil || !e.Dir {
 			continue
 		}
-		tree, known := stored[e.Name]
-		delete(stored, e.Name)
+		tree, known := stored[id.String()]
+		delete(stored, id.String())
 		if known && tree == e.ID {
 			continue
 		}
-		p, err := readPlan(ctx, ix.s, tip, id)
+		p, err := readPlan(ctx, ix.s, tip, id, e.Name)
 		if err != nil {
 			return Updated{}, err
 		}
@@ -529,22 +602,27 @@ func searchText(doc []byte) string {
 	return htmlComment.ReplaceAllString(string(doc), "")
 }
 
-// nullable stores a missing file as NULL and an empty one as an empty blob.
+// nullable stores a missing file as NULL and an empty one as ”.
 func nullable(b []byte) any {
 	if b == nil {
 		return nil
 	}
-	return append([]byte{}, b...)
+	return string(b)
 }
 
-func scanPlan(rows *sql.Rows, extra ...any) (Plan, error) {
+// scanPlan scans a row of headerColumns, or of docColumns when docs is set,
+// followed by the columns in extra.
+func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	var p Plan
 	var id, state, labels, approvers string
 	var lastActivity int64
-	var intent, plan sql.RawBytes
-	dest := append([]any{&id, &p.Status.ShortID, &state, &p.Title, &labels, &p.Status.Author.Name,
-		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &lastActivity, &intent, &plan}, extra...)
-	if err := rows.Scan(dest...); err != nil {
+	var intent, plan sql.NullString
+	dest := []any{&id, &p.Status.ShortID, &state, &p.Title, &labels, &p.Status.Author.Name,
+		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &lastActivity}
+	if docs {
+		dest = append(dest, &intent, &plan)
+	}
+	if err := rows.Scan(append(dest, extra...)...); err != nil {
 		return p, err
 	}
 	var err error
@@ -565,11 +643,11 @@ func scanPlan(rows *sql.Rows, extra ...any) (Plan, error) {
 	if lastActivity != 0 {
 		p.LastActivity = time.Unix(lastActivity, 0).UTC()
 	}
-	if intent != nil {
-		p.Intent = append([]byte{}, intent...)
+	if intent.Valid {
+		p.Intent = []byte(intent.String)
 	}
-	if plan != nil {
-		p.Plan = append([]byte{}, plan...)
+	if plan.Valid {
+		p.Plan = []byte(plan.String)
 	}
 	return p, nil
 }

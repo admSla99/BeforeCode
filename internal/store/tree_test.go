@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -109,5 +110,39 @@ func TestCommonDirIsTheAbsoluteGitDirectory(t *testing.T) {
 	want, _ := filepath.EvalSymlinks(filepath.Join(dir, ".git"))
 	if g, _ := filepath.EvalSymlinks(got); g != want {
 		t.Errorf("CommonDir = %q, want %q", got, want)
+	}
+}
+
+func TestBlobsReadsManyFilesInOneGo(t *testing.T) {
+	ctx := context.Background()
+	s := open(t, newRepo(t))
+	if _, err := s.Write(ctx, "files", map[string][]byte{"a": []byte("first\n"), "b": {}, "c": []byte("line\nwith\x00nul")}); err != nil {
+		t.Fatal(err)
+	}
+	tip, _ := s.Tip(ctx)
+	entries, err := s.Entries(ctx, tip, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	var ids []string
+	byName := map[string]string{}
+	for _, e := range entries {
+		ids = append(ids, e.ID)
+		byName[e.Name] = e.ID
+	}
+	got, err := s.Blobs(ctx, ids)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for name, want := range map[string]string{"a": "first\n", "b": "", "c": "line\nwith\x00nul"} {
+		if b, ok := got[byName[name]]; !ok || string(b) != want {
+			t.Errorf("blob %s = %q (found %v), want %q", name, b, ok, want)
+		}
+	}
+	if _, err := s.Blobs(ctx, []string{strings.Repeat("0", 40)}); err == nil {
+		t.Error("Blobs of a missing object succeeded")
+	}
+	if got, err := s.Blobs(ctx, nil); err != nil || len(got) != 0 {
+		t.Errorf("Blobs(nil) = %v, %v", got, err)
 	}
 }

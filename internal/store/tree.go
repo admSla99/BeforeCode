@@ -1,10 +1,12 @@
 package store
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
 	"os/exec"
+	"strconv"
 	"strings"
 )
 
@@ -67,4 +69,36 @@ func (s *Store) IsAncestor(ctx context.Context, a, b string) (bool, error) {
 // shared by all its worktrees. Local caches of bfc live beneath it.
 func (s *Store) CommonDir(ctx context.Context) (string, error) {
 	return s.gitLine(ctx, nil, nil, "rev-parse", "--path-format=absolute", "--git-common-dir")
+}
+
+// Blobs returns the content of the blobs with these object IDs, read with
+// one git call. It fails if any of them is missing or not a blob.
+func (s *Store) Blobs(ctx context.Context, ids []string) (map[string][]byte, error) {
+	out := make(map[string][]byte, len(ids))
+	if len(ids) == 0 {
+		return out, nil
+	}
+	data, err := s.git(ctx, nil, []byte(strings.Join(ids, "\n")+"\n"), "cat-file", "--batch")
+	if err != nil {
+		return nil, err
+	}
+	// Each object is "<id> <type> <size>\n<content>\n"; a missing one is
+	// "<name> missing\n".
+	for len(data) > 0 {
+		header, rest, ok := bytes.Cut(data, []byte("\n"))
+		if !ok {
+			return nil, fmt.Errorf("git cat-file --batch: truncated output")
+		}
+		f := strings.Fields(string(header))
+		if len(f) != 3 || f[1] != "blob" {
+			return nil, fmt.Errorf("%w: object %s is not a blob (%s)", ErrNotFound, f[0], header)
+		}
+		size, err := strconv.Atoi(f[2])
+		if err != nil || size+1 > len(rest) {
+			return nil, fmt.Errorf("git cat-file --batch: bad header %q", header)
+		}
+		out[f[0]] = rest[:size:size]
+		data = rest[size+1:]
+	}
+	return out, nil
 }
