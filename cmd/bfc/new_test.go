@@ -259,3 +259,18 @@ func TestNewWithoutARepositoryTemplateUsesTheBuiltInOne(t *testing.T) {
 		t.Errorf("intent.md was not made from the built-in template:\n%s", intent)
 	}
 }
+
+func TestNewAcceptsAnIntentSavedWithCRLFAndStoresLF(t *testing.T) {
+	dir := newLocalRepo(t)
+	fakeEditor(t, `printf -- '---\r\ntitle: Payments\r\n---\r\n\r\nCards fail.\r\n' > "$1"`)
+
+	out, err := bfcIn(t, dir, "new", "Payments")
+	if err != nil {
+		t.Fatalf("bfc new: %v\n%s", err, out)
+	}
+
+	intent := gitIn(t, dir, "show", plansRef+":plans/"+planDirs(t, dir)[0]+"/intent.md")
+	if strings.Contains(intent, "\r") || !strings.Contains(intent, "title: Payments\n") {
+		t.Errorf("intent.md not stored with LF line endings: %q", intent)
+	}
+}

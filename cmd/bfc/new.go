@@ -7,7 +7,6 @@ import (
 	"fmt"
 	"io/fs"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -70,25 +69,30 @@ func runNew(cmd *cobra.Command, title string, noEdit bool) error {
 			_ = os.Remove(path)
 			return errors.New("intent.md was not changed or is empty; no plan created")
 		}
-		intent, kept = edited, path
+		// Stored files use LF (ADR 0002); editors on Windows may save CRLF.
+		intent, kept = bytes.ReplaceAll(edited, []byte("\r\n"), []byte("\n")), path
+	}
+	// From here on, an error must not lose the user's edited text.
+	keep := func(err error) error {
+		if kept != "" {
+			return fmt.Errorf("%w; no plan created\nYour text is kept in %s", err, kept)
+		}
+		return fmt.Errorf("%w; no plan created", err)
 	}
 
 	existing, err := planIDs(cmd, s)
 	if err != nil {
-		return err
+		return keep(err)
 	}
 	now := time.Now()
 	entropy := ulid.Monotonic(rand.Reader, 0)
 	newID := func() ulid.ULID { return ulid.MustNew(ulid.Timestamp(now), entropy) }
 	plan, files, err := core.NewPlan(intent, core.Person{Name: name, Email: email}, now, newID, existing)
 	if err != nil {
-		if kept != "" {
-			return fmt.Errorf("%w; no plan created\nYour text is kept in %s", err, kept)
-		}
-		return fmt.Errorf("%w; no plan created", err)
+		return keep(err)
 	}
 	if _, err := s.Write(ctx, "bfc new "+plan.ShortID+": "+plan.Title, files); err != nil {
-		return err
+		return keep(err)
 	}
 	if kept != "" {
 		_ = os.Remove(kept)
@@ -107,39 +111,9 @@ func readTemplate(root, rel string) ([]byte, error) {
 	return data, err
 }
 
-// editText writes text to a temporary file outside the repository, opens
-// it in the editor git uses and returns what was saved and the file's path.
-func editText(cmd *cobra.Command, s *store.Store, pattern string, text []byte) ([]byte, string, error) {
-	editor, err := s.Editor(cmd.Context())
-	if err != nil {
-		return nil, "", err
-	}
-	f, err := os.CreateTemp("", "bfc-"+pattern)
-	if err != nil {
-		return nil, "", err
-	}
-	path := f.Name()
-	if _, err := f.Write(text); err != nil {
-		_ = f.Close()
-		return nil, "", err
-	}
-	if err := f.Close(); err != nil {
-		return nil, "", err
-	}
-	// Run the editor the way git does: through the shell, so that an editor
-	// setting such as "code --wait" works.
-	run := exec.CommandContext(cmd.Context(), "sh", "-c", editor+` "$@"`, editor, path)
-	run.Stdin, run.Stdout, run.Stderr = os.Stdin, os.Stdout, os.Stderr
-	if err := run.Run(); err != nil {
-		return nil, "", fmt.Errorf("editor %q failed: %w; your text is in %s", editor, err, path)
-	}
-	edited, err := os.ReadFile(path)
-	return edited, path, err
-}
-
 // planIDs returns the ULIDs of the plans in the plans ref.
 func planIDs(cmd *cobra.Command, s *store.Store) ([]ulid.ULID, error) {
-	names, err := s.List(cmd.Context(), "plans")
+	names, err := s.List(cmd.Context(), core.PlansDir)
 	if errors.Is(err, store.ErrNotFound) {
 		return nil, nil
 	}

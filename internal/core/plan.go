@@ -28,9 +28,13 @@ type Intent struct {
 
 var labelPattern = regexp.MustCompile(`^[a-z0-9-]+$`)
 
-// Dir returns the plan's directory in the plans ref.
-func Dir(id ulid.ULID) string {
-	return "plans/" + id.String()
+// PlansDir is the directory of the plans ref that holds one directory per
+// Plan.
+const PlansDir = "plans"
+
+// PlanDir returns the plan's directory in the plans ref.
+func PlanDir(id ulid.ULID) string {
+	return PlansDir + "/" + id.String()
 }
 
 // NewPlan creates a plan from the text of its intent.md. newID hands out
@@ -50,8 +54,8 @@ func NewPlan(intent []byte, author Person, at time.Time, newID func() ulid.ULID,
 	plan := Plan{ID: id, ShortID: ShortID(id, existing), Title: in.Title, Author: author}
 	created := Event{ID: newID(), Type: Created, Plan: id, Author: author, At: at, ShortID: plan.ShortID}
 	files := map[string][]byte{
-		Dir(id) + "/intent.md":                               intent,
-		Dir(id) + "/events/" + created.ID.String() + ".yaml": EncodeEvent(created),
+		PlanDir(id) + "/intent.md":                               intent,
+		PlanDir(id) + "/events/" + created.ID.String() + ".yaml": EncodeEvent(created),
 	}
 	return plan, files, nil
 }
@@ -133,7 +137,3 @@ func yamlScalar(s string) string {
 	}
 	return strings.TrimSuffix(string(out), "\n")
 }
-
-// FormatVersion is the format version of the plans ref this binary reads
-// and writes (ADR 0002 section 2).
-const FormatVersion = 1

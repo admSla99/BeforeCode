@@ -112,16 +112,16 @@ func ParseEvent(id ulid.ULID, data []byte) (Event, error) {
 // State is the Plan state, derived from Events and never stored.
 type State string
 
-// Plan states. Invalid is not a lifecycle state: it marks a plan without a
-// valid created event, which bfc doctor reports.
+// Plan states (CONTEXT.md). StateInvalid is not a lifecycle state: it marks
+// a plan without a valid created event, which bfc doctor reports.
 const (
-	Draft      State = "draft"
-	InReview   State = "in-review"
-	ApprovedSt State = "approved"
-	InProgress State = "in-progress"
-	Done       State = "done"
-	ClosedSt   State = "closed"
-	Invalid    State = "invalid"
+	StateDraft      State = "draft"
+	StateInReview   State = "in-review"
+	StateApproved   State = "approved"
+	StateInProgress State = "in-progress"
+	StateDone       State = "done"
+	StateClosed     State = "closed"
+	StateInvalid    State = "invalid"
 )
 
 // DeriveState computes the state of the plan with the given ID from its
@@ -132,8 +132,8 @@ const (
 func DeriveState(plan ulid.ULID, events []Event) State {
 	for _, e := range events {
 		if e.Type == Created && e.Plan == plan {
-			return Draft
+			return StateDraft
 		}
 	}
-	return Invalid
+	return StateInvalid
 }
