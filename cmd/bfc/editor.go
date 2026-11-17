@@ -35,7 +35,15 @@ func editText(cmd *cobra.Command, s *store.Store, pattern string, text []byte) (
 	if err != nil {
 		return nil, "", err
 	}
-	name, args, err := editorCommand(runtime.GOOS, gitExe, editor, path, fileExists)
+	// The editor setting is shell text. It goes into a script file rather
+	// than an argument, because Windows and the MSYS sh.exe of Git for
+	// Windows disagree on how quotes inside arguments are escaped.
+	script := path + ".sh"
+	if err := os.WriteFile(script, []byte(editorScript(editor)), 0o600); err != nil {
+		return nil, "", err
+	}
+	defer func() { _ = os.Remove(script) }()
+	name, args, err := editorCommand(runtime.GOOS, gitExe, script, path, fileExists)
 	if err != nil {
 		return nil, "", fmt.Errorf("%w; your text is in %s", err, path)
 	}
@@ -48,13 +56,19 @@ func editText(cmd *cobra.Command, s *store.Store, pattern string, text []byte) (
 	return edited, path, err
 }
 
-// editorCommand returns the program and arguments that open path in editor
-// the way git does: through a POSIX shell, so that a setting such as
-// "code --wait" or a quoted path with spaces works. On Windows the shell is
-// the sh.exe that comes with Git for Windows, found near gitExe; exists
-// reports whether a file is there.
-func editorCommand(goos, gitExe, editor, path string, exists func(string) bool) (string, []string, error) {
-	args := []string{"-c", editor + ` "$@"`, editor, path}
+// editorScript is the shell script that runs the editor setting on the
+// file given as its argument, the way git does with `sh -c '<editor> "$@"'`,
+// so that a setting such as "code --wait" or a quoted path with spaces works.
+func editorScript(editor string) string {
+	return editor + ` "$@"` + "\n"
+}
+
+// editorCommand returns the program and arguments that run the editor
+// script on path through a POSIX shell. On Windows the shell is the sh.exe
+// that comes with Git for Windows, found near gitExe; exists reports whether
+// a file is there. The arguments are paths only, never shell text.
+func editorCommand(goos, gitExe, script, path string, exists func(string) bool) (string, []string, error) {
+	args := []string{script, path}
 	if goos != "windows" {
 		return "sh", args, nil
 	}
