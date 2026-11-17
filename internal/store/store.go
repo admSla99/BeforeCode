@@ -286,6 +286,16 @@ func (s *Store) tip(ctx context.Context) (string, error) {
 // A nil env inherits the environment of this process; stdin may be nil.
 // Pathspecs are always literal, so a path such as "a*" names only itself.
 func (s *Store) git(ctx context.Context, env []string, stdin []byte, args ...string) ([]byte, error) {
+	stdout, stderr, err := s.run(ctx, env, stdin, args...)
+	if err != nil {
+		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(string(stderr)))
+	}
+	return stdout, nil
+}
+
+// run runs git like Store.git does and returns both outputs and the bare
+// error, for callers that read the output of a failed command.
+func (s *Store) run(ctx context.Context, env []string, stdin []byte, args ...string) (stdout, stderr []byte, err error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs"}, args...)...)
 	cmd.Dir = s.dir
 	if env != nil {
@@ -294,13 +304,11 @@ func (s *Store) git(ctx context.Context, env []string, stdin []byte, args ...str
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)
 	}
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-	if err := cmd.Run(); err != nil {
-		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
-	}
-	return stdout.Bytes(), nil
+	var out, errOut bytes.Buffer
+	cmd.Stdout = &out
+	cmd.Stderr = &errOut
+	err = cmd.Run()
+	return out.Bytes(), errOut.Bytes(), err
 }
 
 // gitLine runs git like Store.git does and returns its output without the trailing
