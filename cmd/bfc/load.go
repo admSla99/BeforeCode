@@ -12,9 +12,6 @@ import (
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
-// planView is everything list and show print about a plan.
-type planView = index.Plan
-
 // withIndex opens the index of the store's repository, brought up to date
 // with the plans ref, for the duration of fn.
 func withIndex(ctx context.Context, s *store.Store, fn func(*index.Index) error) error {
@@ -30,8 +27,8 @@ func withIndex(ctx context.Context, s *store.Store, fn func(*index.Index) error)
 }
 
 // loadPlans returns every plan, newest activity first, from the index.
-func loadPlans(ctx context.Context, s *store.Store) ([]planView, error) {
-	var plans []planView
+func loadPlans(ctx context.Context, s *store.Store) ([]index.Plan, error) {
+	var plans []index.Plan
 	err := withIndex(ctx, s, func(ix *index.Index) (err error) {
 		plans, err = ix.Plans(ctx)
 		return err
@@ -40,17 +37,13 @@ func loadPlans(ctx context.Context, s *store.Store) ([]planView, error) {
 }
 
 // loadPlan returns one plan as it is now in the plans ref.
-func loadPlan(ctx context.Context, s *store.Store, id ulid.ULID) (planView, error) {
-	plans, err := loadPlans(ctx, s)
-	if err != nil {
-		return planView{}, err
-	}
-	for _, p := range plans {
-		if p.ID == id {
-			return p, nil
-		}
-	}
-	return planView{}, errors.New("plan " + id.String() + " is not in the plans ref")
+func loadPlan(ctx context.Context, s *store.Store, id ulid.ULID) (index.Plan, error) {
+	var p index.Plan
+	err := withIndex(ctx, s, func(ix *index.Index) (err error) {
+		p, err = ix.Plan(ctx, id)
+		return err
+	})
+	return p, err
 }
 
 // listPlanIDs returns the ULIDs of the plan directories in the plans ref.

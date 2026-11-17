@@ -21,8 +21,10 @@ import (
 )
 
 // schemaVersion is stored as the database's user_version. A database of any
-// other version is discarded and rebuilt; bump it whenever the schema or the
-// meaning of a column changes.
+// other version is discarded and rebuilt. Bump it whenever the schema or the
+// meaning of a column changes, and whenever reading a plan gives another
+// result for the same files (core.Derive, core.ParseIntent, searchText):
+// plans whose directory did not change are not read again.
 const schemaVersion = 1
 
 // File is where the index lives, relative to the git common directory.
@@ -73,7 +75,8 @@ type Index struct {
 	db   *sql.DB
 }
 
-// errOutdated marks a database written by another schema version.
+// errOutdated marks a database written by another schema version, or one
+// without the tables of this version.
 var errOutdated = errors.New("index: database has another schema version")
 
 // Open opens the index of the store's repository, creating it under the git
@@ -89,13 +92,13 @@ func Open(ctx context.Context, s *store.Store) (*Index, error) {
 		return nil, err
 	}
 	ix := &Index{s: s, path: path}
-	if err := ix.connect(ctx); err != nil {
-		if !discardable(err) {
-			return nil, err
-		}
-		if err := ix.reset(ctx); err != nil {
-			return nil, err
-		}
+	err = ix.connect(ctx)
+	if discardable(err) {
+		err = ix.reset(ctx)
+	}
+	if err != nil {
+		_ = ix.Close()
+		return nil, err
 	}
 	return ix, nil
 }
@@ -114,9 +117,9 @@ func (ix *Index) Close() error {
 }
 
 // Update brings the index up to the current tip of the plans ref. It reads
-// again only the plans whose directory changed since the commit the index
-// was built from; when that commit is no longer in the ref's history, it
-// reads all of them.
+// again only the plans whose directory tree changed since the commit the
+// index was built from. When that commit is no longer in the ref's history,
+// last activity is computed again from the whole history.
 func (ix *Index) Update(ctx context.Context) (Updated, error) {
 	var u Updated
 	err := ix.retry(ctx, func() (err error) {
@@ -152,6 +155,40 @@ func (ix *Index) Plans(ctx context.Context) ([]Plan, error) {
 		return ix.fillShortIDs(ctx, plans)
 	})
 	return plans, err
+}
+
+// ErrUnknownPlan is returned by Plan for an ID that is not in the plans ref.
+var ErrUnknownPlan = errors.New("index: no such plan in the plans ref")
+
+// Plan returns one plan, or ErrUnknownPlan.
+func (ix *Index) Plan(ctx context.Context, id ulid.ULID) (Plan, error) {
+	var p Plan
+	err := ix.retry(ctx, func() error {
+		if _, err := ix.update(ctx); err != nil {
+			return err
+		}
+		rows, err := ix.db.QueryContext(ctx, `SELECT `+planColumns+` FROM plans p WHERE p.id = ?`, id.String())
+		if err != nil {
+			return err
+		}
+		defer func() { _ = rows.Close() }()
+		if !rows.Next() {
+			if err := rows.Err(); err != nil {
+				return err
+			}
+			return fmt.Errorf("%w: %s", ErrUnknownPlan, id)
+		}
+		if p, err = scanPlan(rows); err != nil {
+			return err
+		}
+		ps := []Plan{p}
+		if err := ix.fillShortIDs(ctx, ps); err != nil {
+			return err
+		}
+		p = ps[0]
+		return nil
+	})
+	return p, err
 }
 
 // Search returns the plans whose title, intent.md or plan.md contain every
@@ -261,6 +298,15 @@ func (ix *Index) connect(ctx context.Context) error {
 	}
 	switch {
 	case version == schemaVersion:
+		// A damaged file can carry the right version without its tables.
+		var ours int
+		if err := tx.QueryRowContext(ctx, `SELECT count(*) FROM sqlite_schema
+			WHERE type = 'table' AND name IN ('meta', 'plans', 'plan_text')`).Scan(&ours); err != nil {
+			return err
+		}
+		if ours != 3 {
+			return errOutdated
+		}
 		return nil
 	case version != 0 || tables != 0:
 		return errOutdated
@@ -310,15 +356,21 @@ func discardable(err error) bool {
 }
 
 func (ix *Index) update(ctx context.Context) (Updated, error) {
-	tip, err := ix.s.Tip(ctx)
-	if err != nil && !errors.Is(err, store.ErrNotInitialised) {
-		return Updated{}, err
+	// Without a move of the ref, readers take no write lock.
+	if u, err := ix.current(ctx); err != nil || u.From == u.To {
+		return u, err
 	}
 	tx, err := ix.db.BeginTx(ctx, nil)
 	if err != nil {
 		return Updated{}, err
 	}
 	defer func() { _ = tx.Rollback() }()
+	// The tip is read under the write lock, so a process that waited for
+	// another one never sets the index back to an older tip.
+	tip, err := ix.s.Tip(ctx)
+	if err != nil && !errors.Is(err, store.ErrNotInitialised) {
+		return Updated{}, err
+	}
 
 	var u Updated
 	err = tx.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'ref_commit'`).Scan(&u.From)
@@ -337,9 +389,10 @@ func (ix *Index) update(ctx context.Context) (Updated, error) {
 			since = ""
 		}
 	}
-	if since == "" || tip == "" {
-		// Not a step forward in the same history: start again.
-		if _, err := tx.ExecContext(ctx, `DELETE FROM plans; DELETE FROM plan_text;`); err != nil {
+	if since == "" {
+		// Not a step forward in the same history: plans are still compared
+		// by tree, but last activity is computed from the whole history.
+		if _, err := tx.ExecContext(ctx, `UPDATE plans SET last_activity = 0`); err != nil {
 			return Updated{}, err
 		}
 	}
@@ -411,6 +464,21 @@ func (ix *Index) update(ctx context.Context) (Updated, error) {
 		return Updated{}, err
 	}
 	return u, tx.Commit()
+}
+
+// current reads the tip of the plans ref and the commit the index was
+// built from, without a transaction.
+func (ix *Index) current(ctx context.Context) (Updated, error) {
+	tip, err := ix.s.Tip(ctx)
+	if err != nil && !errors.Is(err, store.ErrNotInitialised) {
+		return Updated{}, err
+	}
+	u := Updated{To: tip}
+	err = ix.db.QueryRowContext(ctx, `SELECT value FROM meta WHERE key = 'ref_commit'`).Scan(&u.From)
+	if errors.Is(err, sql.ErrNoRows) {
+		err = nil
+	}
+	return u, err
 }
 
 // upsert stores a plan read from tree, keeping its last activity, and

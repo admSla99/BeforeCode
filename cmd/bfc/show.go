@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
@@ -38,12 +39,12 @@ prefix of at least four characters, or the full ULID.`,
 
 // resolvePlan loads the plans and returns the one the query names (see
 // core.ResolveID), with errors that list candidates or point to bfc list.
-func resolvePlan(ctx context.Context, s *store.Store, query string) (planView, error) {
+func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan, error) {
 	views, err := loadPlans(ctx, s)
 	if err != nil {
-		return planView{}, err
+		return index.Plan{}, err
 	}
-	byID := make(map[ulid.ULID]planView, len(views))
+	byID := make(map[ulid.ULID]index.Plan, len(views))
 	refs := make([]core.PlanHandle, len(views))
 	for i, v := range views {
 		byID[v.ID] = v
@@ -53,18 +54,18 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (planView, e
 	var amb *core.AmbiguousIDError
 	switch {
 	case errors.As(err, &amb):
-		return planView{}, ambiguousError(amb, byID)
+		return index.Plan{}, ambiguousError(amb, byID)
 	case errors.Is(err, core.ErrUnknownID):
-		return planView{}, fmt.Errorf("no plan %q; bfc list shows the plans", query)
+		return index.Plan{}, fmt.Errorf("no plan %q; bfc list shows the plans", query)
 	case err != nil:
-		return planView{}, err
+		return index.Plan{}, err
 	}
 	return byID[id], nil
 }
 
 // ambiguousError lists the candidates with their Short IDs, ULIDs and
 // titles. The ULID always tells them apart.
-func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]planView) error {
+func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) error {
 	var b strings.Builder
 	fmt.Fprintf(&b, "%q matches several plans; give a longer ID or the ULID:", amb.Query)
 	for _, c := range amb.Candidates {
@@ -74,7 +75,7 @@ func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]planView) err
 	return errors.New(b.String())
 }
 
-func printPlan(w io.Writer, v planView) error {
+func printPlan(w io.Writer, v index.Plan) error {
 	approvals := "-"
 	if v.Status.RequiredApprovals > 0 {
 		approvals = fmt.Sprintf("%d/%d", len(v.Status.Approvers), v.Status.RequiredApprovals)

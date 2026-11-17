@@ -13,13 +13,15 @@ Date: 2026-11-17. Status: accepted. Made for issue #15 (index with full-text sea
 **Updating.** When the tip differs from `ref_commit`:
 
 - If `ref_commit` is an ancestor of the tip, plans whose directory tree ID changed are read again, new ones are added and missing ones removed. Last activity comes from `git log ref_commit..tip`, taking the newest time per plan, and is merged with the stored one by `max`. This gives the same answer as a full read.
-- Otherwise (first build, or a history that does not contain `ref_commit`) everything is read again.
+- Otherwise (first build, or a history that does not contain `ref_commit`) plans are still compared by tree ID, so only changed ones are read again, and last activity is computed from the whole history.
 
-The whole update runs in one `BEGIN IMMEDIATE` transaction with a busy timeout, so two `bfc` processes wait for each other. A stale writer cannot leave wrong data: it records its own older `ref_commit`, and the next update re-reads from there.
+`git log` runs with `--full-history`, so a change on a merged side counts even when the merge kept the other side; then the times for `ref_commit..tip` combined with those up to `ref_commit` are exactly the times up to `tip`. Readers first compare the tip with `ref_commit` without a transaction; only a moved ref takes the write lock.
+
+The update runs in one `BEGIN IMMEDIATE` transaction with a busy timeout, so two `bfc` processes wait for each other, and the tip is read after the lock is taken, so a process that waited never sets the index back to an older tip.
 
 **Last activity is the newest commit time,** not the time of the first commit `git log` lists. They differ only with clock skew between machines; with `max` the incremental and the full update agree.
 
-**Discard and rebuild.** `PRAGMA user_version` holds the schema version. A database of any other version, or one SQLite reports as `SQLITE_CORRUPT` or `SQLITE_NOTADB` (on open or on any later query), is deleted with its journal files and rebuilt, without a message. Any change to the schema or to the meaning of a column bumps the version; there are no migrations.
+**Discard and rebuild.** `PRAGMA user_version` holds the schema version. A database of any other version, one without the tables of this version, or one SQLite reports as `SQLITE_CORRUPT` or `SQLITE_NOTADB` (on open or on any later query), is deleted with its journal files and rebuilt, without a message. Any change to the schema or to the meaning of a column bumps the version, and so does any change that reads the same files differently (`core.Derive`, `core.ParseIntent`, what search indexes): plans whose directory did not change are not read again. There are no migrations.
 
 **Search.** Each word of the query is quoted as an FTS5 phrase, so the user's text is never FTS5 syntax; all words must match. Ranking is `bm25`, then newest activity. The snippet marks matches with `[` `]` and is folded to one line.
 

@@ -63,7 +63,7 @@ func TestSearchPrintsMatchingPlansWithASnippet(t *testing.T) {
 	}
 }
 
-func TestSearchWithoutMatchesPrintsNothing(t *testing.T) {
+func TestSearchWithoutMatchesSaysSo(t *testing.T) {
 	dir, _, _ := threePlans(t)
 	out, err := bfcIn(t, dir, "search", "nothing", "here")
 	if err != nil || strings.TrimSpace(out) != `no plans match "nothing here"` {

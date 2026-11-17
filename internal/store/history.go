@@ -36,7 +36,10 @@ func (s *Store) LastChanged(ctx context.Context, since, commit, dir string) (map
 		rev = since + ".." + commit
 	}
 	// Each commit prints "\x00<unix time>" followed by the paths it changed.
-	out, err := s.git(ctx, nil, nil, "log", "--format=%x00%ct", "--name-only", "--no-renames", rev, "--", dir)
+	// --full-history keeps commits on a merged side even when the merge
+	// result equals the other side, so the answer for since..commit
+	// combined with the one for since is the answer for commit.
+	out, err := s.git(ctx, nil, nil, "log", "--full-history", "--format=%x00%ct", "--name-only", "--no-renames", rev, "--", dir)
 	if err != nil {
 		return nil, err
 	}

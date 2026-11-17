@@ -11,6 +11,7 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
 )
 
 // listedStates are the states --state accepts, in lifecycle order.
@@ -45,7 +46,7 @@ file of the plan.`,
 				return err
 			}
 			if state != "" {
-				views = slices.DeleteFunc(views, func(v planView) bool { return v.Status.State != core.State(state) })
+				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State != core.State(state) })
 			}
 			if asJSON {
 				return printJSON(cmd, views)
@@ -75,7 +76,7 @@ type planJSON struct {
 	RequiredApprovals int         `json:"required_approvals"`
 }
 
-func printJSON(cmd *cobra.Command, views []planView) error {
+func printJSON(cmd *cobra.Command, views []index.Plan) error {
 	out := make([]planJSON, 0, len(views))
 	for _, v := range views {
 		out = append(out, planJSON{

@@ -273,6 +273,11 @@ func TestABrokenDatabaseIsRebuiltSilently(t *testing.T) {
 				t.Fatal(err)
 			}
 		},
+		"missing table": func(t *testing.T, path string) {
+			if err := index.DropTable(path, "plans"); err != nil {
+				t.Fatal(err)
+			}
+		},
 		"older schema": func(t *testing.T, path string) {
 			if err := os.Remove(path); err != nil {
 				t.Fatal(err)
@@ -388,5 +393,85 @@ func TestSearchIgnoresFrontMatterAndTemplateHints(t *testing.T) {
 	hits, _ = ix.Search(ctx, "refused")
 	if len(hits) != 1 || strings.Contains(hits[0].Snippet, "<!--") || !strings.Contains(hits[0].Snippet, "Cards are [refused].") {
 		t.Errorf("Search(refused) = %+v", hits)
+	}
+}
+
+// git runs git in the repository of s and returns its trimmed output.
+func git(t *testing.T, s *store.Store, args ...string) string {
+	t.Helper()
+	out, err := exec.Command("git", append([]string{"-C", s.Root()}, args...)...).Output()
+	if err != nil {
+		t.Fatalf("git %v: %v", args, err)
+	}
+	return strings.TrimSpace(string(out))
+}
+
+func TestAnIndexKeptUpToDateAcrossAMergeMatchesAFreshOne(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	clock(t, 1)
+	a := newPlan(t, s, "A", "a\n")
+	base, _ := s.Tip(ctx)
+	clock(t, 5)
+	write(t, s, map[string]string{core.PlanDir(a) + "/plan.md": "Theirs.\n"})
+	theirs, _ := s.Tip(ctx)
+	git(t, s, "update-ref", store.Ref, base)
+	clock(t, 2)
+	newPlan(t, s, "B", "b\n")
+	ix := openIndex(t, s)
+	plans(t, ix) // indexed at ours
+
+	ours, _ := s.Tip(ctx)
+	tree := strings.Fields(git(t, s, "merge-tree", "--write-tree", ours, theirs))[0]
+	clock(t, 6)
+	merge := git(t, s, "commit-tree", tree, "-p", ours, "-p", theirs, "-m", "merge")
+	git(t, s, "update-ref", store.Ref, merge, ours)
+
+	got := plans(t, ix)
+	path := ix.Path()
+	if err := ix.Close(); err != nil {
+		t.Fatal(err)
+	}
+	if err := os.Remove(path); err != nil {
+		t.Fatal(err)
+	}
+	want := plans(t, openIndex(t, s))
+	if !reflect.DeepEqual(got, want) {
+		t.Errorf("updated index\n%+v\nfresh index\n%+v", got, want)
+	}
+	if want[0].ID != a || want[0].LastActivity.Hour() != 9 || want[0].LastActivity.Minute() != 5 {
+		t.Errorf("A = %+v, want last activity 09:05 from the merged side", want[0])
+	}
+}
+
+func TestAReplacedHistoryRereadsOnlyChangedPlans(t *testing.T) {
+	ctx := context.Background()
+	s := newStore(t)
+	clock(t, 1)
+	newPlan(t, s, "Same", "s\n")
+	clock(t, 2)
+	changed := newPlan(t, s, "Changed", "c\n")
+	ix := openIndex(t, s)
+	plans(t, ix)
+
+	// The same files as a new root commit, so the indexed commit is not in
+	// the history any more, then an edit of one plan on top.
+	old, _ := s.Tip(ctx)
+	clock(t, 3)
+	root := git(t, s, "commit-tree", old+"^{tree}", "-m", "rewritten")
+	git(t, s, "update-ref", store.Ref, root, old)
+	clock(t, 4)
+	write(t, s, map[string]string{core.PlanDir(changed) + "/plan.md": "New.\n"})
+
+	u, err := ix.Update(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !reflect.DeepEqual(u.Reread, []ulid.ULID{changed}) {
+		t.Errorf("reread %v, want only %s", u.Reread, changed)
+	}
+	got := plans(t, ix)
+	if got[0].ID != changed || got[0].LastActivity.Minute() != 4 || got[1].LastActivity.Minute() != 3 {
+		t.Errorf("last activity not recomputed from the new history: %+v", got)
 	}
 }
