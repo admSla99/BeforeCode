@@ -1,0 +1,246 @@
+<title>bfc Sync Indicator</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap">
+<style>
+/* Layout: one column; question, then the terminal status line as the hero, the state panel, free-play buttons, scenario tabs. */
+:root {
+  --bg: #f6f7f5; --panel: #ffffff; --fg: #1d2420; --muted: #5f6b64; --line: #d9ded9;
+  --accent: #2f6f5e; --ok: #2e7d4f; --warn: #a66a00; --bad: #b3352b; --idle: #6b7280;
+  --term-bg: #17201c; --term-fg: #dfe8e2;
+  --sans: "IBM Plex Sans", system-ui, sans-serif; --mono: "IBM Plex Mono", ui-monospace, monospace;
+}
+@media (prefers-color-scheme: dark) { :root:not([data-theme="light"]) {
+  --bg: #111613; --panel: #18201c; --fg: #e3ebe6; --muted: #9aa8a0; --line: #2b3631;
+  --accent: #6fc2a8; --ok: #5fcf8c; --warn: #e3a93b; --bad: #f0786d; --idle: #9ca3af;
+  --term-bg: #0b0f0d; --term-fg: #dfe8e2; color-scheme: dark } }
+:root[data-theme="dark"] {
+  --bg: #111613; --panel: #18201c; --fg: #e3ebe6; --muted: #9aa8a0; --line: #2b3631;
+  --accent: #6fc2a8; --ok: #5fcf8c; --warn: #e3a93b; --bad: #f0786d; --idle: #9ca3af;
+  --term-bg: #0b0f0d; --term-fg: #dfe8e2; color-scheme: dark }
+body { background: var(--bg); color: var(--fg); font-family: var(--sans); font-size: 15px; line-height: 1.55; }
+main { max-width: 860px; margin: 0 auto; padding-block: 28px 48px; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); display: grid; gap: 22px; }
+h1 { font-size: 1.6rem; margin: 0; text-wrap: balance; }
+h2 { font-size: .78rem; letter-spacing: .08em; text-transform: uppercase; color: var(--muted); margin: 0 0 10px; font-weight: 600; }
+p { margin: 0; max-width: 65ch; }
+.lead { color: var(--muted); }
+.term { background: var(--term-bg); color: var(--term-fg); font-family: var(--mono); font-size: 13px; border-radius: 8px; padding: 12px 14px; overflow-x: auto; white-space: pre; }
+.term .dim { opacity: .55 }
+.badge-synced { color: #5fcf8c } .badge-syncing { color: #e3a93b } .badge-offline { color: #9ca3af } .badge-conflict { color: #f0786d } .badge-local { color: #9ca3af }
+.panel { background: var(--panel); border: 1px solid var(--line); border-radius: 8px; padding: 16px; }
+.facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); gap: 12px 20px; }
+.fact { display: grid; gap: 2px; min-width: 0; }
+.fact .k { font-size: .75rem; letter-spacing: .06em; text-transform: uppercase; color: var(--muted); }
+.fact .v { font-family: var(--mono); font-size: .92rem; overflow-wrap: anywhere; }
+.fact.changed .v { color: var(--accent); font-weight: 600; }
+.why { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--line); color: var(--muted); }
+.buttons { display: flex; flex-wrap: wrap; gap: 8px; }
+button { font: inherit; font-size: .9rem; border: 1px solid var(--line); background: var(--panel); color: var(--fg); padding: 7px 12px; border-radius: 6px; cursor: pointer; }
+button:hover { border-color: var(--accent); }
+button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+button.primary { background: var(--accent); border-color: var(--accent); color: var(--panel); }
+button:disabled { opacity: .45; cursor: default; }
+.tabs { display: flex; flex-wrap: wrap; gap: 6px; margin-bottom: 12px; }
+.tabs button[aria-selected="true"] { border-color: var(--accent); color: var(--accent); font-weight: 600; }
+.steps { display: grid; gap: 8px; margin-top: 12px; }
+.step { display: flex; align-items: center; gap: 10px; }
+.step .n { font-family: var(--mono); color: var(--muted); width: 1.5em; font-variant-numeric: tabular-nums; }
+.step.done button { opacity: .5; }
+.log { font-family: var(--mono); font-size: .82rem; color: var(--muted); max-height: 160px; overflow: auto; display: grid; gap: 2px; }
+.qs { display: grid; gap: 8px; }
+.qs li { max-width: 70ch; }
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; } }
+</style>
+
+<main>
+  <header style="display:grid;gap:8px">
+    <h1>Sync indicator of the bfc plan detail</h1>
+    <p class="lead">Issue #17. While the TUI is open it syncs the plans with GitHub every 15 seconds and after every local change. This demo lets you push that model through awkward cases and see what the status line would say. Throwaway prototype; the logic module in the page source is what moves into Go.</p>
+  </header>
+
+  <section>
+    <h2>Status line in the terminal</h2>
+    <div class="term" id="term"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Current state</h2>
+    <div class="facts" id="facts"></div>
+    <p class="why" id="why"></p>
+  </section>
+
+  <section class="panel">
+    <h2>Free play</h2>
+    <div class="buttons" id="free"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Scenarios</h2>
+    <div class="tabs" role="tablist" id="tabs"></div>
+    <p id="scenario-text"></p>
+    <div class="steps" id="steps"></div>
+  </section>
+
+  <section class="panel">
+    <h2>What happened</h2>
+    <div class="log" id="log"></div>
+  </section>
+
+  <section class="panel">
+    <h2>Rules in this model, to confirm</h2>
+    <ol class="qs">
+      <li>Only one sync runs at a time. A change made during a sync is not lost: one more sync runs right after.</li>
+      <li>Offline keeps all local work. Changes count up as "waiting", and the timer retries.</li>
+      <li>Authentication errors count as offline, and the status shows git's own message.</li>
+      <li>A conflict commits nothing (as bfc pull). The timer keeps retrying; the status stays "conflict" until a sync succeeds, for example after bfc pull --keep in another terminal or the colleague's next change.</li>
+      <li>Local mode (sync.enabled: false) never syncs and says so.</li>
+    </ol>
+  </section>
+</main>
+
+<script>
+// ---- Portable logic module: pure, no DOM. Lifts into internal/tui as a Go reducer. ----
+const SyncModel = (() => {
+  const initial = (localMode = false) => ({
+    status: localMode ? "local" : "synced", // synced | syncing | offline | conflict | local
+    running: false,       // a sync is in flight
+    again: false,         // a local change arrived during the running sync
+    waiting: 0,           // local commits not yet on the remote
+    lastOk: localMode ? null : 0, // seconds since the last good sync
+    message: "",          // git's message (offline) or conflicting files
+  });
+
+  const start = (s) => ({ ...s, running: true, again: false, status: "syncing" });
+
+  function reduce(s, a) {
+    if (s.status === "local") {
+      return a.type === "localChange" ? { ...s, waiting: s.waiting + 1 } : s;
+    }
+    switch (a.type) {
+      case "tick":
+        s = { ...s, lastOk: s.lastOk === null ? null : s.lastOk + 15 };
+        return s.running ? s : start(s);
+      case "localChange":
+        s = { ...s, waiting: s.waiting + 1 };
+        return s.running ? { ...s, again: true } : start(s);
+      case "syncOk": {
+        if (!s.running) return s;
+        const done = { ...s, running: false, status: "synced", waiting: 0, lastOk: 0, message: a.brought ? "brought changes to the open plan" : "" };
+        return s.again ? start(done) : done;
+      }
+      case "syncOffline":
+        if (!s.running) return s;
+        return { ...s, running: false, again: false, status: "offline", message: a.message };
+      case "syncConflict":
+        if (!s.running) return s;
+        return { ...s, running: false, again: false, status: "conflict", message: a.files };
+      default:
+        return s;
+    }
+  }
+
+  // What the TUI prints at the right of the help line.
+  function label(s) {
+    switch (s.status) {
+      case "local": return "local mode, not synced";
+      case "syncing": return "⟳ syncing" + (s.waiting ? ` · ${s.waiting} to push` : "");
+      case "offline": return `○ offline · ${s.waiting} change${s.waiting === 1 ? "" : "s"} waiting`;
+      case "conflict": return `✗ conflict in ${s.message} · bfc pull --keep local|remote`;
+      default: return "● synced" + (s.lastOk ? ` ${s.lastOk}s ago` : " just now");
+    }
+  }
+  return { initial, reduce, label };
+})();
+
+// ---- Throwaway page shell ----
+const actions = {
+  tick: { text: "15 s pass (timer)", a: { type: "tick" } },
+  localChange: { text: "I edit or approve (local change)", a: { type: "localChange" } },
+  syncOk: { text: "Sync finishes: nothing new", a: { type: "syncOk", brought: false } },
+  syncOkBrought: { text: "Sync finishes: colleague's change arrives", a: { type: "syncOk", brought: true } },
+  syncOffline: { text: "Sync fails: no network", a: { type: "syncOffline", message: "Could not resolve host: github.com" } },
+  syncAuth: { text: "Sync fails: login expired", a: { type: "syncOffline", message: "Authentication failed for 'https://github.com/acme/shop.git/'" } },
+  syncConflict: { text: "Sync finds a conflict", a: { type: "syncConflict", files: "plan.md" } },
+};
+
+const scenarios = [
+  { name: "Happy path", text: "Ana opens a plan, edits it, and a colleague's approval arrives by itself. Watch the status go synced → syncing → synced and the note that the open plan changed.",
+    steps: ["tick", "syncOk", "localChange", "syncOk", "tick", "syncOkBrought"] },
+  { name: "Edit during a sync", text: "Ana approves while a timer sync is still running. The model must not start a second sync at once, and must not forget her change: one more sync runs right after.",
+    steps: ["tick", "localChange", "syncOk", "syncOk"] },
+  { name: "Offline, then back", text: "The train goes into a tunnel. Ana keeps editing; nothing blocks. Changes count up as waiting, the timer retries, and everything goes out once the network is back.",
+    steps: ["localChange", "syncOffline", "localChange", "tick", "syncOffline", "tick", "syncOk"] },
+  { name: "Conflict", text: "Ana and Ben edited the same lines of plan.md. The sync stops with a conflict and commits nothing. Ana keeps working; the timer keeps trying; the status stays red until a sync succeeds.",
+    steps: ["localChange", "syncConflict", "tick", "syncConflict", "tick", "syncOk"] },
+  { name: "Login expired", text: "The GitHub token expired. Is it right to show this as offline with git's message, rather than a separate error state?",
+    steps: ["tick", "syncAuth", "localChange", "syncAuth"] },
+  { name: "Local mode", text: "A repository set up with bfc init --local. Nothing ever syncs; the status says so, and local changes are not counted as a problem.",
+    steps: ["localChange", "tick", "localChange"], local: true },
+];
+
+let state = SyncModel.initial();
+let prev = state;
+let current = 0, stepAt = 0;
+const log = [];
+
+const $ = (id) => document.getElementById(id);
+const esc = (t) => String(t).replace(/[&<>]/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;" }[c]));
+
+function dispatch(key) {
+  prev = state;
+  state = SyncModel.reduce(state, actions[key].a);
+  log.unshift(`${actions[key].text}  →  ${state.status}${state.again ? " (one more sync queued)" : ""}`);
+  render();
+}
+
+function render() {
+  const help = "tab doc  e edit  a approve  r changes  esc back";
+  const cls = "badge-" + state.status;
+  $("term").innerHTML = `<span class="dim">${esc(help)}</span>  <span class="${cls}">${esc(SyncModel.label(state))}</span>`;
+  const facts = [
+    ["Status", state.status, "status"],
+    ["Sync running", state.running ? "yes" : "no", "running"],
+    ["One more sync queued", state.again ? "yes" : "no", "again"],
+    ["Local changes waiting", state.waiting, "waiting"],
+    ["Last good sync", state.lastOk === null ? "never (local mode)" : state.lastOk === 0 ? "just now" : state.lastOk + " s ago", "lastOk"],
+    ["Message", state.message || "–", "message"],
+  ];
+  $("facts").innerHTML = facts.map(([k, v, f]) => `<div class="fact${prev[f] !== state[f] ? " changed" : ""}"><span class="k">${k}</span><span class="v">${esc(v)}</span></div>`).join("");
+  $("why").textContent = why();
+  $("log").innerHTML = log.slice(0, 30).map((l) => `<div>${esc(l)}</div>`).join("") || "<div>Nothing yet.</div>";
+  const disabled = (k) => (k.startsWith("sync") && !state.running) || (state.status === "local" && k !== "localChange");
+  $("free").innerHTML = Object.entries(actions).map(([k, v]) => `<button id="free-${k}" ${disabled(k) ? "disabled" : ""} data-k="${k}">${esc(v.text)}</button>`).join("");
+  const sc = scenarios[current];
+  $("tabs").innerHTML = scenarios.map((s, i) => `<button role="tab" id="tab-${i}" aria-selected="${i === current}" data-tab="${i}">${esc(s.name)}</button>`).join("");
+  $("scenario-text").textContent = sc.text;
+  $("steps").innerHTML = sc.steps.map((k, i) => `<div class="step${i < stepAt ? " done" : ""}"><span class="n">${i + 1}</span><button id="step-${i}" data-step="${i}" ${i !== stepAt ? "disabled" : ""} class="${i === stepAt ? "primary" : ""}">${esc(actions[k].text)}</button></div>`).join("")
+    + `<div class="step"><span class="n"></span><button id="restart" data-restart="1">Restart this scenario</button></div>`;
+}
+
+function why() {
+  if (state.status === "local") return "Local mode: plans stay in this clone.";
+  if (state.running && state.again) return "A sync is running and a change arrived meanwhile; another sync starts as soon as this one ends.";
+  if (state.running) return "A sync is running in the background. The screen stays usable.";
+  if (state.status === "offline") return "The last sync could not reach the remote. Local work continues; the next timer tick retries.";
+  if (state.status === "conflict") return "The remote changed the same lines. Nothing was committed; the timer keeps retrying.";
+  return state.message ? "In sync, and the open plan was refreshed without losing the scroll position." : "In sync with the remote.";
+}
+
+function startScenario(i) {
+  current = i; stepAt = 0;
+  state = prev = SyncModel.initial(!!scenarios[i].local);
+  log.length = 0;
+  render();
+}
+
+document.addEventListener("click", (e) => {
+  const b = e.target.closest("button");
+  if (!b || b.disabled) return;
+  if (b.dataset.k) dispatch(b.dataset.k);
+  else if (b.dataset.tab) startScenario(+b.dataset.tab);
+  else if (b.dataset.step) { dispatch(scenarios[current].steps[+b.dataset.step]); stepAt++; render(); }
+  else if (b.dataset.restart) startScenario(current);
+});
+
+startScenario(0);
+</script>
