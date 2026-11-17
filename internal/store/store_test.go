@@ -382,3 +382,40 @@ func TestWriteRejectsFileAndDirectoryClashes(t *testing.T) {
 		t.Errorf("Read(a/b) = %q, %v after rejected write", got, err)
 	}
 }
+
+func TestWriteFailsWithoutLosingACommitWhenAnotherWriterMovesTheRef(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("wrapper git script needs a POSIX shell")
+	}
+	dir := newRepo(t)
+	s := open(t, dir)
+	ctx := context.Background()
+	if _, err := s.Write(ctx, "base", map[string][]byte{"a": []byte("base")}); err != nil {
+		t.Fatal(err)
+	}
+	// The other writer's commit, made on top of the same tip.
+	theirs := git(t, dir, "commit-tree", git(t, dir, "rev-parse", store.Ref+"^{tree}"),
+		"-p", store.Ref, "-m", "theirs")
+
+	// A git wrapper that moves the ref to their commit just before our
+	// commit is created, as a concurrent bfc process would.
+	realGit, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	script := "#!/bin/sh\n" +
+		"case \" $* \" in *\" commit-tree \"*) \"" + realGit + "\" update-ref " + store.Ref + " " + theirs + " ;; esac\n" +
+		"exec \"" + realGit + "\" \"$@\"\n"
+	if err := os.WriteFile(filepath.Join(bin, "git"), []byte(script), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	t.Setenv("PATH", bin+string(os.PathListSeparator)+os.Getenv("PATH"))
+
+	if _, err := s.Write(ctx, "ours", map[string][]byte{"b": []byte("ours")}); err == nil {
+		t.Fatal("Write succeeded although the ref moved underneath it")
+	}
+	if got := git(t, dir, "rev-parse", store.Ref); got != theirs {
+		t.Errorf("ref = %s, want the other writer's commit %s", got, theirs)
+	}
+}

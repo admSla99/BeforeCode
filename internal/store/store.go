@@ -37,11 +37,10 @@ type Store struct {
 // git is missing or older than MinGitVersion.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir}
-	out, err := s.git(context.Background(), nil, nil, "version")
+	found, err := s.gitLine(context.Background(), nil, nil, "version")
 	if err != nil {
 		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
 	}
-	found := strings.TrimSpace(string(out))
 	if !atLeast(found, MinGitVersion) {
 		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer, found %q", MinGitVersion, found)
 	}
@@ -106,6 +105,10 @@ func (s *Store) List(ctx context.Context, dir string) ([]string, error) {
 //
 // If another writer moves the plans ref while Write runs, the update is
 // refused and the ref is left as the other writer set it.
+//
+// Write knows nothing about plans: it will replace any file it is given.
+// Keeping events, messages, handoffs and checks append-only is the job of the
+// caller.
 func (s *Store) Write(ctx context.Context, message string, files map[string][]byte) (string, error) {
 	if len(files) == 0 {
 		return "", errors.New("store: nothing to write")
@@ -131,11 +134,10 @@ func (s *Store) Write(ctx context.Context, message string, files map[string][]by
 	if parent != "" {
 		args = append(args, "-p", parent)
 	}
-	out, err := s.git(ctx, nil, nil, args...)
+	commit, err := s.gitLine(ctx, nil, nil, args...)
 	if err != nil {
 		return "", err
 	}
-	commit := strings.TrimSpace(string(out))
 	// The old value (empty for a ref that must not exist yet) makes
 	// update-ref refuse the change if the ref moved since we read it.
 	if _, err := s.git(ctx, nil, nil, "update-ref", "-m", "bfc: "+message, Ref, commit, parent); err != nil {
@@ -162,20 +164,16 @@ func (s *Store) writeTree(ctx context.Context, parent string, files map[string][
 	// Records end in NUL (-z), so no path needs quoting.
 	var entries bytes.Buffer
 	for path, content := range files {
-		out, err := s.git(ctx, nil, content, "hash-object", "-w", "--stdin")
+		blob, err := s.gitLine(ctx, nil, content, "hash-object", "-w", "--stdin")
 		if err != nil {
 			return "", err
 		}
-		fmt.Fprintf(&entries, "100644 %s\t%s\x00", strings.TrimSpace(string(out)), path)
+		fmt.Fprintf(&entries, "100644 %s\t%s\x00", blob, path)
 	}
 	if _, err := s.git(ctx, env, entries.Bytes(), "update-index", "-z", "--add", "--index-info"); err != nil {
 		return "", err
 	}
-	out, err := s.git(ctx, env, nil, "write-tree")
-	if err != nil {
-		return "", err
-	}
-	return strings.TrimSpace(string(out)), nil
+	return s.gitLine(ctx, env, nil, "write-tree")
 }
 
 // checkPath rejects anything but a clean, relative, slash-separated path of
@@ -270,15 +268,12 @@ func (s *Store) entry(ctx context.Context, commit, path string) (treeEntry, erro
 
 // tip returns the commit the plans ref points to, or ErrNotInitialised.
 func (s *Store) tip(ctx context.Context) (string, error) {
-	out, err := s.git(ctx, nil, nil, "rev-parse", "--verify", "--quiet", Ref+"^{commit}")
-	if err != nil {
-		var exitErr *exec.ExitError
-		if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
-			return "", ErrNotInitialised
-		}
-		return "", err
+	commit, err := s.gitLine(ctx, nil, nil, "rev-parse", "--verify", "--quiet", Ref+"^{commit}")
+	var exitErr *exec.ExitError
+	if errors.As(err, &exitErr) && exitErr.ExitCode() == 1 {
+		return "", ErrNotInitialised
 	}
-	return strings.TrimSpace(string(out)), nil
+	return commit, err
 }
 
 // git runs the system git in the repository and returns its standard output.
@@ -300,6 +295,13 @@ func (s *Store) git(ctx context.Context, env []string, stdin []byte, args ...str
 		return nil, fmt.Errorf("git %s: %w: %s", strings.Join(args, " "), err, strings.TrimSpace(stderr.String()))
 	}
 	return stdout.Bytes(), nil
+}
+
+// gitLine runs git like Store.git does and returns its output without the trailing
+// newline, for commands that print one line such as an object ID.
+func (s *Store) gitLine(ctx context.Context, env []string, stdin []byte, args ...string) (string, error) {
+	out, err := s.git(ctx, env, stdin, args...)
+	return strings.TrimSpace(string(out)), err
 }
 
 // atLeast reports whether the output of `git version`, such as
