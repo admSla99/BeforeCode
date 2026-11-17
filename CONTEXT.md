@@ -26,6 +26,8 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Plan check** | Verification of a pull request against `plan.md`, run by Claude Code in GitHub Actions. It reports each acceptance criterion as met, not met, or cannot verify, plus out-of-scope changes. |
 | **Finding** | A mismatch reported by a plan check. It labels the pull request `plan-mismatch` and appears in the plan author's Inbox. |
 | **Inbox** | The TUI screen listing what waits on the current user: reviews, questions, findings. |
+| **Sync** | Pull, then push of the Plans ref. Pull fetches the remote's Plans ref and fast-forwards or merges it into the local one; push sends the local one, merging and retrying when someone pushed first. Never forced. |
+| **Conflict** | A file that the local and the remote Plans ref changed differently, so they do not merge on their own. Only `intent.md` and `plan.md` can conflict; nothing is committed until one side is kept with `--keep local` or `--keep remote`. |
 | **Plans ref** | The hidden git ref `refs/beforecode/plans` that stores all plans. Not a branch, not a tag. |
 | **Harness** | An agent runtime such as Claude Code or Codex. |
 | **Agent adapter** | The Go implementation of the `Agent` interface for one harness. |
