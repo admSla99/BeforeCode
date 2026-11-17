@@ -4,9 +4,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"io/fs"
 	"os"
-	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -159,16 +157,12 @@ func syncRemote(s *store.Store, flag string, flagSet bool) (string, error) {
 		}
 		return flag, nil
 	}
-	data, err := os.ReadFile(filepath.Join(s.Root(), filepath.FromSlash(config.Path)))
-	if errors.Is(err, fs.ErrNotExist) {
+	cfg, found, err := readConfig(s)
+	if err != nil {
+		return "", err
+	}
+	if !found {
 		return defaultRemote, nil
-	}
-	if err != nil {
-		return "", err
-	}
-	cfg, err := config.Parse(data)
-	if err != nil {
-		return "", err
 	}
 	if !cfg.SyncEnabled {
 		return "", fmt.Errorf("sync is off in %s (local mode); plans stay in this clone. Use --remote to sync anyway", config.Path)
