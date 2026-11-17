@@ -4,7 +4,6 @@ import (
 	"os"
 	"path/filepath"
 	"regexp"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -27,17 +26,17 @@ func newLocalRepo(t *testing.T) string {
 }
 
 // fakeEditor makes git (and so bfc) use a shell snippet as the editor. The
-// snippet gets the file to edit as $1.
+// snippet gets the file to edit as $1. bfc starts editors through sh, which
+// on Windows is the sh.exe of Git for Windows, so this runs there too.
 func fakeEditor(t *testing.T, snippet string) {
 	t.Helper()
-	if runtime.GOOS == "windows" {
-		t.Skip("fake editor needs a POSIX shell")
-	}
 	script := filepath.Join(t.TempDir(), "editor")
 	if err := os.WriteFile(script, []byte("#!/bin/sh\n"+snippet+"\n"), 0o700); err != nil {
 		t.Fatal(err)
 	}
-	t.Setenv("GIT_EDITOR", script)
+	// The editor setting is shell text: quote the path and use forward
+	// slashes, as a Windows user would in core.editor.
+	t.Setenv("GIT_EDITOR", `"`+filepath.ToSlash(script)+`"`)
 }
 
 // planDirs lists the plan directories in the plans ref.

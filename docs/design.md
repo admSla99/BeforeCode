@@ -120,6 +120,12 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text.
 
+### Editing plans
+
+`bfc edit <id>` opens `plan.md` (from the template when missing), `--intent` opens `intent.md`. The file is edited in a temporary file outside the repository, in the editor git itself would use (`git var GIT_EDITOR`: `GIT_EDITOR`, `core.editor`, `VISUAL`, `EDITOR`, then `vi`), started through a POSIX shell like git does so that `code --wait` and quoted paths work; on Windows that shell is the `sh.exe` of Git for Windows. An unchanged file makes no commit; an emptied one, or an `intent.md` without a title, is refused and the text kept. If the document changed in the plans ref while the editor was open, nothing is committed and the user's text stays in the temporary file, whose path is printed.
+
+Editing `plan.md` writes no event. Approvals name the `plan_blob` they approve (ADR 0002 section 4), so after an edit they are stale and an approved plan is `in-review` again; `bfc edit` says so. Problems in `plan.md` (ADR 0002 section 6) are printed as warnings; `bfc submit` will treat the same checks as errors.
+
 ### Plan check in GitHub Actions
 
 1. The pull request description carries the plan ID, for example `Plan: bfc-a1b2`. `bfc` or the agent adds it when opening the pull request.
