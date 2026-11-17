@@ -91,7 +91,7 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 ### TUI screens
 
 1. **Inbox**: what waits on me (reviews, questions, plan check findings).
-2. **Plan list**: filter by state, author, label; full-text search.
+2. **Plan list**: filter by state, author, label; full-text search. `bfc` (or `bfc tui`) opens it. Plans are grouped by state (in-review, approved, draft, then closed and invalid), two lines each: the title, then Short ID, author and last activity. The `s` key cycles the state filter, starting at "open", which hides closed plans; `/` searches title, Short ID and author; `n` asks for a title and runs `bfc new`. The layout was chosen with a prototype; see issue #16.
 3. **Plan detail**: rendered Markdown on the left, questions and threads on the right, editing through `$EDITOR`.
 4. **Grill**: chat with the AI over the plan; every answer is saved.
 5. **Build**: pick a harness, start an agent on a task, live output.

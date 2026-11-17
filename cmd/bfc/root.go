@@ -15,12 +15,17 @@ func newRootCmd(version string) *cobra.Command {
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			return cmd.Help()
+			// In a terminal bfc opens the TUI; in scripts and pipes it
+			// prints usage.
+			if !inTerminal(cmd) {
+				return cmd.Help()
+			}
+			return runTUI(cmd)
 		},
 	}
 	root.AddCommand(newVersionCmd(version), newInitCmd(), newNewCmd(), newListCmd(), newShowCmd(), newEditCmd(),
 		newSubmitCmd(), newApproveCmd(), newRequestChangesCmd(), newWithdrawCmd(),
-		newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd())
+		newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newTUICmd())
 	return root
 }
 

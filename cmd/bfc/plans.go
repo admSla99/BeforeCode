@@ -21,29 +21,45 @@ var errNotInitialised = errors.New("BeforeCode is not set up in this repository:
 // remoteCheckTimeout bounds the network check of notInitialised.
 const remoteCheckTimeout = 10 * time.Second
 
-// notInitialised explains a missing plans ref. Only then does it ask the
-// sync remote whether it has plans, to suggest bfc bootstrap or bfc init.
-// When it cannot tell (local mode, no such remote, no answer), it gives the
-// general advice.
+// notSetUpError is a missing Plans ref, with what the sync remote said
+// about its plans: remote is empty when it could not tell.
+type notSetUpError struct {
+	remote         string
+	remoteHasPlans bool
+}
+
+func (e *notSetUpError) Error() string {
+	switch {
+	case e.remote == "":
+		return errNotInitialised.Error()
+	case e.remoteHasPlans:
+		return e.remote + " already has plans, but this clone does not: run bfc bootstrap to get them"
+	default:
+		return "BeforeCode is not set up in this repository and " + e.remote + " has no plans: run bfc init"
+	}
+}
+
+func (e *notSetUpError) Is(target error) bool { return target == errNotInitialised }
+
+// notInitialised explains a missing plans ref as a *notSetUpError. Only then
+// does it ask the sync remote whether it has plans, to suggest bfc
+// bootstrap or bfc init. When it cannot tell (local mode, no such remote,
+// no answer), it gives the general advice.
 func notInitialised(cmd *cobra.Command, s *store.Store) error {
 	remote, err := syncRemote(s, "", false)
 	if err != nil {
-		return errNotInitialised
+		return &notSetUpError{}
 	}
 	if ok, err := s.HasRemote(cmd.Context(), remote); err != nil || !ok {
-		return errNotInitialised
+		return &notSetUpError{}
 	}
 	ctx, cancel := context.WithTimeout(cmd.Context(), remoteCheckTimeout)
 	defer cancel()
 	has, err := s.RemoteHasPlans(ctx, remote)
-	switch {
-	case err != nil:
-		return errNotInitialised
-	case has:
-		return fmt.Errorf("%s already has plans, but this clone does not: run bfc bootstrap to get them", remote)
-	default:
-		return fmt.Errorf("BeforeCode is not set up in this repository and %s has no plans: run bfc init", remote)
+	if err != nil {
+		return &notSetUpError{}
 	}
+	return &notSetUpError{remote: remote, remoteHasPlans: has}
 }
 
 // access says whether a command only reads plans or also writes them.

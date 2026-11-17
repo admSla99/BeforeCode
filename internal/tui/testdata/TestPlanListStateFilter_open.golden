@@ -1,0 +1,24 @@
+BeforeCode · plans   state: open   search: (/ to search)
+
+IN-REVIEW (2)
+▶ Payments via Stripe
+  bfc-5v7x · jana@example.com · 2026-11-17 09:00
+  Move the index to SQLite FTS5
+  bfc-a7c3 · ada@example.com · 2026-11-16 17:00
+
+APPROVED (2)
+  Rate-limit the public API
+  bfc-k2m9 · peter@example.com · 2026-11-17 08:00
+  Retry pushes with backoff
+  bfc-t5y2 · jana@example.com · 2026-11-13 15:00
+
+DRAFT (2)
+  Export plans to HTML
+  bfc-q8r1 · ada@example.com · 2026-11-16 21:00
+  Dark mode for the TUI
+  bfc-z0e4 · ben@example.com · 2026-11-15 11:00
+
+INVALID (1)
+  (unreadable intent.md)
+  bfc-0bad · - · 2026-11-12 10:00
+↑/k up • ↓/j down • / search • s state • n new • q/ctrl+c quit
