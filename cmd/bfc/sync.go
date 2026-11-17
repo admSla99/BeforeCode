@@ -46,7 +46,7 @@ pushed first, bfc pulls their changes, merges them and tries again.`,
 			}
 			r, err := s.Push(cmd.Context(), remote)
 			if err != nil {
-				return syncError(cmd, err)
+				return syncError(cmd, s, err)
 			}
 			reportPush(cmd.OutOrStdout(), remote, r)
 			return nil
@@ -76,7 +76,7 @@ choose one, then edit the plan to combine them if needed.`,
 			}
 			r, err := s.Pull(cmd.Context(), remote, keep)
 			if err != nil {
-				return syncError(cmd, err)
+				return syncError(cmd, s, err)
 			}
 			reportPull(cmd.OutOrStdout(), remote, r)
 			return nil
@@ -104,7 +104,7 @@ func newSyncCmd() *cobra.Command {
 				reportPull(cmd.OutOrStdout(), remote, pulled)
 			}
 			if err != nil {
-				return syncError(cmd, err)
+				return syncError(cmd, s, err)
 			}
 			reportPush(cmd.OutOrStdout(), remote, pushed)
 			return nil
@@ -178,7 +178,7 @@ func syncRemote(s *store.Store, flag string, flagSet bool) (string, error) {
 
 // syncError explains a failed sync. A conflict lists both versions of each
 // file and how to resolve it.
-func syncError(cmd *cobra.Command, err error) error {
+func syncError(cmd *cobra.Command, s *store.Store, err error) error {
 	var ce *store.ConflictError
 	switch {
 	case errors.As(err, &ce):
@@ -198,7 +198,7 @@ version, and run bfc push.
 `, ce.Remote)
 		return fmt.Errorf("conflict with %s in %d file(s)", ce.Remote, len(ce.Conflicts))
 	case errors.Is(err, store.ErrNotInitialised):
-		return errNotInitialised
+		return notInitialised(cmd, s)
 	case errors.Is(err, store.ErrPushRetriesExhausted):
 		return fmt.Errorf("others kept pushing plans while bfc tried %d times; run bfc push again", store.MaxPushAttempts)
 	}
