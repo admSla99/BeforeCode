@@ -17,7 +17,7 @@ Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #18.
 | fetch refspec | `+refs/beforecode/*:refs/beforecode-remote/*` missing for the sync remote | `git config --add remote.<r>.fetch '…'` | adds it |
 | remote | no such git remote, not reachable, or no plans ref there | `git remote add`, `git ls-remote`, `bfc push` or `bfc init` | |
 | in sync | the local plans ref is behind the remote's or diverged from it | `bfc pull` | pulls |
-| format-version | missing, unreadable, newer or older than this binary | update bfc, or no repair (see below) | |
+| format-version | missing, unreadable, newer or older than this binary | update bfc; for an older one, the bfc release that wrote it; else no repair (see below) | |
 | index | the database cannot be read: damaged, not SQLite, another schema version | `bfc doctor --fix` | rebuilds it |
 | event files | an event file breaks ADR 0002, or cannot be read | no repair | |
 | plans | a plan has no valid `created` event (an invalid plan) | no repair; `bfc new` | |
@@ -30,11 +30,13 @@ Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #18.
 
 **The remote is asked, not fetched.** The remote check and the in-sync check use one `git ls-remote`, bounded by 30 seconds. `bfc doctor` without `--fix` changes no ref. When the remote's commit is not in the local object store, the check cannot tell behind from diverged and says so. Then a `git fetch` (with the refspec) or `bfc doctor --fix` settles it.
 
-**`--fix` pulls when behind or diverged.** A pull fast-forwards or makes a merge commit (ADR 0004), so the ref is never rewritten. On a conflict nothing is committed, the check stays `FAIL`, and the way out is `bfc pull --keep local|remote`. `--fix` never pushes: a clone that is ahead of the remote passes and is told that `bfc push` shares its commits.
+**`--fix` pulls when behind or diverged.** A pull fast-forwards or makes a merge commit (ADR 0004), so the ref is never rewritten. On a conflict nothing is committed, the check stays `FAIL`, and its fix line becomes `bfc pull --keep local|remote`. `--fix` never pushes: a clone that is ahead of the remote passes and is told that `bfc push` shares its commits.
 
 **Local mode** (`sync.enabled: false`) skips the refspec, remote and in-sync checks. A missing `config.yaml` fails with `bfc init` as the fix. The remote checks then use `origin`, as the other commands do without a config file.
 
-**Event file validation** (`core.ValidateEvent`) follows ADR 0002 sections 1, 3 and 4. The file name is an upper-case ULID with `.yaml`. The common fields must be present and `plan` equal to the directory. The type must be one of format version 1, and the reserved `claimed`, `checked` and `done` are not valid in it. `created` needs a `short_id` that is `bfc-` with 4 to 16 characters of the plan's ULID. `submitted`, `approved` and `changes-requested` need a `plan_blob` that is a git object ID. `changes-requested` needs a `message` ULID, and `closed` may have one. Unknown fields are allowed. Whether an event is allowed for its author is not checked here. State derivation decides that, and the skipped-events check reports it. A file whose object cannot be read is listed, and the run goes on.
+**Event file validation** (`core.ValidateEvent`) follows ADR 0002 sections 1, 3 and 4. The file name is an upper-case ULID with `.yaml`. The common fields must be present, `at` must be RFC 3339 in UTC (ending in `Z`), and `plan` must be the directory's ULID in upper case. The type must be one of format version 1, and the reserved `claimed`, `checked` and `done` are not valid in it. `created` needs a `short_id` that is `bfc-` with 4 to 16 characters of the plan's ULID. `submitted`, `approved` and `changes-requested` need a `plan_blob` that is a git object ID. `changes-requested` needs a `message` ULID in upper case, and `closed` may have one. Unknown fields are allowed. Only `.yaml` files in `events/` are event files; other files and directories are ignored, as readers ignore unknown entries (section 1). A `plan_blob` of either object format (SHA-1 or SHA-256) is accepted. Whether an event is allowed for its author is not checked here. State derivation decides that, and the skipped-events check reports it. A file whose object cannot be read is listed, and the run goes on.
+
+**State as `bfc list` sees it.** The plans, skipped-events and Short ID checks derive state from every event that parses, exactly as the index does, so `bfc doctor` and `bfc list` agree. A `created` event with a wrong `short_id` therefore still makes a valid plan; the event-files check reports the file.
 
 **Problems in the plans ref have no automatic fix.** Events are append-only, and repairing a corrupted ref is out of scope for #18. For a broken event file, an invalid plan or a missing `format-version`, the fix line says that `bfc doctor` does not rewrite the ref and how to inspect the file.
 

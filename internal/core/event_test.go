@@ -130,6 +130,10 @@ func TestValidateEventFollowsTheDataFormat(t *testing.T) {
 		{"approved with a bad plan_blob", name, "type: approved\n" + common + "plan_blob: xyz\n", "plan_blob"},
 		{"changes-requested without message", name, "type: changes-requested\n" + common + blob, "message"},
 		{"closed with a bad message", name, "type: closed\n" + common + "message: hello\n", "message"},
+		{"message in lower case", name, "type: closed\n" + common + "message: 01jd3k8q2y0000000000000000\n", "message"},
+		{"plan in lower case", name, "type: withdrawn\nplan: 01jd3k8q2w5v7x9y0z1a2b3c4d\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T21:30:00Z\n", "plan"},
+		{"at with an offset", name, "type: withdrawn\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T22:30:00+01:00\n", "at"},
+		{"at without a time", name, "type: withdrawn\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16\n", "at"},
 	}
 	for _, c := range invalid {
 		err := core.ValidateEvent(planID, c.name, []byte(c.data))

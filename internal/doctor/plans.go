@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -39,7 +40,8 @@ func checkFormatVersion(ctx context.Context, e *env) Result {
 	case v > core.FormatVersion:
 		return fail(update, "format-version %d is newer than this bfc supports (%d)", v, core.FormatVersion)
 	case v < core.FormatVersion:
-		return fail(update, "format-version %d is older than this bfc writes (%d) and needs a migration", v, core.FormatVersion)
+		return fail("this bfc cannot migrate it yet; use the bfc release that wrote it",
+			"format-version %d is older than this bfc writes (%d) and needs a migration", v, core.FormatVersion)
 	}
 	return pass("%d", v)
 }
@@ -51,13 +53,13 @@ func checkIndex(ctx context.Context, e *env) Result {
 	h, err := index.Check(ctx, e.s)
 	switch {
 	case err != nil:
-		return fail("bfc doctor --fix", "cannot find the index: %v", err)
+		return fail("check the repository with git rev-parse --git-common-dir", "cannot find the index: %v", err)
 	case h.Problem != "":
 		return fail("bfc doctor --fix", "cannot be read: %s", h.Problem)
 	case !h.Built:
 		return pass("not built yet; the next read builds it")
 	case h.RefCommit != e.tip(ctx):
-		return pass("readable, behind %s; the next read updates it", store.Ref)
+		return pass("readable, built from another %s commit; the next read updates it", store.Ref)
 	}
 	return pass("readable and current")
 }
@@ -193,11 +195,12 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		sc.invalidFiles = append(sc.invalidFiles, dir+"/events: cannot read: "+firstLine(err))
 	}
+	// Only .yaml files are event files; readers ignore any other entry
+	// (ADR 0002 section 1).
+	events = slices.DeleteFunc(events, func(f store.Entry) bool { return f.Dir || !strings.HasSuffix(f.Name, ".yaml") })
 	var ids []string
 	for _, f := range events {
-		if !f.Dir {
-			ids = append(ids, f.ID)
-		}
+		ids = append(ids, f.ID)
 	}
 	content := readBlobs(ctx, s, ids)
 
@@ -205,10 +208,6 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 	paths := map[ulid.ULID]string{}
 	for _, f := range events { // in tree order, as the index reads them
 		path := dir + "/events/" + f.Name
-		if f.Dir {
-			sc.invalidFiles = append(sc.invalidFiles, path+": a directory, not an event file")
-			continue
-		}
 		sc.eventFiles++
 		data, ok := content[f.ID]
 		if !ok {
@@ -221,7 +220,7 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 		// State is derived from every event that parses, as the index
 		// does, so that doctor and bfc list agree.
 		eid, err := ulid.ParseStrict(strings.TrimSuffix(f.Name, ".yaml"))
-		if err != nil || !strings.HasSuffix(f.Name, ".yaml") {
+		if err != nil {
 			continue
 		}
 		if ev, err := core.ParseEvent(eid, data); err == nil {
@@ -235,7 +234,9 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 		sc.invalidPlans = append(sc.invalidPlans, dir)
 		return
 	}
-	sc.shortIDs[status.ShortID] = append(sc.shortIDs[status.ShortID], id.String())
+	if status.ShortID != "" { // a missing short_id is reported with the event files
+		sc.shortIDs[status.ShortID] = append(sc.shortIDs[status.ShortID], id.String())
+	}
 	byID := map[ulid.ULID]core.Event{}
 	for _, ev := range parsed {
 		byID[ev.ID] = ev

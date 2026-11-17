@@ -290,21 +290,14 @@ const (
 func (ix *Index) connect(ctx context.Context) error {
 	// _txlock=immediate takes the write lock at BEGIN, so two bfc processes
 	// updating at once wait for each other instead of failing midway.
-	// A file: URI with an escaped path, so that '?' or '#' in the path is
-	// not taken for the start of the parameters.
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(ix.path),
-		RawQuery: "_pragma=busy_timeout(10000)&_txlock=immediate"}
-	if !strings.HasPrefix(u.Path, "/") {
-		u.Path = "/" + u.Path // a Windows drive letter: file:///C:/...
-	}
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", dsn(ix.path, "_pragma=busy_timeout(10000)&_txlock=immediate"))
 	if err != nil {
 		return err
 	}
 	ix.db = db
 	// Checking the schema only reads, so readers do not queue for the
 	// write lock; only creating it takes the lock.
-	if done, err := ix.checkSchema(ctx, db); done || err != nil {
+	if done, err := checkSchema(ctx, db); done || err != nil {
 		return err
 	}
 	tx, err := db.BeginTx(ctx, nil)
@@ -312,7 +305,7 @@ func (ix *Index) connect(ctx context.Context) error {
 		return err
 	}
 	defer func() { _ = tx.Rollback() }()
-	if done, err := ix.checkSchema(ctx, tx); done || err != nil {
+	if done, err := checkSchema(ctx, tx); done || err != nil {
 		return err // another process created it meanwhile
 	}
 	if _, err := tx.ExecContext(ctx, schema); err != nil {
@@ -324,6 +317,17 @@ func (ix *Index) connect(ctx context.Context) error {
 	return tx.Commit()
 }
 
+// dsn returns the file: URI of the database at path with the given query.
+// The path is escaped, so that '?' or '#' in it is not taken for the start of
+// the parameters.
+func dsn(path, query string) string {
+	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: query}
+	if !strings.HasPrefix(u.Path, "/") {
+		u.Path = "/" + u.Path // a Windows drive letter: file:///C:/...
+	}
+	return u.String()
+}
+
 // querier is a *sql.DB or a *sql.Tx.
 type querier interface {
 	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
@@ -332,7 +336,7 @@ type querier interface {
 // checkSchema reports whether the database has the schema of this version
 // (done), or is new and empty (not done, no error). Any other content is
 // errOutdated.
-func (ix *Index) checkSchema(ctx context.Context, q querier) (done bool, err error) {
+func checkSchema(ctx context.Context, q querier) (done bool, err error) {
 	var version, tables, ours int
 	if err := q.QueryRowContext(ctx, `PRAGMA user_version`).Scan(&version); err != nil {
 		return false, err

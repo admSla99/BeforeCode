@@ -153,8 +153,20 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 	if err != nil {
 		return err
 	}
-	if e.Plan != plan {
-		return fmt.Errorf("event %s: plan %s is not the plan directory %s", id, e.Plan, plan)
+	// The parsed event hides how plan, message and at were written.
+	var raw struct {
+		Plan    string `yaml:"plan"`
+		Message string `yaml:"message"`
+		At      string `yaml:"at"`
+	}
+	if err := yaml.Unmarshal(data, &raw); err != nil {
+		return fmt.Errorf("event %s: %w", id, err)
+	}
+	if e.Plan != plan || raw.Plan != plan.String() {
+		return fmt.Errorf("event %s: plan %q is not the plan directory %s", id, raw.Plan, plan)
+	}
+	if t, err := time.Parse(time.RFC3339, raw.At); err != nil || !strings.HasSuffix(raw.At, "Z") || t.IsZero() {
+		return fmt.Errorf("event %s: at %q is not an RFC 3339 time in UTC, such as 2026-11-16T21:30:00Z", id, raw.At)
 	}
 	switch e.Type {
 	case Created:
@@ -174,7 +186,7 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		return fmt.Errorf("event %s: unknown type %q", id, e.Type)
 	}
 	if e.Message != "" || e.Type == ChangesRequested {
-		if _, err := ulid.ParseStrict(e.Message); err != nil {
+		if m, err := ulid.ParseStrict(e.Message); err != nil || m.String() != e.Message {
 			return fmt.Errorf("event %s: message %q is not the ULID of a Message", id, e.Message)
 		}
 	}

@@ -157,7 +157,7 @@ func TestDoctorFixLeavesAConflictToTheUser(t *testing.T) {
 		t.Errorf("doctor --fix exited 0 over a conflict:\n%s", out)
 	}
 	wantDoctor(t, out, "FAIL", "in sync")
-	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "bfc pull --keep local") {
+	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "fix: bfc pull --keep local") {
 		t.Errorf("output lacks the failed fix and the way out:\n%s", out)
 	}
 	if got := gitIn(t, ben, "rev-parse", plansRef); got != before {
@@ -172,7 +172,7 @@ func TestDoctorRebuildsAnUnreadableIndex(t *testing.T) {
 	mustBfc(t, ana, "list")
 	mustBfc(t, ana, "new", "--no-edit", "Second plan")
 	out := mustBfc(t, ana, "doctor")
-	wantDoctor(t, out, "ok", "index", "behind")
+	wantDoctor(t, out, "ok", "index", "the next read updates it")
 
 	db := filepath.Join(gitIn(t, ana, "rev-parse", "--path-format=absolute", "--git-common-dir"), "beforecode", "index.db")
 	writeFile(t, db, "this is not a database")
@@ -209,6 +209,9 @@ func TestDoctorListsInvalidEventFilesAndPlans(t *testing.T) {
 		broken:                []byte("type: [\n"),
 		lost:                  []byte(lostData),
 		orphan + "/intent.md": []byte("---\ntitle: Orphan\n---\n"),
+		// Readers ignore unknown entries (ADR 0002 section 1).
+		events + "README":        []byte("notes\n"),
+		events + "drafts/x.yaml": []byte("type: [\n"),
 	})
 	// Lose the object of one event file, as a broken clone would.
 	blob := gitInStdin(t, ana, lostData, "hash-object", "--stdin")
@@ -227,6 +230,9 @@ func TestDoctorListsInvalidEventFilesAndPlans(t *testing.T) {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}
+	}
+	if strings.Contains(out, "README") || strings.Contains(out, "drafts") {
+		t.Errorf("unknown entries in events/ are listed:\n%s", out)
 	}
 	// The run went on to the last check.
 	wantDoctor(t, out, "ok", "short IDs")

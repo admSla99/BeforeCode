@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/admSla99/BeforeCode/internal/config"
@@ -84,6 +85,10 @@ func Run(ctx context.Context, dir string, fix bool) []Result {
 		if r.Status == Fail && fix && c.fix != nil {
 			if err := c.fix(ctx, e); err != nil {
 				r.FixErr = err
+				var h fixHint
+				if errors.As(err, &h) {
+					r.Fix = h.fix
+				}
 			} else {
 				r = c.run(ctx, e)
 				r.Fixed = r.Status != Fail
@@ -93,6 +98,13 @@ func Run(ctx context.Context, dir string, fix bool) []Result {
 		results = append(results, r)
 	}
 	return results
+}
+
+// fixHint is a failed fix that knows a better way out than the check's
+// usual fix.
+type fixHint struct {
+	error
+	fix string
 }
 
 // env is what the checks learn about the repository, shared between them.
@@ -191,7 +203,7 @@ func checkRepository(_ context.Context, e *env) Result {
 	}
 	s, err := store.Open(e.dir)
 	if err != nil {
-		return fail("run bfc in your repository, or create one with git init", "%s is not inside a git working tree", e.dir)
+		return fail("run bfc inside a git working tree; git init creates one", "%s", strings.TrimPrefix(err.Error(), "store: "))
 	}
 	e.s = s
 	return pass("%s", s.Root())
@@ -320,7 +332,7 @@ func fixInSync(ctx context.Context, e *env) error {
 	_, err := e.s.Pull(ctx, e.remote, store.KeepNeither)
 	var ce *store.ConflictError
 	if errors.As(err, &ce) {
-		return fmt.Errorf("%w; keep one side with bfc pull --keep local or bfc pull --keep remote", err)
+		return fixHint{err, "bfc pull --keep local or bfc pull --keep remote, to keep one side of the conflicting files"}
 	}
 	return err
 }

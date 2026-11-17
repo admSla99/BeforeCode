@@ -6,10 +6,8 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
-	"net/url"
 	"os"
 	"path/filepath"
-	"strings"
 
 	"github.com/admSla99/BeforeCode/internal/store"
 )
@@ -39,18 +37,13 @@ func Check(ctx context.Context, s *store.Store) (Health, error) {
 	if _, err := os.Stat(path); errors.Is(err, fs.ErrNotExist) {
 		return Health{}, nil
 	}
-	u := url.URL{Scheme: "file", Path: filepath.ToSlash(path), RawQuery: "mode=ro&_pragma=busy_timeout(10000)"}
-	if !strings.HasPrefix(u.Path, "/") {
-		u.Path = "/" + u.Path // a Windows drive letter: file:///C:/...
-	}
-	db, err := sql.Open("sqlite", u.String())
+	db, err := sql.Open("sqlite", dsn(path, "mode=ro&_pragma=busy_timeout(10000)"))
 	if err != nil {
 		return Health{Problem: err.Error()}, nil
 	}
 	defer func() { _ = db.Close() }()
 
-	ix := &Index{path: path}
-	done, err := ix.checkSchema(ctx, db)
+	done, err := checkSchema(ctx, db)
 	switch {
 	case errors.Is(err, errOutdated):
 		return Health{Problem: "written by another version of bfc"}, nil
