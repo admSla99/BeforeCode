@@ -38,11 +38,11 @@ type Store struct {
 // is missing or older than MinGitVersion.
 func Open(dir string) (*Store, error) {
 	s := &Store{dir: dir}
-	found, err := s.gitLine(context.Background(), nil, nil, "version")
+	found, ok, err := GitVersion(context.Background())
 	if err != nil {
-		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
+		return nil, err
 	}
-	if !atLeast(found, MinGitVersion) {
+	if !ok {
 		return nil, fmt.Errorf("store: BeforeCode needs git %s or newer, found %q", MinGitVersion, found)
 	}
 	root, err := s.gitLine(context.Background(), nil, nil, "rev-parse", "--show-toplevel")
@@ -51,6 +51,18 @@ func Open(dir string) (*Store, error) {
 	}
 	s.dir = root
 	return s, nil
+}
+
+// GitVersion returns what `git version` prints, such as "git version
+// 2.45.1", and whether that release is at least MinGitVersion. It fails when
+// no git is on PATH.
+func GitVersion(ctx context.Context) (version string, ok bool, err error) {
+	out, err := exec.CommandContext(ctx, "git", "version").Output()
+	if err != nil {
+		return "", false, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
+	}
+	version = strings.TrimSpace(string(out))
+	return version, atLeast(version, MinGitVersion), nil
 }
 
 // Read returns the content of the file at path at the current tip of the

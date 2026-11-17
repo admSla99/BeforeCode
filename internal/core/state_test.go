@@ -150,3 +150,39 @@ func TestDeriveReportsAuthorShortIDAndRequiredApprovals(t *testing.T) {
 		t.Errorf("Derive = %+v", got)
 	}
 }
+
+// bfc doctor lists the events that state derivation skips (ADR 0002 section
+// 4, rule 5).
+func TestSkippedEventsAreThoseDeriveIgnores(t *testing.T) {
+	cases := []struct {
+		name    string
+		events  []string
+		blob    string
+		skipped []int // positions in events
+	}{
+		{"none", []string{"created ada", "submitted ada v1 1", "approved jana v1"}, blobV1, nil},
+		{"no created: all", []string{"submitted ada v1 1", "approved jana v1"}, blobV1, []int{0, 1}},
+		{"before created", []string{"submitted ada v1 1", "created ada"}, blobV1, []int{0}},
+		{"second created", []string{"created ada", "created jana"}, "", []int{1}},
+		{"not allowed for the author", []string{"created ada", "submitted jana v1 1", "submitted ada v1 1", "approved ada v1", "approved agent:jana v1", "changes-requested ada v1", "withdrawn jana"}, blobV1, []int{1, 3, 4, 5, 6}},
+		{"does not fit the state", []string{"created ada", "approved jana v1", "withdrawn ada", "changes-requested jana v1", "submitted ada v1 1", "submitted ada v1 1"}, blobV1, []int{1, 2, 3, 5}},
+		{"approval after the round ended", []string{"created ada", "submitted ada v1 1", "changes-requested peter v1", "approved jana v1"}, blobV1, []int{3}},
+		{"another plan", []string{"created ada", "closed jana otherplan"}, "", []int{1}},
+		{"unknown type", []string{"created ada", "claimed jana"}, "", []int{1}},
+		{"after closed", []string{"created ada", "closed jana", "submitted ada v1 1"}, blobV1, []int{2}},
+		{"a stale approval is not skipped", []string{"created ada", "submitted ada v1 1", "approved jana v1"}, blobV2, nil},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			events := ev(t, c.events...)
+			var want []ulid.ULID
+			for _, i := range c.skipped {
+				want = append(want, events[i].ID)
+			}
+			got := core.SkippedEvents(planID, events, c.blob)
+			if fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("SkippedEvents = %v, want %v", got, want)
+			}
+		})
+	}
+}

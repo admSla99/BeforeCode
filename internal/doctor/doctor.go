@@ -1,0 +1,344 @@
+// Package doctor diagnoses the BeforeCode setup of a repository for
+// `bfc doctor`. Each check is one unit: it reports pass, warn, fail or skip
+// with the command that fixes a failure, and some checks have a safe fix
+// that Run applies on request. No fix pushes, and none rewrites the plans
+// ref: the only change to the ref is a pull, which fast-forwards or merges.
+package doctor
+
+import (
+	"context"
+	"errors"
+	"fmt"
+	"os"
+	"path/filepath"
+	"time"
+
+	"github.com/admSla99/BeforeCode/internal/config"
+	"github.com/admSla99/BeforeCode/internal/store"
+)
+
+// Status is the outcome of one check.
+type Status string
+
+// The outcomes. Only Fail makes bfc doctor exit non-zero.
+const (
+	Pass Status = "ok"
+	Warn Status = "warn"
+	Fail Status = "FAIL"
+	Skip Status = "skip" // the check does not apply, or needs a check that failed
+)
+
+// Result is what one check found.
+type Result struct {
+	Check  string
+	Status Status
+	Detail string   // one line
+	Items  []string // the files or plans a check lists, one per line
+	// Fix says how to fix a Fail: a command where there is one.
+	Fix string
+	// Fixed is set when Run applied the check's fix and the check passed
+	// afterwards; Status and Detail are then those of the second run.
+	Fixed bool
+	// FixErr is set when Run tried the check's fix and it failed.
+	FixErr error
+}
+
+// remoteTimeout bounds the question to the remote.
+const remoteTimeout = 30 * time.Second
+
+// check is one diagnosis. run reports; fix, when not nil, is the safe fix
+// for a Fail, after which run is called again.
+type check struct {
+	name string
+	run  func(ctx context.Context, e *env) Result
+	fix  func(ctx context.Context, e *env) error
+}
+
+// checks in the order bfc doctor prints them. Later checks rely on what
+// earlier ones put into env.
+var checks = []check{
+	{name: "git version", run: checkGit},
+	{name: "repository", run: checkRepository},
+	{name: "config", run: checkConfig},
+	{name: "plans ref", run: checkPlansRef},
+	{name: "fetch refspec", run: checkRefspec, fix: fixRefspec},
+	{name: "remote", run: checkRemote},
+	{name: "in sync", run: checkInSync, fix: fixInSync},
+	{name: "format-version", run: checkFormatVersion},
+	{name: "index", run: checkIndex, fix: fixIndex},
+	{name: "event files", run: checkEventFiles},
+	{name: "plans", run: checkPlans},
+	{name: "skipped events", run: checkSkippedEvents},
+	{name: "short IDs", run: checkShortIDs},
+}
+
+// Run checks the setup of the repository around dir and returns one Result
+// per check, in a fixed order. With fix it applies the safe fix of each
+// failed check that has one: add the fetch refspec, pull the plans ref when
+// it is behind or diverged, rebuild the index.
+func Run(ctx context.Context, dir string, fix bool) []Result {
+	e := &env{dir: dir}
+	results := make([]Result, 0, len(checks))
+	for _, c := range checks {
+		r := c.run(ctx, e)
+		if r.Status == Fail && fix && c.fix != nil {
+			if err := c.fix(ctx, e); err != nil {
+				r.FixErr = err
+			} else {
+				r = c.run(ctx, e)
+				r.Fixed = r.Status != Fail
+			}
+		}
+		r.Check = c.name
+		results = append(results, r)
+	}
+	return results
+}
+
+// env is what the checks learn about the repository, shared between them.
+type env struct {
+	dir   string
+	gitOK bool
+	s     *store.Store // nil outside a repository
+
+	cfg      config.Config
+	cfgFound bool
+	cfgErr   error
+	// remote is the sync remote, "" in local mode or when the config
+	// cannot be read.
+	remote string
+
+	asked     bool // the remote was asked for its plans ref
+	remoteTip string
+	remoteErr error
+	scanned   *scan
+	scannedAt string // the plans ref commit scanned was read from
+}
+
+// tip returns the local plans ref, "" when it does not exist or cannot be
+// read.
+func (e *env) tip(ctx context.Context) string {
+	if e.s == nil {
+		return ""
+	}
+	tip, err := e.s.Tip(ctx)
+	if err != nil {
+		return ""
+	}
+	return tip
+}
+
+// askRemote asks the sync remote for its plans ref once.
+func (e *env) askRemote(ctx context.Context) (string, error) {
+	if !e.asked {
+		ctx, cancel := context.WithTimeout(ctx, remoteTimeout)
+		defer cancel()
+		e.remoteTip, e.remoteErr = e.s.RemoteTip(ctx, e.remote)
+		e.asked = true
+	}
+	return e.remoteTip, e.remoteErr
+}
+
+// remoteExists reports whether the sync remote is a git remote of this
+// clone.
+func (e *env) remoteExists(ctx context.Context) bool {
+	ok, err := e.s.HasRemote(ctx, e.remote)
+	return err == nil && ok
+}
+
+// skipWithoutRemote returns a Skip result when the remote checks cannot
+// run, and ok false.
+func (e *env) skipWithoutRemote(ctx context.Context) (Result, bool) {
+	switch {
+	case e.s == nil:
+		return skip("needs a git repository"), false
+	case e.cfgErr != nil:
+		return skip("needs a valid " + config.Path), false
+	case e.remote == "":
+		return skip("local mode: plans are not shared"), false
+	case !e.remoteExists(ctx):
+		return skip("no git remote " + e.remote), false
+	}
+	return Result{}, true
+}
+
+func skip(why string) Result { return Result{Status: Skip, Detail: why} }
+
+func pass(format string, args ...any) Result {
+	return Result{Status: Pass, Detail: fmt.Sprintf(format, args...)}
+}
+
+func fail(fix, format string, args ...any) Result {
+	return Result{Status: Fail, Detail: fmt.Sprintf(format, args...), Fix: fix}
+}
+
+func checkGit(ctx context.Context, e *env) Result {
+	const install = "install git " + store.MinGitVersion + " or newer"
+	version, ok, err := store.GitVersion(ctx)
+	switch {
+	case err != nil:
+		return fail(install, "no git on PATH")
+	case !ok:
+		return fail(install, "%s is older than %s", version, store.MinGitVersion)
+	}
+	e.gitOK = true
+	return pass("%s (needs %s)", version, store.MinGitVersion)
+}
+
+func checkRepository(_ context.Context, e *env) Result {
+	if !e.gitOK {
+		return skip("needs git")
+	}
+	s, err := store.Open(e.dir)
+	if err != nil {
+		return fail("run bfc in your repository, or create one with git init", "%s is not inside a git working tree", e.dir)
+	}
+	e.s = s
+	return pass("%s", s.Root())
+}
+
+func checkConfig(_ context.Context, e *env) Result {
+	if e.s == nil {
+		return skip("needs a git repository")
+	}
+	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(config.Path)))
+	if errors.Is(err, os.ErrNotExist) {
+		// Commands still sync with origin without a config file.
+		e.remote = "origin"
+		return fail("bfc init, then commit "+config.Path, "%s is missing", config.Path)
+	}
+	if err == nil {
+		e.cfg, err = config.Parse(data)
+	}
+	if err != nil {
+		e.cfgErr = err
+		return fail("correct "+config.Path+" (see docs/adr/0003-config-file-v1.md), or update bfc if it is newer", "%v", err)
+	}
+	e.cfgFound = true
+	if !e.cfg.SyncEnabled {
+		return pass("%s is valid; local mode", config.Path)
+	}
+	e.remote = e.cfg.Remote
+	return pass("%s is valid; syncs with %s", config.Path, e.remote)
+}
+
+func checkPlansRef(ctx context.Context, e *env) Result {
+	if e.s == nil {
+		return skip("needs a git repository")
+	}
+	tip, err := e.s.Tip(ctx)
+	if err == nil {
+		return pass("%s at %s", store.Ref, short(tip))
+	}
+	if !errors.Is(err, store.ErrNotInitialised) {
+		return fail("check the repository with git fsck", "cannot read %s: %v", store.Ref, err)
+	}
+	fix := "bfc init in a new project, or bfc bootstrap to join one that uses BeforeCode"
+	if _, ok := e.skipWithoutRemote(ctx); ok {
+		switch has, err := e.askRemote(ctx); {
+		case err == nil && has != "":
+			fix = "bfc bootstrap"
+		case err == nil:
+			fix = "bfc init"
+		}
+	} else if e.cfgFound && !e.cfg.SyncEnabled {
+		fix = "bfc init"
+	}
+	return fail(fix, "%s does not exist", store.Ref)
+}
+
+func checkRefspec(ctx context.Context, e *env) Result {
+	if r, ok := e.skipWithoutRemote(ctx); !ok {
+		return r
+	}
+	has, err := e.s.HasFetchRefspec(ctx, e.remote)
+	if err != nil {
+		return fail("check .git/config with git config --get-all remote."+e.remote+".fetch", "cannot read the fetch refspecs of %s: %v", e.remote, err)
+	}
+	if !has {
+		return fail("git config --add remote."+e.remote+".fetch '"+store.FetchRefspec+"'", "%s is missing for %s", store.FetchRefspec, e.remote)
+	}
+	return pass("%s for %s", store.FetchRefspec, e.remote)
+}
+
+func fixRefspec(ctx context.Context, e *env) error {
+	_, err := e.s.AddFetchRefspec(ctx, e.remote)
+	return err
+}
+
+func checkRemote(ctx context.Context, e *env) Result {
+	switch {
+	case e.s == nil:
+		return skip("needs a git repository")
+	case e.cfgErr != nil:
+		return skip("needs a valid " + config.Path)
+	case e.remote == "":
+		return skip("local mode: plans are not shared")
+	case !e.remoteExists(ctx):
+		return fail("git remote add "+e.remote+" <url>, or set sync.remote in "+config.Path, "git remote %s does not exist", e.remote)
+	}
+	tip, err := e.askRemote(ctx)
+	switch {
+	case err != nil:
+		return fail("check the network and your access with git ls-remote "+e.remote, "cannot reach %s: %s", e.remote, firstLine(err))
+	case tip == "" && e.tip(ctx) != "":
+		return fail("bfc push", "%s has no %s yet", e.remote, store.Ref)
+	case tip == "":
+		return fail("bfc init", "%s has no %s", e.remote, store.Ref)
+	}
+	return pass("%s has %s at %s", e.remote, store.Ref, short(tip))
+}
+
+func checkInSync(ctx context.Context, e *env) Result {
+	if r, ok := e.skipWithoutRemote(ctx); !ok {
+		return r
+	}
+	theirs, err := e.askRemote(ctx)
+	ours := e.tip(ctx)
+	if err != nil || theirs == "" || ours == "" {
+		return skip("needs " + store.Ref + " here and on " + e.remote)
+	}
+	if ours == theirs {
+		return pass("up to date with %s", e.remote)
+	}
+	const pull = "bfc pull"
+	if !e.s.HasCommit(ctx, theirs) {
+		return fail(pull, "%s has commits this clone lacks (behind or diverged)", e.remote)
+	}
+	if ahead, err := e.s.IsAncestor(ctx, theirs, ours); err == nil && ahead {
+		return pass("ahead of %s; bfc push shares the new commits", e.remote)
+	}
+	if behind, err := e.s.IsAncestor(ctx, ours, theirs); err == nil && behind {
+		return fail(pull, "behind %s", e.remote)
+	}
+	return fail(pull, "diverged from %s", e.remote)
+}
+
+// fixInSync pulls: a fast-forward or a merge commit, never a rewrite. On a
+// conflict nothing is committed.
+func fixInSync(ctx context.Context, e *env) error {
+	_, err := e.s.Pull(ctx, e.remote, store.KeepNeither)
+	var ce *store.ConflictError
+	if errors.As(err, &ce) {
+		return fmt.Errorf("%w; keep one side with bfc pull --keep local or bfc pull --keep remote", err)
+	}
+	return err
+}
+
+func short(commit string) string {
+	if len(commit) > 7 {
+		return commit[:7]
+	}
+	return commit
+}
+
+// firstLine returns the first line of err's message.
+func firstLine(err error) string {
+	msg := err.Error()
+	for i, r := range msg {
+		if r == '\n' {
+			return msg[:i]
+		}
+	}
+	return msg
+}

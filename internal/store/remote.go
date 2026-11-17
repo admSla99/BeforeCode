@@ -43,32 +43,61 @@ func (s *Store) HasRemote(ctx context.Context, remote string) (bool, error) {
 // RemoteHasPlans asks the remote whether it already has a plans ref. It
 // returns ErrRemoteUnreachable when the remote does not answer.
 func (s *Store) RemoteHasPlans(ctx context.Context, remote string) (bool, error) {
-	_, err := s.git(ctx, nil, nil, "ls-remote", "--exit-code", remote, Ref)
+	tip, err := s.RemoteTip(ctx, remote)
+	return tip != "", err
+}
+
+// RemoteTip asks the remote which commit its plans ref points to, without
+// fetching it. It returns "" when the remote has no plans ref, and
+// ErrRemoteUnreachable when the remote does not answer.
+func (s *Store) RemoteTip(ctx context.Context, remote string) (string, error) {
+	if err := checkRemote(remote); err != nil {
+		return "", err
+	}
+	out, err := s.git(ctx, nil, nil, "ls-remote", "--exit-code", remote, Ref)
 	var exitErr *exec.ExitError
 	switch {
 	case err == nil:
-		return true, nil
+		// "<commit> TAB <ref>"; the ref is matched exactly.
+		for _, line := range strings.Split(string(out), "\n") {
+			if commit, ref, ok := strings.Cut(strings.TrimSpace(line), "\t"); ok && ref == Ref {
+				return commit, nil
+			}
+		}
+		return "", nil
 	case errors.As(err, &exitErr) && exitErr.ExitCode() == 2:
-		return false, nil
+		return "", nil
 	default:
-		return false, fmt.Errorf("%w: %s: %w", ErrRemoteUnreachable, remote, err)
+		return "", fmt.Errorf("%w: %s: %w", ErrRemoteUnreachable, remote, err)
 	}
 }
 
-// AddFetchRefspec adds FetchRefspec to the remote's fetch refspecs in
-// .git/config unless it is already there. It reports whether it added it.
-func (s *Store) AddFetchRefspec(ctx context.Context, remote string) (bool, error) {
-	key := "remote." + remote + ".fetch"
-	out, err := s.git(ctx, nil, nil, "config", "--get-all", key)
+// HasCommit reports whether commit is in this repository's object store.
+func (s *Store) HasCommit(ctx context.Context, commit string) bool {
+	_, _, err := s.run(ctx, nil, nil, "cat-file", "-e", commit+"^{commit}")
+	return err == nil
+}
+
+// HasFetchRefspec reports whether FetchRefspec is among the remote's fetch
+// refspecs in .git/config.
+func (s *Store) HasFetchRefspec(ctx context.Context, remote string) (bool, error) {
+	out, err := s.git(ctx, nil, nil, "config", "--get-all", "remote."+remote+".fetch")
 	// Exit code 1 means the key is not set yet.
 	var exitErr *exec.ExitError
 	if err != nil && (!errors.As(err, &exitErr) || exitErr.ExitCode() != 1) {
 		return false, err
 	}
-	if slices.Contains(strings.Split(strings.TrimSpace(string(out)), "\n"), FetchRefspec) {
-		return false, nil
+	return slices.Contains(strings.Split(strings.TrimSpace(string(out)), "\n"), FetchRefspec), nil
+}
+
+// AddFetchRefspec adds FetchRefspec to the remote's fetch refspecs in
+// .git/config unless it is already there. It reports whether it added it.
+func (s *Store) AddFetchRefspec(ctx context.Context, remote string) (bool, error) {
+	has, err := s.HasFetchRefspec(ctx, remote)
+	if err != nil || has {
+		return false, err
 	}
-	if _, err := s.git(ctx, nil, nil, "config", "--add", key, FetchRefspec); err != nil {
+	if _, err := s.git(ctx, nil, nil, "config", "--add", "remote."+remote+".fetch", FetchRefspec); err != nil {
 		return false, err
 	}
 	return true, nil

@@ -3,6 +3,8 @@ package core
 import (
 	"bytes"
 	"fmt"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -123,3 +125,58 @@ const (
 	StateClosed     State = "closed"
 	StateInvalid    State = "invalid"
 )
+
+// Reserved Event types (ADR 0002 section 4): a format version 1 binary never
+// writes them.
+const (
+	Claimed EventType = "claimed"
+	Checked EventType = "checked"
+	Done    EventType = "done"
+)
+
+// objectIDPattern matches a git object ID: SHA-1 or SHA-256 in hex.
+var objectIDPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
+
+// ValidateEvent checks the event file name in the events directory of plan
+// against the data format (ADR 0002 sections 1, 3 and 4): a name of an
+// upper-case ULID and ".yaml", the common fields, a plan field equal to the
+// plan, a type of format version 1 and the fields that type requires.
+// Unknown fields are allowed. It does not check whether the event is allowed
+// for its author or fits the plan state; SkippedEvents reports those.
+func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
+	base, ok := strings.CutSuffix(name, ".yaml")
+	id, err := ulid.ParseStrict(base)
+	if !ok || err != nil || base != id.String() {
+		return fmt.Errorf("file name %q is not an upper-case ULID followed by .yaml", name)
+	}
+	e, err := ParseEvent(id, data)
+	if err != nil {
+		return err
+	}
+	if e.Plan != plan {
+		return fmt.Errorf("event %s: plan %s is not the plan directory %s", id, e.Plan, plan)
+	}
+	switch e.Type {
+	case Created:
+		own := randomPart(plan)
+		n := len(e.ShortID) - len(ShortIDPrefix)
+		if n < minShortIDLen || n > maxShortIDLen || e.ShortID != ShortIDPrefix+own[:n] {
+			return fmt.Errorf("event %s: short_id %q is not %s and the first 4 to 16 characters of %s", id, e.ShortID, ShortIDPrefix, own)
+		}
+	case Submitted, Approved, ChangesRequested:
+		if !objectIDPattern.MatchString(e.PlanBlob) {
+			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
+		}
+	case Withdrawn, Closed:
+	case Claimed, Checked, Done:
+		return fmt.Errorf("event %s: type %q is reserved for a later format version", id, e.Type)
+	default:
+		return fmt.Errorf("event %s: unknown type %q", id, e.Type)
+	}
+	if e.Message != "" || e.Type == ChangesRequested {
+		if _, err := ulid.ParseStrict(e.Message); err != nil {
+			return fmt.Errorf("event %s: message %q is not the ULID of a Message", id, e.Message)
+		}
+	}
+	return nil
+}
