@@ -108,7 +108,7 @@ func TestNewPlanMakesTheIntentAndACreatedEvent(t *testing.T) {
 	if e != want {
 		t.Errorf("event = %+v, want %+v", e, want)
 	}
-	if got := core.DeriveState(plan.ID, []core.Event{e}); got != core.StateDraft {
+	if got := core.Derive(plan.ID, []core.Event{e}, "").State; got != core.StateDraft {
 		t.Errorf("state = %q, want draft", got)
 	}
 }

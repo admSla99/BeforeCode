@@ -76,7 +76,7 @@ plan_blob: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad
 | `type` | Extra fields | Who may write it | Transition |
 | --- | --- | --- | --- |
 | `created` | `short_id` | anyone; this person becomes the **plan author** | none → `draft` |
-| `submitted` | `plan_blob`, `required_approvals` (integer ≥ 1, from the approval policy at submit time, default 1) | plan author | `draft` → `in-review` |
+| `submitted` | `plan_blob`, `required_approvals` (integer ≥ 1, from the approval policy at submit time, default 1; a missing or smaller value is read as 1) | plan author | `draft` → `in-review` |
 | `withdrawn` | none | plan author | `in-review` or `approved` → `draft` |
 | `approved` | `plan_blob` | anyone but the plan author, and not with `agent` | `in-review` → `approved` once enough valid Approvals exist |
 | `changes-requested` | `plan_blob`, `message` (ULID of the Message with the reasons) | anyone but the plan author | `in-review` or `approved` → `draft` |
@@ -180,7 +180,7 @@ Does "exactly one" also apply when the customer retries the payment?
 - **Shape.** The Short ID of a plan is `bfc-` followed by the first *n* characters of the random part of its ULID (characters 11 to 26), in lower case. For example, ULID `01JD3K8Q2W5V7X9Y0Z1A2B3C4D` has the random part `5v7x9y0z1a2b3c4d`, so its Short ID is `bfc-5v7x`.
 - **Length.** *n* starts at 4. At `bfc new`, *n* grows by one while any plan already in the ref has the same first *n* random characters, up to a maximum of 16.
 - **Fixed for life.** The chosen ID is stored as `short_id` in the `created` event and never changes. References such as `Plan: bfc-5v7x` in old pull requests stay valid.
-- **Lookup.** `bfc` accepts the full ULID, `bfc-<prefix>`, or a bare prefix of at least four characters. The prefix must match the random part of exactly one plan; otherwise `bfc` lists the candidates.
+- **Lookup.** `bfc` accepts the full ULID, `bfc-<prefix>`, or a bare prefix of at least four characters. The prefix must match the random part of exactly one plan; otherwise `bfc` lists the candidates. A query equal to a plan's stored Short ID wins first, so `bfc-5v7x` still names the plan that got it even after another plan got `bfc-5v7x9` (added in #10).
 - **Concurrent collisions.** Two plans created offline at the same time can get the same Short ID. Both stay valid, a longer prefix tells them apart, and `bfc doctor` reports the duplicate.
 
 ## 9. Templates
