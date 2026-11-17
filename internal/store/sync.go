@@ -142,12 +142,41 @@ func (e *RemoteError) Error() string {
 // for the conflicting files. The working tree, the index and the current
 // branch are not touched.
 func (s *Store) Pull(ctx context.Context, remote string, keep Keep) (PullResult, error) {
-	if err := checkRemote(remote); err != nil {
+	if _, err := s.Fetch(ctx, remote); err != nil {
 		return PullResult{}, err
+	}
+	return s.Integrate(ctx, remote, keep)
+}
+
+// Fetch brings the remote's plans ref to RemoteRef, and removes RemoteRef if
+// the remote has none. It returns the fetched commit, or "" when the remote
+// has no plans ref. The local plans ref is not touched.
+func (s *Store) Fetch(ctx context.Context, remote string) (string, error) {
+	if err := checkRemote(remote); err != nil {
+		return "", err
 	}
 	if err := s.fetch(ctx, remote); err != nil {
-		return PullResult{}, err
+		return "", err
 	}
+	return s.optionalCommit(ctx, RemoteRef)
+}
+
+// ReadRemote returns the content of the file at path in RemoteRef, as the
+// last Fetch left it.
+func (s *Store) ReadRemote(ctx context.Context, path string) ([]byte, error) {
+	theirs, err := s.optionalCommit(ctx, RemoteRef)
+	if err != nil {
+		return nil, err
+	}
+	if theirs == "" {
+		return nil, fmt.Errorf("%w: %s", ErrNotFound, RemoteRef)
+	}
+	return s.readAt(ctx, theirs, path)
+}
+
+// Integrate brings RemoteRef, as the last Fetch left it, into the local
+// plans ref, as Pull describes. remote names it in messages.
+func (s *Store) Integrate(ctx context.Context, remote string, keep Keep) (PullResult, error) {
 	theirs, err := s.optionalCommit(ctx, RemoteRef)
 	if err != nil {
 		return PullResult{}, err

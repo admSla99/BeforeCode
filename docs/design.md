@@ -188,7 +188,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 | Beads pattern | BeforeCode |
 | --- | --- |
 | Data in a ref, only small config on branches | Plans in `refs/beforecode/plans`; `config.yaml` and `skills/` on branches so rule changes go through pull requests |
-| `bd bootstrap` finds the ref after a clone and fetches the data | `bfc bootstrap` does the same and sets the refspec. `bfc init` creates the ref in a new project |
+| `bd bootstrap` finds the ref after a clone and fetches the data | `bfc bootstrap` does the same and sets the refspec; it refuses a `format-version` newer than the binary, and in a clone already set up it pulls. `bfc init` creates the ref in a new project. Any other command in a clone without the local ref asks the sync remote (`git ls-remote`, only then, at most 10 seconds) and suggests `bfc bootstrap` or `bfc init`; without an answer it suggests both |
 | Every write is a commit; push and pull are explicit commands | Same, plus automatic sync in the TUI |
 | Hash IDs (`bd-a1b2`) that grow in length and never collide across machines | Internal ID is a ULID; the short ID `bfc-a1b2` is derived from it. No counter |
 | `bd ready`, `bd update --claim` | `bfc ready` lists tasks from approved plans; `bfc claim` writes an event and pushes at once. The first claim to reach the remote wins |

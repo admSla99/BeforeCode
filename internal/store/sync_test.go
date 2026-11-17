@@ -480,3 +480,29 @@ func TestARemoteNameThatLooksLikeAnOptionIsRefused(t *testing.T) {
 		}
 	}
 }
+
+func TestFetchAndReadRemoteLeaveTheLocalRefAlone(t *testing.T) {
+	_, anaDir, benDir := team(t)
+	a, b := open(t, anaDir), open(t, benDir)
+	ctx := context.Background()
+
+	if tip, err := b.Fetch(ctx, "origin"); err != nil || tip != "" {
+		t.Errorf("Fetch from a remote without plans = %q, %v", tip, err)
+	}
+	if _, err := b.ReadRemote(ctx, "format-version"); !errors.Is(err, store.ErrNotFound) {
+		t.Errorf("ReadRemote without a fetched ref: %v", err)
+	}
+
+	want := write(t, a, "init", map[string]string{"format-version": "7\n"})
+	push(t, a)
+	tip, err := b.Fetch(ctx, "origin")
+	if err != nil || tip != want {
+		t.Fatalf("Fetch = %q, %v; want %s", tip, err, want)
+	}
+	if got, err := b.ReadRemote(ctx, "format-version"); err != nil || string(got) != "7\n" {
+		t.Errorf("ReadRemote = %q, %v", got, err)
+	}
+	if ok, _ := b.Initialised(ctx); ok {
+		t.Error("Fetch created the local plans ref")
+	}
+}

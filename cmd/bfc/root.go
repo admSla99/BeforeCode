@@ -19,7 +19,7 @@ func newRootCmd(version string) *cobra.Command {
 		},
 	}
 	root.AddCommand(newVersionCmd(version), newInitCmd(), newNewCmd(), newListCmd(), newShowCmd(), newEditCmd(),
-		newPullCmd(), newPushCmd(), newSyncCmd())
+		newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd())
 	return root
 }
 
