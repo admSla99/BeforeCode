@@ -136,7 +136,7 @@ func TestInitCreatesConfigTemplatesAndPlansRefWithoutCommitting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.yaml: %v", err)
 	}
-	if want := (config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin"}); cfg != want {
+	if want := (config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: config.DefaultSyncInterval}); cfg != want {
 		t.Errorf("config = %+v, want %+v", cfg, want)
 	}
 	for _, name := range []string{"intent.md", "plan.md"} {

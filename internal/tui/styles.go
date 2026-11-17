@@ -14,6 +14,7 @@ var (
 	styleDim      = lipgloss.NewStyle().Faint(true)
 	styleSelected = lipgloss.NewStyle().Reverse(true)
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Red)
+	styleTab      = lipgloss.NewStyle().Bold(true).Underline(true)
 )
 
 // stateStyle colors a Plan state.

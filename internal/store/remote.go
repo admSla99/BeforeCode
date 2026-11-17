@@ -22,6 +22,11 @@ func (s *Store) Root() string {
 	return s.dir
 }
 
+// Tip returns the commit the plans ref points to, or ErrNotInitialised.
+func (s *Store) Tip(ctx context.Context) (string, error) {
+	return s.tip(ctx)
+}
+
 // Initialised reports whether the plans ref exists in this repository.
 func (s *Store) Initialised(ctx context.Context) (bool, error) {
 	_, err := s.tip(ctx)

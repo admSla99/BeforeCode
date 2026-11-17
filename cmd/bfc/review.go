@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"errors"
 	"fmt"
@@ -121,41 +122,56 @@ var reviewActions = map[core.EventType]reviewAction{
 // (with a Message for the reason of changes-requested) as one commit, and
 // prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
-	ctx := cmd.Context()
-	action := reviewActions[typ]
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {
 		return err
 	}
+	after, err := writeReview(cmd.Context(), s, query, typ, reason)
+	if err != nil {
+		return err
+	}
+	detail := fmt.Sprintf("%d of %d approvals", len(after.Status.Approvers), after.Status.RequiredApprovals)
+	if action := reviewActions[typ]; action.detail != nil {
+		detail = action.detail(after.Status)
+	}
+	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (%s)\n", after.ShortID, after.Status.State, detail)
+	return err
+}
+
+// writeReview checks that the event fits the plan and the current user,
+// writes it (with a Message for the reason of changes-requested) as one
+// commit, and returns the plan afterwards. It prints nothing, so the CLI
+// and the TUI share it.
+func writeReview(ctx context.Context, s *store.Store, query string, typ core.EventType, reason string) (planView, error) {
+	action := reviewActions[typ]
 	v, err := resolvePlan(ctx, s, query)
 	if err != nil {
-		return err
+		return planView{}, err
 	}
-	name, email, err := s.Author(ctx)
+	actor, err := currentUser(ctx, s)
 	if err != nil {
-		return err
+		return planView{}, err
 	}
-	actor := core.Person{Name: name, Email: email}
 	if err := action.check(v, actor, reason); err != nil {
-		return err
+		return planView{}, err
 	}
 
 	now := time.Now()
 	e := core.Event{Type: typ, Plan: v.ID, Author: actor, At: now}
 	if typ == core.Submitted {
 		if e.RequiredApprovals, err = requiredApprovals(s); err != nil {
-			return err
+			return planView{}, err
 		}
 	}
 	if action.planBlob {
 		e.PlanBlob, err = s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
 		switch {
 		case errors.Is(err, store.ErrNotFound) && typ == core.Approved:
-			return fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
+			return planView{}, fmt.Errorf("%s has no plan.md to approve; run bfc doctor", v.ShortID)
 		case errors.Is(err, store.ErrNotFound):
 			e.PlanBlob = ""
 		case err != nil:
-			return err
+			return planView{}, err
 		}
 	}
 
@@ -171,19 +187,18 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 	e.ID = newID()
 	files[dir+"/events/"+e.ID.String()+".yaml"] = core.EncodeEvent(e)
 	if _, err := s.Write(ctx, "bfc "+action.command+" "+v.ShortID, files); err != nil {
-		return err
+		return planView{}, err
 	}
 
 	after, err := loadPlan(ctx, s, v.ID)
-	if err != nil {
-		return err
-	}
-	detail := fmt.Sprintf("%d of %d approvals", len(after.Status.Approvers), after.Status.RequiredApprovals)
-	if action.detail != nil {
-		detail = action.detail(after.Status)
-	}
-	_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s (%s)\n", v.ShortID, after.Status.State, detail)
-	return err
+	after.ShortID = v.ShortID
+	return after, err
+}
+
+// currentUser is the person git names as the commit author.
+func currentUser(ctx context.Context, s *store.Store) (core.Person, error) {
+	name, email, err := s.Author(ctx)
+	return core.Person{Name: name, Email: email}, err
 }
 
 // requiredApprovals is the Approval policy in force now:

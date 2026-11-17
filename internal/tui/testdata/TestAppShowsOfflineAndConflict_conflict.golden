@@ -1,0 +1,24 @@
+bfc-5v7x  Payments via Stripe   intent.md   plan.md
+  ## Context                                                                    
+                                                                                
+  The checkout calls payments.Charge, which wraps the old provider.             
+                                                                                
+  ## Approach                                                                   
+                                                                                
+  Add a Stripe client behind the payments.Provider interface and switch EU      
+  traffic with a feature flag.                                                  
+                                                                                
+  ## Affected areas                                                             
+                                                                                
+  • payments/                                                                   
+  • checkout/handler.go                                                         
+                                                                                
+  ## Out of scope                                                               
+                                                                                
+  Refunds.                                                                      
+                                                                                
+  ## Tasks                                                                      
+approve: done
+Conflict: nothing was committed. Run bfc pull --keep local or --keep remote.
+ in-review · 1/2 approvals (peter) · jana@example.com     ✗ conflict in plan.md 
+tab intent/plan • e edit • a approve • r changes • ↑↓ scroll • esc back • q quit

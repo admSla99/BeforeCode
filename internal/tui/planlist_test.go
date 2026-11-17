@@ -68,6 +68,15 @@ func (f *fakePlans) NewPlan(title string) tea.Cmd {
 	}
 }
 
+// The list screen never calls the detail methods.
+func (f *fakePlans) Detail(context.Context, string) (PlanDetail, error) {
+	return PlanDetail{}, errors.New("not in the list tests")
+}
+func (f *fakePlans) Edit(string, Doc) tea.Cmd { return nil }
+func (f *fakePlans) Review(context.Context, string, ReviewAction, string) error {
+	return errors.New("not in the list tests")
+}
+
 func at(day, hour int) time.Time { return time.Date(2026, 11, day, hour, 0, 0, 0, time.UTC) }
 
 func team() *fakePlans {
