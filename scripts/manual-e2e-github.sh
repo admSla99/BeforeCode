@@ -188,11 +188,13 @@ finish() {
 # with two clones on one machine plays Ana (the maintainer) and Ben (a second
 # team member). You type every bfc command yourself in two terminal windows;
 # the wizard shows each command, then checks the result read-only and writes
-# a report for the pull request. Run it from Git Bash:
+# a report for the pull request that closes #19. Run it from Git Bash, once
+# main has .beforecode/config.yaml and bfc close (#49):
 #
 #   bash scripts/manual-e2e-github.sh
 #
-# Set BFC_E2E_DIR to use another work directory than ~/bfc-e2e-github.
+# Set BFC_E2E_DIR to use another work directory than ~/bfc-e2e-github. Each
+# run writes its own report, result-<time>.md, there.
 
 TOTAL_STAGES=11
 
@@ -205,11 +207,12 @@ BEN_EMAIL="ben@example.com"
 WORK="${BFC_E2E_DIR:-$HOME/bfc-e2e-github}"
 ANA="$WORK/ana"
 BEN="$WORK/ben"
-LOG="$WORK/result.md"
-mkdir -p "$WORK"
-# Short IDs typed in an earlier run are offered again.
-ENV_FILE="$WORK/state.env"
 STAMP=$(date +%Y%m%d-%H%M)
+mkdir -p "$WORK"
+# One report and one value file per run, so an earlier run's results and
+# Short IDs never mix into this one.
+LOG="$WORK/result-$STAMP.md"
+ENV_FILE="$WORK/state-$STAMP.env"
 PASSED=0
 FAILED=0
 
@@ -246,7 +249,11 @@ capture() {
 git_new_enough() { git version | awk '{split($3, v, "."); exit !(v[1] > 2 || (v[1] == 2 && v[2] >= 38))}'; }
 gh_is_maintainer() { [[ "$(gh api user --jq .login 2>/dev/null)" == "admSla99" ]]; }
 has_ref() { git -C "$1" rev-parse --verify --quiet "$REF" >/dev/null; }
-remote_tip() { git ls-remote "$REPO_URL" "$REF" | cut -f1; }
+remote_tip() {
+  local out
+  out=$(git ls-remote "$REPO_URL" "$REF") || return 1
+  cut -f1 <<<"$out"
+}
 same_as_remote() {
   local ours theirs
   ours=$(git -C "$1" rev-parse --verify --quiet "$REF") || return 1
@@ -266,10 +273,22 @@ has_close() {
   out=$(bfc --help 2>&1) || return 1
   grep -qE '^  close ' <<<"$out"
 }
-# untouched DIR: on main, nothing changed or added in the working tree.
+# untouched DIR: on main at the cloned commit, nothing changed or added in
+# the working tree. The clones are fresh, so this is the state bfc found.
 untouched() {
   [[ "$(git -C "$1" symbolic-ref --short HEAD)" == "main" ]] &&
+    [[ "$(git -C "$1" rev-parse HEAD)" == "$(git -C "$1" rev-parse origin/main)" ]] &&
     [[ -z "$(git -C "$1" status --porcelain --untracked-files=all)" ]]
+}
+
+# confirmed "what": asks the human whether they saw something and records
+# the answer like check does.
+confirmed() {
+  if confirm "$1?"; then
+    PASSED=$((PASSED + 1)); log "- [x] $1 (seen by hand)"
+  else
+    FAILED=$((FAILED + 1)); log "- [ ] $1 **(not seen)**"
+  fi
 }
 
 banner "BeforeCode phase 1 on GitHub (#19 AC-5)"
@@ -286,6 +305,7 @@ stage "Prerequisites"
 say "Two clones on this PC play Ana (you) and Ben (a second team member)."
 say "Plans go to the hidden ref $REF of the public repository."
 warn "Plans there are public and are never deleted; this run closes its test plans at the end."
+note "Run this once main has .beforecode/config.yaml and bfc close (#49)."
 step "In your BeforeCode checkout, install bfc from an up-to-date main:"
 cmd "git switch main && git pull && go install ./cmd/bfc"
 step "Make sure git has an editor you like, for example:"
@@ -328,12 +348,20 @@ pause "Press Enter when both windows are ready"
 # ── 3 ─────────────────────────────────────────────────────────────────────
 stage "Ana: set up BeforeCode"
 in_window Ana "$ANA"
-if [[ -n "$(remote_tip)" ]]; then
+if ! tip=$(remote_tip); then
+  warn "GitHub cannot be asked for $REF: check the network and git ls-remote $REPO_URL."
+  exit 1
+fi
+log "" "### Ana sets up BeforeCode"
+if [[ -n "$tip" ]]; then
   note "GitHub already has $REF (an earlier run), so Ana joins with bootstrap."
+  note "This run does not test bfc init."
+  log "- GitHub already had $REF, so Ana ran bfc bootstrap; bfc init was not tested in this run."
   cmd "bfc bootstrap"
 else
   cmd "bfc init"
   note "init keeps config.yaml and the templates from main and creates the plans ref."
+  log "- Ana ran bfc init on a repository without $REF."
 fi
 cmd "bfc doctor"
 note "Before the first push, doctor fails 'remote: origin has no ... yet' with the fix bfc push. That is expected."
@@ -421,13 +449,15 @@ in_window Ben "$BEN"
 cmd "bfc new --no-edit \"$TITLE2\""
 pause "Press Enter when both have written"
 in_window Ana "$ANA"; cmd "bfc push"
+pause "Press Enter when Ana has pushed"
 in_window Ben "$BEN"; cmd "bfc push"
-note "Ben's push is rejected first; bfc merges Ana's change and pushes again ('after merging changes pushed meanwhile')."
+note "Ben's push is rejected first; bfc merges Ana's change and pushes again."
+log "" "### Concurrent writes"
+confirmed "Ben's push said 'after merging changes pushed meanwhile'"
 in_window Ana "$ANA"; cmd "bfc pull"
 in_window Ben "$BEN"; cmd "bfc list"
 ask SHORT2 "Short ID of \"$TITLE2\" (bfc-xxxx):"
 write_env SHORT2 "$SHORT2"
-log "" "### Concurrent writes"
 check "Ana and GitHub agree" same_as_remote "$ANA"
 check "Ben and GitHub agree" same_as_remote "$BEN"
 check "Ben has Ana's intent edit" show_has "$BEN" "$SHORT1" "Concurrent edit by Ana."

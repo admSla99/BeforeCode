@@ -24,13 +24,14 @@ var bfcBin string
 // TestMain builds bfc and isolates every git subprocess from the
 // developer's own git configuration.
 func TestMain(m *testing.M) {
-	os.Exit(run(m))
+	os.Exit(buildAndRun(m))
 }
 
-func run(m *testing.M) int {
+func buildAndRun(m *testing.M) int {
 	dir, err := os.MkdirTemp("", "bfc-e2e")
 	if err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	defer func() { _ = os.RemoveAll(dir) }()
 
@@ -43,13 +44,17 @@ func run(m *testing.M) int {
 		fmt.Fprintf(os.Stderr, "go build bfc: %v\n%s", err, out)
 		return 1
 	}
+	// The same isolation as the TestMain of cmd/bfc, which is another
+	// package: an empty global config and no system config.
 	empty := filepath.Join(dir, "gitconfig")
 	if err := os.WriteFile(empty, nil, 0o600); err != nil {
-		panic(err)
+		fmt.Fprintln(os.Stderr, err)
+		return 1
 	}
 	for k, v := range map[string]string{"GIT_CONFIG_GLOBAL": empty, "GIT_CONFIG_NOSYSTEM": "1"} {
 		if err := os.Setenv(k, v); err != nil {
-			panic(err)
+			fmt.Fprintln(os.Stderr, err)
+			return 1
 		}
 	}
 	return m.Run()
@@ -63,29 +68,42 @@ type dev struct {
 	editor string // GIT_EDITOR for bfc new and bfc edit; "" for none
 }
 
-// bfc runs the binary in the developer's clone and returns its combined
-// output, failing the test on a non-zero exit.
+// bfc runs the binary in the developer's clone and returns its standard
+// output, failing the test on a non-zero exit. Standard error, where git's
+// own warnings go, is shown only on failure.
 func (d *dev) bfc(args ...string) string {
 	d.t.Helper()
-	out, err := d.try(args...)
-	if err != nil {
-		d.t.Fatalf("%s: bfc %s: %v\n%s", d.name, strings.Join(args, " "), err, out)
-	}
-	return out
-}
-
-// try runs the binary and returns its output and error.
-func (d *dev) try(args ...string) (string, error) {
 	cmd := exec.Command(bfcBin, args...)
 	cmd.Dir = d.dir
 	cmd.Env = os.Environ()
 	if d.editor != "" {
 		cmd.Env = append(cmd.Env, "GIT_EDITOR="+d.editor)
 	}
-	var out bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &out, &out
-	err := cmd.Run()
-	return out.String(), err
+	var stdout, stderr bytes.Buffer
+	cmd.Stdout, cmd.Stderr = &stdout, &stderr
+	if err := cmd.Run(); err != nil {
+		d.t.Fatalf("%s: bfc %s: %v\n%s%s", d.name, strings.Join(args, " "), err, stdout.String(), stderr.String())
+	}
+	return stdout.String()
+}
+
+// newPlan runs bfc new --no-edit and returns the plan's Short ID, the first
+// word bfc new prints.
+func (d *dev) newPlan(title string) string {
+	d.t.Helper()
+	out := strings.Fields(d.bfc("new", "--no-edit", title))
+	if len(out) == 0 || !strings.HasPrefix(out[0], "bfc-") {
+		d.t.Fatalf("%s: bfc new printed no Short ID: %q", d.name, out)
+	}
+	return out[0]
+}
+
+// sameRefAs fails unless the developer's plans ref is the remote's.
+func (d *dev) sameRefAs(bare string) {
+	d.t.Helper()
+	if got, want := d.git("rev-parse", plansRef), git(d.t, bare, "rev-parse", plansRef); got != want {
+		d.t.Errorf("%s: plans ref %s differs from the remote's %s", d.name, got, want)
+	}
 }
 
 // git runs git in the developer's clone and returns its trimmed output.
@@ -137,18 +155,19 @@ func clone(t *testing.T, bare, name string) *dev {
 }
 
 // checkout is what a developer's git checkout looks like apart from the
-// plans ref: the branch, its commit, the index and the working tree.
+// plans ref: the current branch, every branch, remote-tracking branch and
+// tag with its commit, git's staging area, and the working tree.
 type checkout struct {
-	branch, head, index, status string
+	current, refs, staged, status string
 }
 
 func (d *dev) checkout() checkout {
 	d.t.Helper()
 	return checkout{
-		branch: d.git("symbolic-ref", "HEAD"),
-		head:   d.git("rev-parse", "HEAD"),
-		index:  d.git("ls-files", "--stage"),
-		status: d.git("status", "--porcelain", "--untracked-files=all", "--ignored"),
+		current: d.git("symbolic-ref", "HEAD"),
+		refs:    d.git("for-each-ref", "refs/heads", "refs/remotes", "refs/tags"),
+		staged:  d.git("ls-files", "--stage"),
+		status:  d.git("status", "--porcelain", "--untracked-files=all", "--ignored"),
 	}
 }
 
@@ -229,8 +248,7 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 	ana, bare := startProject(t)
 	anaCheckout := ana.checkout()
 
-	out := ana.bfc("new", "--no-edit", "Payments via Stripe")
-	short := strings.Fields(out)[0]
+	short := ana.newPlan("Payments via Stripe")
 	planFile := filepath.Join(t.TempDir(), "plan.md")
 	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
 		t.Fatal(err)
@@ -243,15 +261,18 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 	ben := clone(t, bare, "Ben")
 	benCheckout := ben.checkout()
 	ben.bfc("bootstrap")
-	if out := ben.bfc("show", short); !strings.Contains(out, "State:      in-review") || !strings.Contains(out, "AC-1: A card") {
-		t.Errorf("ben: show before approving:\n%s", out)
+	if p := ben.list()["Payments via Stripe"]; p.State != "in-review" {
+		t.Errorf("ben: before approving, list --json = %+v", p)
+	}
+	if out := ben.bfc("show", short); !strings.Contains(out, "AC-1: A card") {
+		t.Errorf("ben: show lacks the plan:\n%s", out)
 	}
 	ben.bfc("approve", short)
 	ben.bfc("push")
 
 	ana.bfc("pull")
-	out = ana.bfc("show", short)
-	for _, want := range []string{"State:      approved", "Approvals:  1/1 (ben@example.com)", "Author:     Ana <ana@example.com>"} {
+	out := ana.bfc("show", short)
+	for _, want := range []string{"approved", "1/1 (ben@example.com)", "Ana <ana@example.com>"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("ana: show lacks %q:\n%s", want, out)
 		}
@@ -259,9 +280,7 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 	if p := ana.list()["Payments via Stripe"]; p.State != "approved" || p.Approvals != 1 || p.RequiredApprovals != 1 {
 		t.Errorf("ana: list --json = %+v", p)
 	}
-	if got, want := ana.git("rev-parse", plansRef), git(t, bare, "rev-parse", plansRef); got != want {
-		t.Errorf("ana's plans ref %s differs from the remote's %s", got, want)
-	}
+	ana.sameRefAs(bare)
 
 	ana.unchanged(anaCheckout)
 	ben.unchanged(benCheckout)
@@ -271,7 +290,7 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 // and Ben a new plan. Both pushes reach the remote and nothing is lost.
 func TestConcurrentWritesFromTwoDevelopersAreBothKept(t *testing.T) {
 	ana, bare := startProject(t)
-	short := strings.Fields(ana.bfc("new", "--no-edit", "Payments via Stripe"))[0]
+	short := ana.newPlan("Payments via Stripe")
 	ana.bfc("push")
 	ben := clone(t, bare, "Ben")
 	ben.bfc("bootstrap")
@@ -280,7 +299,7 @@ func TestConcurrentWritesFromTwoDevelopersAreBothKept(t *testing.T) {
 	// Neither has the other's change when writing.
 	ana.useEditor(`printf '\nAlso Apple Pay.\n' >> "$1"`)
 	ana.bfc("edit", "--intent", short)
-	ben.bfc("new", "--no-edit", "Search by customer email")
+	ben.newPlan("Search by customer email")
 	ana.bfc("push")
 	if out := ben.bfc("push"); !strings.Contains(out, "after merging changes pushed meanwhile") {
 		t.Errorf("ben: push did not merge Ana's change first:\n%s", out)
@@ -295,9 +314,7 @@ func TestConcurrentWritesFromTwoDevelopersAreBothKept(t *testing.T) {
 		if out := d.bfc("show", short); !strings.Contains(out, "Also Apple Pay.") {
 			t.Errorf("%s: Ana's edit is lost:\n%s", d.name, out)
 		}
-		if got, want := d.git("rev-parse", plansRef), git(t, bare, "rev-parse", plansRef); got != want {
-			t.Errorf("%s: plans ref %s differs from the remote's %s", d.name, got, want)
-		}
+		d.sameRefAs(bare)
 	}
 	ana.unchanged(anaCheckout)
 	ben.unchanged(benCheckout)
