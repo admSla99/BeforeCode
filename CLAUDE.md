@@ -44,7 +44,7 @@ go build -ldflags "-X main.version=v0.1.0" ./cmd/bfc      # inject the version
 
 The CLI uses Cobra (`github.com/spf13/cobra`). Commands live in `cmd/bfc/`.
 
-CI (`.github/workflows/ci.yml`) runs build (also with `CGO_ENABLED=0`) and `go test -race` on Linux and macOS, build and `go test` on Windows, and `golangci-lint` with the linter set in `.golangci.yml` on every pull request and push to `main`; it also runs `goreleaser check` on `.goreleaser.yaml`. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the release binaries with GoReleaser (the tag becomes `main.version`). `.gitattributes` keeps LF line endings on Windows so gofmt passes there too.
+CI (`.github/workflows/ci.yml`) runs build (also with `CGO_ENABLED=0`) and `go test -race` on Linux and macOS, build and `go test` on Windows, and `golangci-lint` with the linter set in `.golangci.yml` on every pull request and push to `main`. `.github/workflows/release-config.yml` runs `goreleaser check` on `.goreleaser.yaml`, only when `.goreleaser.yaml`, `go.mod`, `cmd/bfc/**` or that workflow change. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the release binaries with GoReleaser (the tag becomes `main.version`). `.gitattributes` keeps LF line endings on Windows so gofmt passes there too.
 
 ## Package layout (target)
 
