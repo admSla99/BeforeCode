@@ -227,3 +227,85 @@ func TestABranchWithATooShortBfcWordHasNoShortID(t *testing.T) {
 		t.Errorf("show on release/bfc-v2:\n%s", out)
 	}
 }
+
+// sharedPlanBranch: ana creates a plan, starts it, commits and pushes the
+// plan and its branch; ben pulls the plans. It returns the Short ID and the
+// branch.
+func sharedPlanBranch(t *testing.T) (ana, ben, short, branch string) {
+	t.Helper()
+	ana, ben, _ = twoClones(t)
+	short, _ = newPlan(t, ana, "Payments")
+	mustBfc(t, ana, "start", short)
+	branch = gitIn(t, ana, "symbolic-ref", "--short", "HEAD")
+	gitIn(t, ana, "commit", "-q", "--allow-empty", "-m", "work by ana")
+	gitIn(t, ana, "push", "-q", "-u", "origin", branch)
+	mustBfc(t, ana, "push")
+	mustBfc(t, ben, "pull")
+	return ana, ben, short, branch
+}
+
+// A teammate's bfc start takes the plan's branch from the remote, so both
+// work on one branch.
+func TestStartTakesThePlanBranchFromTheRemote(t *testing.T) {
+	ana, ben, short, branch := sharedPlanBranch(t)
+
+	out := mustBfc(t, ben, "start", short)
+
+	if got := gitIn(t, ben, "symbolic-ref", "--short", "HEAD"); got != branch {
+		t.Fatalf("ben's branch = %s, want %s\n%s", got, branch, out)
+	}
+	if got, want := gitIn(t, ben, "rev-parse", "HEAD"), gitIn(t, ana, "rev-parse", "HEAD"); got != want {
+		t.Errorf("ben's HEAD = %s, want ana's %s", got, want)
+	}
+	if got := gitIn(t, ben, "rev-parse", "--abbrev-ref", branch+"@{upstream}"); got != "origin/"+branch {
+		t.Errorf("upstream = %s, want origin/%s", got, branch)
+	}
+}
+
+// bfc start fetches first, and says when the local branch is behind the
+// remote one.
+func TestStartSaysWhenThePlanBranchIsBehindTheRemote(t *testing.T) {
+	ana, ben, short, branch := sharedPlanBranch(t)
+	mustBfc(t, ben, "start", short)
+	gitIn(t, ben, "switch", "-q", "main")
+	gitIn(t, ana, "commit", "-q", "--allow-empty", "-m", "more work by ana")
+	gitIn(t, ana, "push", "-q")
+
+	out := mustBfc(t, ben, "start", short)
+
+	if !strings.Contains(out, "1 commit behind origin/"+branch) || !strings.Contains(out, "git pull") {
+		t.Errorf("start behind the remote:\n%s", out)
+	}
+}
+
+// A new branch is not pushed, but bfc start says how to share it.
+func TestStartSaysHowToShareANewBranch(t *testing.T) {
+	ana, _, _ := twoClones(t)
+	short, _ := newPlan(t, ana, "Payments")
+
+	out := mustBfc(t, ana, "start", short)
+
+	branch := gitIn(t, ana, "symbolic-ref", "--short", "HEAD")
+	if !strings.Contains(out, "git push -u origin "+branch) {
+		t.Errorf("start of a new branch:\n%s", out)
+	}
+	if remote := gitIn(t, ana, "ls-remote", "--heads", "origin", branch); remote != "" {
+		t.Errorf("bfc start pushed the branch: %s", remote)
+	}
+}
+
+// Without the network bfc start warns and works with what the clone knows.
+func TestStartWithAnUnreachableRemoteWarnsAndGoesOn(t *testing.T) {
+	ana, _, _ := twoClones(t)
+	short, _ := newPlan(t, ana, "Payments")
+	gitIn(t, ana, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
+
+	out := mustBfc(t, ana, "start", short)
+
+	if !strings.Contains(out, "warning: could not fetch the branches of origin") {
+		t.Errorf("start without the remote:\n%s", out)
+	}
+	if got := gitIn(t, ana, "symbolic-ref", "--short", "HEAD"); !strings.HasPrefix(got, short+"-") {
+		t.Errorf("branch = %s", got)
+	}
+}

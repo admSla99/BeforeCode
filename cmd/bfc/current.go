@@ -4,9 +4,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
+	"time"
 
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
@@ -171,78 +173,158 @@ func newStartCmd() *cobra.Command {
 	return &cobra.Command{
 		Use:   "start <id>",
 		Short: "Work on a plan: switch to its branch, which makes it the Current plan",
-		Long: `Work on a plan: create the branch <Short ID>-<slug of the title> from the
-current HEAD and switch to it, or switch to the local branch that already
-carries the plan's Short ID. The Short ID in the branch name makes the plan the
+		Long: `Work on a plan on its branch, so that everyone works on the same one. bfc
+start first fetches the branches of the sync remote, then switches to the
+local branch that carries the plan's Short ID, else takes the plan's branch
+from the remote and tracks it, else creates <Short ID>-<slug of the title>
+from the current HEAD. The Short ID in the branch name makes the plan the
 Current plan. Uncommitted changes come along as with git switch; if git
-refuses, nothing changes. A closed plan cannot be started. bfc start writes
-nothing to the plans ref.`,
+refuses, nothing changes. A closed plan cannot be started. bfc start never
+pushes and writes nothing to the plans ref.`,
 		Args: cobra.ExactArgs(1),
-		RunE: func(cmd *cobra.Command, args []string) error {
-			ctx := cmd.Context()
-			s, err := openPlans(cmd, forReading)
-			if err != nil {
-				return err
-			}
-			v, err := resolvePlan(ctx, s, args[0])
-			if err != nil {
-				return err
-			}
-			if v.Status.State == core.StateClosed {
-				return fmt.Errorf("%s is closed and cannot be started", v.ShortID)
-			}
-			branch, create, err := planBranch(ctx, s, v)
-			if err != nil {
-				return err
-			}
-			current, err := s.Branch(ctx)
-			if err != nil {
-				return err
-			}
-			w := cmd.OutOrStdout()
-			if branch == current {
-				_, err = fmt.Fprintf(w, "already on %s; %s  %s is the Current plan\n", branch, v.ShortID, v.Title)
-				return err
-			}
-			if err := s.Switch(ctx, branch, create); err != nil {
-				return err
-			}
-			verb := "switched to"
-			if create {
-				verb = "created and switched to"
-			}
-			_, err = fmt.Fprintf(w, "%s %s; %s  %s is the Current plan\n", verb, branch, v.ShortID, v.Title)
-			return err
-		},
+		RunE: runStart,
 	}
 }
 
-// planBranch returns the local branch whose name makes the plan the
-// Current plan (core.CurrentPlan), or the name of a new one with create set.
-// Several such branches are an error that lists them.
-func planBranch(ctx context.Context, s *store.Store, v index.Plan) (branch string, create bool, err error) {
-	branches, err := s.LocalBranches(ctx)
+// fetchTimeout bounds the fetch of bfc start.
+const fetchTimeout = 30 * time.Second
+
+func runStart(cmd *cobra.Command, args []string) error {
+	ctx := cmd.Context()
+	s, err := openPlans(cmd, forReading)
 	if err != nil {
-		return "", false, err
+		return err
 	}
-	refs, err := planRefs(ctx, s)
+	v, err := resolvePlan(ctx, s, args[0])
 	if err != nil {
-		return "", false, err
+		return err
 	}
-	var found []string
-	for _, b := range branches {
-		if cur, err := core.CurrentPlan(b, ulid.ULID{}, refs); err == nil && cur.ID == v.ID {
-			found = append(found, b)
+	if v.Status.State == core.StateClosed {
+		return fmt.Errorf("%s is closed and cannot be started", v.ShortID)
+	}
+	// In local mode there is no remote to share branches with.
+	remote, err := syncRemote(s, "", false)
+	if err != nil {
+		remote = ""
+	}
+	if remote != "" {
+		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+		err := s.FetchBranches(fctx, remote)
+		cancel()
+		if err != nil {
+			_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: could not fetch the branches of %s, so a branch of this plan pushed by someone else may be missing: %v\n", remote, err)
 		}
 	}
-	switch len(found) {
-	case 0:
-		return core.BranchName(v.ShortID, v.Title), true, nil
-	case 1:
-		return found[0], false, nil
-	default:
-		return "", false, fmt.Errorf("several branches carry %s; switch to one with git switch:\n  %s", v.ShortID, strings.Join(found, "\n  "))
+	b, err := planBranch(ctx, s, v, remote)
+	if err != nil {
+		return err
 	}
+	current, err := s.Branch(ctx)
+	if err != nil {
+		return err
+	}
+	w := cmd.OutOrStdout()
+	plan := fmt.Sprintf("%s  %s is the Current plan", v.ShortID, v.Title)
+	switch {
+	case b.name == current:
+		_, err = fmt.Fprintf(w, "already on %s; %s\n", b.name, plan)
+	case b.kind == localBranch:
+		if err := s.Switch(ctx, b.name); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "switched to %s; %s\n", b.name, plan)
+	case b.kind == remoteBranch:
+		if err := s.SwitchTracking(ctx, remote, b.name); err != nil {
+			return err
+		}
+		_, err = fmt.Fprintf(w, "switched to %s, tracking %s/%s; %s\n", b.name, remote, b.name, plan)
+		return err
+	default:
+		if err := s.SwitchNew(ctx, b.name); err != nil {
+			return err
+		}
+		if _, err := fmt.Fprintf(w, "created and switched to %s; %s\n", b.name, plan); err != nil {
+			return err
+		}
+		if remote != "" {
+			_, err = fmt.Fprintf(w, "push it with git push -u %s %s, so that others who run bfc start %s work on it too\n", remote, b.name, v.ShortID)
+		}
+		return err
+	}
+	if err != nil {
+		return err
+	}
+	return reportBehind(ctx, s, w, b.name)
+}
+
+// reportBehind says when the branch lacks commits of its upstream.
+func reportBehind(ctx context.Context, s *store.Store, w io.Writer, branch string) error {
+	upstream, n, err := s.Behind(ctx, branch)
+	if err != nil || n == 0 {
+		return err
+	}
+	commits := "commits"
+	if n == 1 {
+		commits = "commit"
+	}
+	_, err = fmt.Fprintf(w, "%s is %d %s behind %s; run git pull\n", branch, n, commits, upstream)
+	return err
+}
+
+// branchKind says where planBranch found the plan's branch.
+type branchKind int
+
+const (
+	newBranch branchKind = iota
+	localBranch
+	remoteBranch
+)
+
+type planBranchRef struct {
+	name string
+	kind branchKind
+}
+
+// planBranch finds the plan's branch: a local branch whose name makes the
+// plan the Current plan (core.CurrentPlan), else such a branch of the
+// remote, else the name of a new one. Several matches at the same place are
+// an error that lists them.
+func planBranch(ctx context.Context, s *store.Store, v index.Plan, remote string) (planBranchRef, error) {
+	refs, err := planRefs(ctx, s)
+	if err != nil {
+		return planBranchRef{}, err
+	}
+	local, err := s.LocalBranches(ctx)
+	if err != nil {
+		return planBranchRef{}, err
+	}
+	var theirs []string
+	if remote != "" {
+		if theirs, err = s.RemoteBranches(ctx, remote); err != nil {
+			return planBranchRef{}, err
+		}
+	}
+	for _, place := range []struct {
+		kind     branchKind
+		prefix   string
+		branches []string
+	}{{localBranch, "", local}, {remoteBranch, remote + "/", theirs}} {
+		var found []string
+		for _, b := range place.branches {
+			if cur, err := core.CurrentPlan(b, ulid.ULID{}, refs); err == nil && cur.ID == v.ID {
+				found = append(found, b)
+			}
+		}
+		switch len(found) {
+		case 0:
+			continue
+		case 1:
+			return planBranchRef{name: found[0], kind: place.kind}, nil
+		default:
+			return planBranchRef{}, fmt.Errorf("several branches carry %s; switch to one with git switch:\n  %s%s", v.ShortID, place.prefix, strings.Join(found, "\n  "+place.prefix))
+		}
+	}
+	return planBranchRef{name: core.BranchName(v.ShortID, v.Title), kind: newBranch}, nil
 }
 
 // branchPlan returns the plan the branch name makes the Current plan, or

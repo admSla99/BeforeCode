@@ -41,9 +41,18 @@ bfc approve bfc-5v7x            # someone other than the plan author approves
 bfc push
 ```
 
+**Work on an approved plan.** `bfc start` puts everyone who works on a plan on the same branch:
+
+```
+bfc start bfc-5v7x              # switches to the plan's branch, taking it from origin if someone pushed it,
+                                # or creates bfc-5v7x-payments-via-stripe from HEAD
+git push -u origin bfc-5v7x-payments-via-stripe   # once, so that others' bfc start finds it
+bfc show                        # without an ID: the Current plan, the one named in the branch
+```
+
 `bfc pull`, `bfc push` and `bfc sync` share plans; concurrent changes are merged, never force-pushed. `bfc` alone opens the TUI, which syncs in the background. `bfc doctor` checks the setup and says how to fix what is wrong; `bfc doctor --fix` applies the safe fixes.
 
-Plans live in the hidden ref `refs/beforecode/plans`: bfc never touches your working tree, index or branches.
+Plans live in the hidden ref `refs/beforecode/plans`: reading and writing plans never touches your working tree, index or branches. The one command that changes your branch is `bfc start`, because you ask it to; it switches like `git switch` does and never pushes. `bfc use <id>` names the Current plan without changing the branch.
 
 ## How we work on this repository
 
