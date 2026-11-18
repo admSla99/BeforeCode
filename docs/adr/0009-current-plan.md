@@ -8,7 +8,7 @@ The **Current plan** is the plan that the work in a clone belongs to. `bfc prime
 
 **The branch name carries it.** A branch belongs to a plan when its name contains the plan's Short ID as a whole word, anywhere in the name: `bfc-a1b2-payments-via-stripe`, `feat/bfc-a1b2`. Short IDs never change (ADR 0002 section 8), so the binding never goes stale.
 
-**`bfc start <id>`** creates the branch `bfc-<id>-<slug of the title>` from the current HEAD and switches to it. If a local branch with that Short ID exists, it switches to that one. Uncommitted changes are carried as `git switch` carries them; if git refuses, the error is shown and nothing else changes. `bfc start` refuses a `closed` plan and allows every other state. It writes nothing to the Plans ref and no Event.
+**`bfc start <id>`** creates the branch `<Short ID>-<slug of the title>` (for example `bfc-a1b2-payments-via-stripe`) from the current HEAD and switches to it. If a local branch with that Short ID exists, it switches to that one. Uncommitted changes are carried as `git switch` carries them; if git refuses, the error is shown and nothing else changes. `bfc start` refuses a `closed` plan and allows every other state. It writes nothing to the Plans ref and no Event.
 
 **`bfc use <id>`** is the fallback for work that cannot be on such a branch, for example a detached HEAD or a branch whose name is fixed elsewhere. It writes the plan's ULID to `.git/beforecode/current` and does not change the branch. `bfc use --clear` removes the file.
 

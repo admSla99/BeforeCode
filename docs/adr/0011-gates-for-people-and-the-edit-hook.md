@@ -11,7 +11,7 @@ Two controls from the AI-native SDLC playbook (`docs/design.md` section 1): huma
 The Gates are `submit`, `approve`, `request-changes`, `withdraw` and `close`. They refuse to run inside an agent: they exit non-zero with a message that the action is for a person, and write nothing. Every other command works inside an agent.
 
 - **Detection.** Claude Code sets `CLAUDECODE` for the processes it starts. One place in `bfc` names the Gate commands and the variables that mark an agent; a later harness (phase 4) adds its variable there. `core` stays harness-agnostic.
-- **The TUI** hides the Gate actions when it runs inside an agent, through the same `core.Check*` path as every other action rule.
+- **The TUI** hides the Gate actions when it runs inside an agent, through the same `core.Check*` path as every other action rule. The adapter in `cmd/bfc` detects the agent and passes `core` a plain "inside an agent" flag, so `core` never knows which harness is running.
 - **Second layer.** `bfc setup claude` adds `permissions.deny` for the Gate commands (`Bash(bfc approve:*)` and the others) to `.claude/settings.json` (ADR 0010), so Claude Code refuses them before `bfc` runs.
 
 Why: an agent runs `bfc` under the developer's git identity. Without this check it could approve a colleague's plan in the developer's name, and the Event would look like the developer's.

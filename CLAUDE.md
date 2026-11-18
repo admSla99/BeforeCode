@@ -13,7 +13,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 - GitHub only, single repository. No GitLab, no multi-repo plans.
 - Two documents per plan: short `intent.md` (human) and `plan.md` (for agents, with acceptance criteria `AC-1`, `AC-2`, …).
 - Agents use the `bfc` CLI with `--json`, like people and scripts; their instructions come from the binary (`bfc prime`). No MCP server, no daemon (ADR 0008).
-- The Current plan is bound to the branch by its Short ID (`bfc start`), fallback `bfc use` (ADR 0009). `bfc start` is the only command that changes the current branch.
+- The Current plan is bound to the branch by its Short ID (`bfc start`), fallback `bfc use` (ADR 0009). `bfc start` is the first command that changes the current branch, on the user's explicit request.
 - Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) are for people and refuse to run inside an agent; a PreToolUse hook blocks edits unless the Current plan is approved (ADR 0011).
 - The Grill is stored as Messages (ADR 0002 section 7). Skills ship in the binary like the templates; the repository's copy wins.
 - Identity is the git commit author. No signing or extra trust rules yet.
@@ -79,7 +79,7 @@ Set by the plan list (`internal/tui/planlist.go`, issue #16); every new screen f
 
 ## Rules for the hidden ref
 
-- Never touch the user's working tree, index, or current branch when reading or writing plans. Only `bfc start` changes the current branch, on the user's request, and it never touches the ref. Use `hash-object`, a temporary index (`GIT_INDEX_FILE`), `write-tree`, `commit-tree`, `update-ref`.
+- Never touch the user's working tree, index, or current branch when reading or writing plans. `bfc start` changes the current branch only because the user asked for it, and it never touches the ref (ADR 0009). Use `hash-object`, a temporary index (`GIT_INDEX_FILE`), `write-tree`, `commit-tree`, `update-ref`.
 - Events, messages, handoffs and checks are append-only: one new file per item, named by ULID. Never rewrite them. The file formats are in `docs/adr/0002-data-format-v1.md`.
 - Plan state is derived from `events/`, never stored.
 - Never force-push the ref. On a rejected push: fetch, merge in memory with `git merge-tree --write-tree`, retry.

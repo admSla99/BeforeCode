@@ -140,7 +140,7 @@ Editing `plan.md` writes no event. Approvals name the `plan_blob` they approve (
 
 Agents use the same `bfc` commands as people, with `--json` where they read (ADR 0008). The flow in phase 2:
 
-1. `bfc start <id>` creates or switches to the branch `bfc-<id>-<slug>`; the Short ID in the branch name makes the plan the **Current plan** (ADR 0009). `bfc use <id>` sets it without a branch, in `.git/beforecode/current`.
+1. `bfc start <id>` creates or switches to the branch `<Short ID>-<slug>`, for example `bfc-a1b2-payments-via-stripe`; the Short ID in the branch name makes the plan the **Current plan** (ADR 0009). `bfc use <id>` sets it without a branch, in `.git/beforecode/current`.
 2. A Claude Code session starts with **Prime**: a `SessionStart` hook runs `bfc prime`, which prints how to work with `bfc` and the Current plan.
 3. The `PreToolUse` hook (`bfc hook pre-tool-use`) blocks `Edit`, `Write`, `MultiEdit` and `NotebookEdit` unless the Current plan is `approved`. Files under `.beforecode/` and `.claude/` are exempt; Bash is not blocked. `claude.enforce: false` turns it off (ADR 0011).
 4. The **Gates** (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside an agent, detected through `CLAUDECODE`, and `bfc setup claude` denies them in `.claude/settings.json`. This guards against mistakes, not against an agent that unsets the variable (ADR 0011).
@@ -148,7 +148,7 @@ Agents use the same `bfc` commands as people, with `--json` where they read (ADR
 
 **The Grill is stored as Messages** (ADR 0002 section 7), with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, which the agent records word for word, has no `agent` and is a direct reply from the plan author, so it answers the Question. `bfc ask` and `bfc reply` write them.
 
-**Skills ship in the binary** like the templates. `bfc init` writes them to `.beforecode/skills/`, and a skill file in the repository wins over the built-in one.
+**Skills ship in the binary** like the templates. `bfc init` writes them to `.beforecode/skills/`, and a Skill file in the repository wins over the built-in one.
 
 ### Plan check in GitHub Actions
 
@@ -170,7 +170,7 @@ The index is `.git/beforecode/index.db`. It records the plans ref commit it was 
 ```
 # On normal branches (changed through pull requests)
 .beforecode/
-  config.yaml                 # approval policy, sync (ADR 0003); claude.* in phase 2
+  config.yaml                 # approval policy, sync (ADR 0003); claude.command, claude.enforce in version 3 (#59)
   skills/                     # defaults embedded in bfc; the repository's copy wins
     grill-intent/SKILL.md       # phase 2
     grill-architecture/SKILL.md
@@ -286,7 +286,7 @@ Everything inside the `bfc` box runs locally for each team member; team members 
 ### Main flows
 
 1. **New plan**: the developer creates a plan in the TUI; the core writes `intent.md` and a `created` event to the plans ref and syncs.
-2. **Grill**: in the TUI the core loads a skill and starts Claude Code headless through the agent adapter; in Claude Code the developer runs `/bfc-grill`. Either way each Question and answer is stored as a Message with `bfc ask` and `bfc reply`. `/bfc-plan` then writes `plan.md` through `bfc edit --stdin`.
+2. **Grill**: in the TUI the core loads a Skill and starts Claude Code headless through the agent adapter; in Claude Code the developer runs `/bfc-grill`. Either way each Question and answer is stored as a Message with `bfc ask` and `bfc reply`. `/bfc-plan` then writes `plan.md` through `bfc edit --stdin`.
 3. **Review**: after sync a colleague sees the plan, comments, asks questions, and approves. The approval is an event carrying their name. Gates are taken by people only.
 4. **Build**: the developer runs `bfc start <id>` and Claude Code in that branch. The session starts with `bfc prime`; the agent reads the plan with `bfc show --json`, and a hook blocks edits unless the Current plan is approved. In phase 3 the Build screen starts agents on claimed tasks in worktrees, and agents write handoffs with a `bfc` command.
 5. **Check**: GitHub Actions compares the pull request with the plan and reports findings to the pull request and the plan author's Inbox.
