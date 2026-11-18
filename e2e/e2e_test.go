@@ -57,6 +57,12 @@ func buildAndRun(m *testing.M) int {
 			return 1
 		}
 	}
+	// The developers are people: the Gates refuse to run inside an agent
+	// (ADR 0011), and the test itself may run inside Claude Code.
+	if err := os.Unsetenv("CLAUDECODE"); err != nil {
+		fmt.Fprintln(os.Stderr, err)
+		return 1
+	}
 	return m.Run()
 }
 

@@ -108,3 +108,17 @@ func CheckClose(st Status, _ Person) error {
 	}
 	return nil
 }
+
+// ErrGateForPeople is the refusal of a Gate run by an agent (ADR 0011).
+var ErrGateForPeople = errors.New("this action is for a person, not an agent; ask the person to run it")
+
+// CheckPerson reports why a Gate (submit, approve, request-changes,
+// withdraw, close) cannot run, or nil if it can: the Gates are for people,
+// so they refuse to run inside an agent. Which harness counts as an agent
+// is for the caller to decide.
+func CheckPerson(insideAgent bool) error {
+	if insideAgent {
+		return ErrGateForPeople
+	}
+	return nil
+}
