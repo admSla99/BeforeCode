@@ -17,18 +17,24 @@ import (
 
 func newShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <id>",
+		Use:   "show [id]",
 		Short: "Print a plan: header, intent.md and plan.md",
 		Long: `Print a plan: a header with its IDs, state, author and approvals, then
 intent.md and, if it exists, plan.md. The ID is a Short ID (bfc-5v7x), a
-prefix of at least four characters, or the full ULID.`,
-		Args: cobra.ExactArgs(1),
+prefix of at least four characters, or the full ULID. Without an ID it prints
+the Current plan (bfc start, bfc use).`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openPlans(cmd, forReading)
 			if err != nil {
 				return err
 			}
-			v, err := resolvePlan(cmd.Context(), s, args[0])
+			var v index.Plan
+			if len(args) == 0 {
+				v, err = currentPlan(cmd.Context(), s)
+			} else {
+				v, err = resolvePlan(cmd.Context(), s, args[0])
+			}
 			if err != nil {
 				return err
 			}
@@ -46,19 +52,14 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 		if err != nil {
 			return err
 		}
-		byID := make(map[ulid.ULID]index.Plan, len(views))
-		refs := make([]core.PlanHandle, len(views))
-		for i, v := range views {
-			byID[v.ID] = v
-			refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
-		}
+		byID, refs := planHandles(views)
 		id, err := core.ResolveID(query, refs)
 		var amb *core.AmbiguousIDError
 		switch {
 		case errors.As(err, &amb):
 			return ambiguousError(amb, byID)
 		case errors.Is(err, core.ErrUnknownID):
-			return fmt.Errorf("no plan %q; bfc list shows the plans", query)
+			return &unknownPlanError{query: query}
 		case err != nil:
 			return err
 		}
@@ -68,16 +69,41 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 	return p, err
 }
 
+// planHandles returns the plans by ULID, and their handles for
+// core.ResolveID and core.CurrentPlan.
+func planHandles(views []index.Plan) (map[ulid.ULID]index.Plan, []core.PlanHandle) {
+	byID := make(map[ulid.ULID]index.Plan, len(views))
+	refs := make([]core.PlanHandle, len(views))
+	for i, v := range views {
+		byID[v.ID] = v
+		refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
+	}
+	return byID, refs
+}
+
+// unknownPlanError is a plan ID that names no plan in this clone.
+type unknownPlanError struct{ query string }
+
+func (e *unknownPlanError) Error() string {
+	return fmt.Sprintf("no plan %q; bfc list shows the plans", e.query)
+}
+
+func (e *unknownPlanError) Is(target error) bool { return target == core.ErrUnknownID }
+
 // ambiguousError lists the candidates with their Short IDs, ULIDs and
 // titles. The ULID always tells them apart.
 func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) error {
+	return fmt.Errorf("%q matches several plans; give a longer ID or the ULID:%s", amb.Query, candidates(amb, byID))
+}
+
+// candidates lists the plans of amb, one indented line each.
+func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches several plans; give a longer ID or the ULID:", amb.Query)
 	for _, c := range amb.Candidates {
 		v := byID[c.ID]
 		fmt.Fprintf(&b, "\n  %s  %s  %s", v.ShortID, c.ID, v.Title)
 	}
-	return errors.New(b.String())
+	return b.String()
 }
 
 func printPlan(w io.Writer, v index.Plan) error {

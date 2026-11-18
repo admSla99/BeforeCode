@@ -28,3 +28,13 @@ The **Current plan** is the plan that the work in a clone belongs to. `bfc prime
 - Branches made by `bfc start` look like `bfc-a1b2-payments-via-stripe`. Renaming a branch keeps the binding as long as the Short ID stays in the name.
 - Every worktree has its own HEAD, so worktrees (phase 3) each get their own Current plan without extra work.
 - Two plans created offline can share a Short ID (ADR 0002 section 8). Such a Short ID in a branch name is ambiguous and reported like an unknown one; a branch named with a longer prefix settles it.
+
+## Notes from the implementation (#56)
+
+- Only the **first** Short ID in the branch name counts, so a title that itself contains something like `bfc-xxxx` in the slug does not compete with it. It is resolved like any plan ID (`core.ResolveID`), which is how "a longer prefix settles it".
+- `.git/beforecode/current` lives in the worktree's own git directory (`git rev-parse --absolute-git-dir`), not the common one, so in phase 3 every worktree also has its own `bfc use`, as it has its own HEAD.
+- A Short ID in a branch name is `bfc-` and 4 to 16 letters or digits as a whole word, so `release/bfc-v2` carries none.
+- `bfc start` reuses the local branch that makes the plan the Current plan by the same rule, so a branch named with a longer prefix counts; with several, it lists them and switches to none.
+- **One branch per plan for the whole team** (decided with the maintainer in #70, beyond the issue's "local branch"). `bfc start` fetches the branches of the sync remote first (`git fetch <remote> +refs/heads/*:refs/remotes/<remote>/*`, which changes no local branch). Without a local branch of the plan it takes the remote's, as a local branch of the same name that tracks it, so a teammate does not start a second branch. It says when the local branch is behind its upstream. It still never pushes: a new branch is announced with the `git push -u` command to run. In local mode it does not fetch. A failed fetch is a warning, not an error, so `bfc start` works offline.
+- `bfc use` on a branch that names another plan sets the file but says that the branch's plan stays the Current plan.
+- **A plan this clone lacks.** Offline commands (`bfc show`, later the hook) cannot tell a plan not pulled yet from one that does not exist, so for a branch that names an unknown Short ID they name both: run `bfc pull` if someone else created it, otherwise the branch name is wrong. `bfc start`, which fetches anyway, asks the remote's plans ref (without changing the local one) and says which it is: the remote has it, so run `bfc pull`; or it exists neither here nor there.

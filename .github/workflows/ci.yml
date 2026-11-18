@@ -45,7 +45,10 @@ jobs:
       - run: git --version
       - run: go build ./...
       # No -race: it needs cgo. Tests that need a POSIX shell skip themselves.
-      - run: go test ./...
+      # Starting git is slow on Windows and the cmd/bfc tests cannot run in
+      # parallel (they chdir), so that package alone takes close to the
+      # default 10 minutes there.
+      - run: go test -timeout 20m ./...
 
   lint:
     name: Lint
