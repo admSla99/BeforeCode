@@ -15,8 +15,8 @@ import (
 // (compared case-insensitively). It comes from user.name and user.email in
 // git config.
 type Person struct {
-	Name  string `yaml:"name"`
-	Email string `yaml:"email"`
+	Name  string `yaml:"name" json:"name"`
+	Email string `yaml:"email" json:"email"`
 }
 
 // EventType names a kind of Event (ADR 0002 section 4).

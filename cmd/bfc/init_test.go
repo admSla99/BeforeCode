@@ -36,6 +36,11 @@ func TestMain(m *testing.M) {
 			panic(err)
 		}
 	}
+	// Tests that want bfc inside an agent say so with setEnv; the tests
+	// themselves may run inside Claude Code, which sets CLAUDECODE.
+	if err := os.Unsetenv(agentEnv); err != nil {
+		panic(err)
+	}
 	code := m.Run()
 	_ = os.RemoveAll(dir)
 	os.Exit(code)

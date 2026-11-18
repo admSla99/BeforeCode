@@ -36,7 +36,9 @@ bfc push                        # shares the plans ref
 ```
 bfc bootstrap                   # fetches the plans ref and sets up the fetch refspec
 bfc list                        # newest activity first
-bfc show bfc-5v7x
+bfc show bfc-5v7x               # also lists the open Questions
+bfc ask bfc-5v7x --to jana@example.com -m "EUR only?"   # prints the Question's ULID
+bfc reply <ULID> -m "Yes."      # Jana answers; an open Question blocks approval
 bfc approve bfc-5v7x            # someone other than the plan author approves
 bfc push
 ```

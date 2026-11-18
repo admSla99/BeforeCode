@@ -193,7 +193,14 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 		d.Actions = append(d.Actions, tui.ActionSubmit)
 	}
 	if core.CheckApprove(v.Status, actor) == nil {
-		d.Actions = append(d.Actions, tui.ActionApprove)
+		// An open Question blocks approval, as in writeReview.
+		msgs, err := readMessages(ctx, s, v.ID)
+		if err != nil {
+			return tui.PlanDetail{}, err
+		}
+		if core.CheckOpenQuestions(v.Status, core.OpenQuestions(msgs)) == nil {
+			d.Actions = append(d.Actions, tui.ActionApprove)
+		}
 	}
 	if core.CheckRequestChanges(v.Status, actor, "a reason") == nil {
 		d.Actions = append(d.Actions, tui.ActionRequestChanges)

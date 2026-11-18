@@ -38,7 +38,11 @@ the Current plan (bfc start, bfc use).`,
 			if err != nil {
 				return err
 			}
-			return printPlan(cmd.OutOrStdout(), v)
+			msgs, err := readMessages(cmd.Context(), s, v.ID)
+			if err != nil {
+				return err
+			}
+			return printPlan(cmd.OutOrStdout(), v, core.OpenQuestions(msgs))
 		},
 	}
 }
@@ -106,7 +110,9 @@ func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) strin
 	return b.String()
 }
 
-func printPlan(w io.Writer, v index.Plan) error {
+// printPlan prints the header of the plan with its open Questions, then its
+// documents.
+func printPlan(w io.Writer, v index.Plan, open []core.Message) error {
 	approvals := "-"
 	if v.Status.RequiredApprovals > 0 {
 		approvals = fmt.Sprintf("%d/%d", len(v.Status.Approvers), v.Status.RequiredApprovals)
@@ -127,6 +133,16 @@ func printPlan(w io.Writer, v index.Plan) error {
 	fmt.Fprintf(&b, "Activity:   %s\n", formatTime(v.LastActivity))
 	if len(v.Labels) > 0 {
 		fmt.Fprintf(&b, "Labels:     %s\n", strings.Join(v.Labels, ", "))
+	}
+	if len(open) > 0 {
+		b.WriteString("\nOpen questions:\n")
+		for _, q := range open {
+			fields := []string{q.ID.String(), "to " + strings.Join(q.To, ", ")}
+			if q.Ref != "" {
+				fields = append(fields, q.Ref)
+			}
+			fmt.Fprintf(&b, "  %s\n", strings.Join(append(fields, firstLine(q.Body)), "  "))
+		}
 	}
 	for _, f := range []struct {
 		name string

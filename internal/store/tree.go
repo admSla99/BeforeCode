@@ -102,3 +102,32 @@ func (s *Store) Blobs(ctx context.Context, ids []string) (map[string][]byte, err
 	}
 	return out, nil
 }
+
+// Existing returns those of paths that are files in commit, in the order
+// given, with one git call. The paths go to git on stdin, so there may be any
+// number of them.
+func (s *Store) Existing(ctx context.Context, commit string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	var in strings.Builder
+	for _, p := range paths {
+		in.WriteString(commit + ":" + p + "\n")
+	}
+	out, err := s.git(ctx, nil, []byte(in.String()), "cat-file", "--batch-check=%(objecttype)")
+	if err != nil {
+		return nil, err
+	}
+	// One line per path: the object type, or "<name> missing".
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(paths) {
+		return nil, fmt.Errorf("git cat-file --batch-check: %d lines for %d paths", len(lines), len(paths))
+	}
+	var found []string
+	for i, line := range lines {
+		if line == "blob" {
+			found = append(found, paths[i])
+		}
+	}
+	return found, nil
+}

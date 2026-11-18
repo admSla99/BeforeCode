@@ -37,6 +37,12 @@ func PlanDir(id ulid.ULID) string {
 	return PlansDir + "/" + id.String()
 }
 
+// MessagePath is the file of the Message msg of the plan with ULID plan
+// (ADR 0002 section 7).
+func MessagePath(plan, msg ulid.ULID) string {
+	return PlanDir(plan) + "/messages/" + msg.String() + ".md"
+}
+
 // NewPlan creates a plan from the text of its intent.md. newID hands out
 // ULIDs in increasing order: the first names the plan, the second its
 // created event. existing are the ULIDs of the plans already in the ref,
