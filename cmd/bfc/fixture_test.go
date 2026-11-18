@@ -164,11 +164,7 @@ func buildTwoClones(dir string) error {
 	if err := bfcSteps([]string{ana, "init"}, []string{ana, "push"}); err != nil {
 		return err
 	}
-	if err := gitSteps(
-		[]string{dir, "clone", "-q", filepath.ToSlash(filepath.Join(dir, "remote.git")), ben},
-		[]string{ben, "config", "user.name", "Ben Bitdiddle"},
-		[]string{ben, "config", "user.email", "ben@example.com"},
-	); err != nil {
+	if err := buildBenClone(dir); err != nil {
 		return err
 	}
 	out, err := bfcRun(ben, "pull")
@@ -176,4 +172,14 @@ func buildTwoClones(dir string) error {
 		err = fmt.Errorf("bfc pull: %s", out)
 	}
 	return err
+}
+
+// buildBenClone makes ben, a plain clone of remote.git with Ben's identity.
+func buildBenClone(dir string) error {
+	ben := filepath.Join(dir, "ben")
+	return gitSteps(
+		[]string{dir, "clone", "-q", filepath.ToSlash(filepath.Join(dir, "remote.git")), ben},
+		[]string{ben, "config", "user.name", "Ben Bitdiddle"},
+		[]string{ben, "config", "user.email", "ben@example.com"},
+	)
 }

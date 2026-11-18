@@ -64,8 +64,9 @@ func Open(dir string, env ...string) (*Store, error) {
 // GitVersion returns what `git version` prints, such as "git version
 // 2.45.1", and whether that release is at least MinGitVersion. It fails when
 // no git is on PATH.
-// The answer is kept per git binary for the life of the process, because
-// Open asks on every command and starting git is slow on Windows.
+// The answer is kept per git binary for the life of the process: Open asks
+// each time, the TUI opens a Store for many actions, the tests for every
+// command, and starting git is slow on Windows.
 func GitVersion(ctx context.Context) (version string, ok bool, err error) {
 	path, err := exec.LookPath("git")
 	if err != nil {

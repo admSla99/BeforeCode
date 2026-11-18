@@ -89,15 +89,10 @@ func joinedClones(t *testing.T) (ana, ben, bare string) {
 		if err := buildSharedProject(dir, "First plan"); err != nil {
 			return err
 		}
-		ben := filepath.Join(dir, "ben")
-		if err := gitSteps(
-			[]string{dir, "clone", "-q", filepath.ToSlash(filepath.Join(dir, "remote.git")), ben},
-			[]string{ben, "config", "user.name", "Ben Bitdiddle"},
-			[]string{ben, "config", "user.email", "ben@example.com"},
-		); err != nil {
+		if err := buildBenClone(dir); err != nil {
 			return err
 		}
-		return bfcSteps([]string{ben, "bootstrap"})
+		return bfcSteps([]string{filepath.Join(dir, "ben"), "bootstrap"})
 	})
 	return filepath.Join(dir, "work"), filepath.Join(dir, "ben"), filepath.Join(dir, "remote.git")
 }
