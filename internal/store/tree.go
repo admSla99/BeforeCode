@@ -102,3 +102,26 @@ func (s *Store) Blobs(ctx context.Context, ids []string) (map[string][]byte, err
 	}
 	return out, nil
 }
+
+// Existing returns those of paths that are files in commit, in git's tree
+// order, with one git call.
+func (s *Store) Existing(ctx context.Context, commit string, paths []string) ([]string, error) {
+	if len(paths) == 0 {
+		return nil, nil
+	}
+	out, err := s.git(ctx, nil, nil, append([]string{"ls-tree", "-z", commit, "--"}, paths...)...)
+	if err != nil {
+		return nil, err
+	}
+	want := make(map[string]bool, len(paths))
+	for _, p := range paths {
+		want[p] = true
+	}
+	var found []string
+	for _, e := range parseLsTree(out) {
+		if e.typ == "blob" && want[e.name] {
+			found = append(found, e.name)
+		}
+	}
+	return found, nil
+}

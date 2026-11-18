@@ -188,6 +188,16 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	if err := action.check(v, actor, reason); err != nil {
 		return index.Plan{}, err
 	}
+	if typ == core.Approved {
+		// An open Question blocks approval (ADR 0002 section 4).
+		msgs, err := readMessages(ctx, s, v.ID)
+		if err != nil {
+			return index.Plan{}, err
+		}
+		if err := core.CheckOpenQuestions(v.Status, core.OpenQuestions(msgs)); err != nil {
+			return index.Plan{}, err
+		}
+	}
 
 	now := time.Now()
 	e := core.Event{Type: typ, Plan: v.ID, Author: actor, At: now}

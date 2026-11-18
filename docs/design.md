@@ -128,7 +128,7 @@ All of these read from the index (section 4), which brings itself up to date wit
 
 `bfc doctor` checks the setup, one line per check: `ok`, `warn`, `FAIL` or `skip`. The checks are git version, inside a repository, `config.yaml` valid, local plans ref present, fetch refspec, remote reachable and has the plans ref, every object of the plans ref present, local plans ref not behind or diverged, `format-version` supported, index readable, every event file valid, every plan with a valid `created` event, skipped events and duplicate Short IDs. A failure prints the command that fixes it, and the exit code is 1 when any check fails; skipped events and duplicate Short IDs are warnings, because concurrent work produces them by design. `bfc doctor --fix` adds the refspec, fetches missing objects again from the remote, pulls when the plans ref is behind or diverged, adds a missing `format-version` in a new commit, and rebuilds an unreadable index; it never pushes and never rewrites the ref. Broken event files and invalid plans are only reported. Details in `docs/adr/0006-doctor.md` and `docs/adr/0007-doctor-repairs-the-plans-ref.md`.
 
-`bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then `intent.md` and, if present, `plan.md` as plain text. Without an ID it prints the Current plan, and says how to set one (`bfc start`, `bfc use`) when there is none.
+`bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then the open Questions (one line each: ULID, addressees, `ref` if any, the first line of the text), then `intent.md` and, if present, `plan.md` as plain text. Without an ID it prints the Current plan, and says how to set one (`bfc start`, `bfc use`) when there is none.
 
 ### Editing plans
 
@@ -147,6 +147,25 @@ Agents use the same `bfc` commands as people, with `--json` where they read (ADR
 5. `bfc setup claude` writes the hooks, the permissions and the slash commands `/bfc-grill` and `/bfc-plan` into `.claude/`, which is committed through a pull request (ADR 0010).
 
 **The Grill is stored as Messages** (ADR 0002 section 7), with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, which the agent records word for word, has no `agent` and is a direct reply from the plan author, so it answers the Question. `bfc ask` and `bfc reply` write them.
+
+`bfc ask <id> --to <email|ai>... [--ref <ref>] -m <text>` writes a Question; `bfc reply <message-ULID> -m <text>` writes a reply in the plan that holds that Message, found by its ULID alone. Without `-m` the text is read from stdin. Both print the ULID of the new Message, one new file in one commit (issue #58). `--ref` must have one of the forms of ADR 0002 section 7; whether the heading or criterion exists is not checked, so a stale ref is kept. `--to` takes email addresses and the word `ai`, repeated or separated by commas. Inside an agent (`CLAUDECODE` set) the Message gets `agent: claude-code`; `bfc reply --verbatim` leaves it out for an answer the agent records word for word for the person running it. A closed plan takes no new Messages. `bfc approve` refuses while the plan has an open Question and lists them. Messages are read straight from the plans ref, not from the index. With `--json` both print the Message:
+
+```json
+{
+  "id": "01JD3K8Q2W5V7X9Y0Z1A2B3C4E",
+  "plan": "01JD3K8Q2W5V7X9Y0Z1A2B3C4D",
+  "short_id": "bfc-5v7x",
+  "author": {"name": "Peter Horváth", "email": "peter@example.com"},
+  "at": "2026-11-16T21:42:00Z",
+  "agent": "claude-code",
+  "to": ["jana@example.com"],
+  "reply_to": "01JD3K8Q2W5V7X9Y0Z1A2B3C4C",
+  "ref": "plan.md#AC-2",
+  "body": "Does \"exactly one\" also apply when the customer retries the payment?"
+}
+```
+
+`agent`, `to`, `reply_to` and `ref` are left out when empty.
 
 **Skills ship in the binary** like the templates. `bfc init` writes them to `.beforecode/skills/`, and a Skill file in the repository wins over the built-in one.
 

@@ -1,13 +1,9 @@
 package core
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"strings"
-	"time"
-
-	"go.yaml.in/yaml/v3"
 )
 
 // The review gate and the end of a plan (ADR 0002 section 4): who may write
@@ -111,32 +107,4 @@ func CheckClose(st Status, _ Person) error {
 		return stateError(st, "it has no valid created event to close; see bfc doctor")
 	}
 	return nil
-}
-
-// Message is one post in the discussion of a Plan, stored as
-// plans/<plan ULID>/messages/<message ULID>.md (ADR 0002 section 7). Only
-// the fields bfc writes so far are here.
-type Message struct {
-	Author Person
-	At     time.Time
-	Body   string
-}
-
-type messageFile struct {
-	Author Person    `yaml:"author"`
-	At     time.Time `yaml:"at"`
-}
-
-// EncodeMessage returns the file content of m, with LF line endings.
-func EncodeMessage(m Message) []byte {
-	var b bytes.Buffer
-	b.WriteString("---\n")
-	enc := yaml.NewEncoder(&b)
-	enc.SetIndent(2)
-	if err := enc.Encode(messageFile{Author: m.Author, At: m.At.UTC().Truncate(time.Second)}); err != nil {
-		panic(err) // plain strings always encode
-	}
-	body := strings.TrimSpace(strings.ReplaceAll(m.Body, "\r\n", "\n"))
-	b.WriteString("---\n\n" + body + "\n")
-	return b.Bytes()
 }
