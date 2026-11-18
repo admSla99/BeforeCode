@@ -190,7 +190,7 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 		Intent: v.Intent, Plan: v.Plan, Editable: v.Status.State != core.StateClosed,
 	}
 	// The review actions are Gates, for people only (ADR 0011).
-	if core.CheckPerson(insideAgent(p.cmd) != "") != nil {
+	if checkPerson(p.cmd) != nil {
 		return d, nil
 	}
 	if core.CheckSubmit(v.Status, actor, v.Plan) == nil {
@@ -217,7 +217,7 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 
 // Review writes a review event the way the CLI command does.
 func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewAction, reason string) error {
-	if err := core.CheckPerson(insideAgent(p.cmd) != ""); err != nil {
+	if err := checkPerson(p.cmd); err != nil {
 		return err
 	}
 	s, err := openPlans(p.cmd, forWriting)

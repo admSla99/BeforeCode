@@ -14,8 +14,6 @@ func newRootCmd(version string) *cobra.Command {
 		Short:        "Plan before code: write, grill, approve and share plans for AI coding agents",
 		SilenceUsage: true,
 		Args:         cobra.NoArgs,
-		// The Gates are for people (ADR 0011).
-		PersistentPreRunE: func(cmd *cobra.Command, _ []string) error { return checkPerson(cmd) },
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			// In a terminal bfc opens the TUI; in scripts and pipes it
 			// prints usage.
@@ -29,6 +27,7 @@ func newRootCmd(version string) *cobra.Command {
 		newSubmitCmd(), newApproveCmd(), newRequestChangesCmd(), newWithdrawCmd(),
 		newAskCmd(), newReplyCmd(),
 		newSearchCmd(), newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newDoctorCmd(), newCloseCmd(), newTUICmd())
+	guardGates(root) // the Gates are for people (ADR 0011)
 	return root
 }
 

@@ -42,15 +42,30 @@ func insideAgent(cmd *cobra.Command) string {
 	return ""
 }
 
-// checkPerson refuses a Gate inside an agent; every other command may run.
+// checkPerson refuses a Gate inside an agent.
 func checkPerson(cmd *cobra.Command) error {
-	if !slices.Contains(gateCommands, cmd.Name()) {
-		return nil
+	return core.CheckPerson(insideAgent(cmd) != "")
+}
+
+// guardGates makes each Gate among the subcommands of root refuse to run
+// inside an agent, before it does anything. The check is the Gate's own
+// PreRunE, so a PersistentPreRunE added later cannot replace it.
+func guardGates(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		if !slices.Contains(gateCommands, c.Name()) {
+			continue
+		}
+		next := c.PreRunE
+		c.PreRunE = func(cmd *cobra.Command, args []string) error {
+			if err := checkPerson(cmd); err != nil {
+				return fmt.Errorf("bfc %s: %w", cmd.Name(), err)
+			}
+			if next != nil {
+				return next(cmd, args)
+			}
+			return nil
+		}
 	}
-	if err := core.CheckPerson(insideAgent(cmd) != ""); err != nil {
-		return fmt.Errorf("bfc %s: %w", cmd.Name(), err)
-	}
-	return nil
 }
 
 // lookupEnv returns the variable as the command sees it: from the variables

@@ -81,3 +81,16 @@ func TestTUIAdapterHidesTheGatesInsideAnAgent(t *testing.T) {
 		t.Errorf("actions outside an agent = %v, want approve", d.Actions)
 	}
 }
+
+// AC-2: every name in the one list of Gates is a command, so renaming a
+// Gate cannot silently drop its guard.
+func TestEveryGateIsACommand(t *testing.T) {
+	t.Parallel()
+	root := newRootCmd("dev")
+	for _, name := range gateCommands {
+		c, _, err := root.Find([]string{name})
+		if err != nil || c == root || c.Name() != name || c.PreRunE == nil {
+			t.Errorf("gate %q: command %v, err %v", name, c, err)
+		}
+	}
+}
