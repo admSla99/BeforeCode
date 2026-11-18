@@ -134,6 +134,16 @@ const (
 	Done    EventType = "done"
 )
 
+// KnownEventType reports whether t is an Event type of format version 1.
+// A type it does not know may come from a later format version.
+func KnownEventType(t EventType) bool {
+	switch t {
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed:
+		return true
+	}
+	return false
+}
+
 // objectIDPattern matches a git object ID: SHA-1 or SHA-256 in hex.
 var objectIDPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 

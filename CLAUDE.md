@@ -51,7 +51,7 @@ internal/config/  .beforecode/config.yaml parsing (ADR 0003, no I/O)
 internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref
-internal/doctor/  bfc doctor: setup checks and safe fixes (ADR 0006)
+internal/doctor/  bfc doctor: setup checks and safe fixes (ADR 0006, 0007)
 internal/agent/   Agent interface and harness adapters
 internal/mcp/     MCP server
 internal/tui/     Bubble Tea screens

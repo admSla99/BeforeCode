@@ -28,7 +28,7 @@ func checkFormatVersion(ctx context.Context, e *env) Result {
 	const update = "update bfc: go install github.com/admSla99/BeforeCode/cmd/bfc@latest"
 	data, err := e.s.ReadAt(ctx, tip, "format-version")
 	if errors.Is(err, store.ErrNotFound) {
-		return fail(noRepair+"ask whoever created it, or start again with bfc init in a new repository", "%s has no format-version file", store.Ref)
+		return missingFormatVersion(ctx, e)
 	}
 	if err != nil {
 		return fail(noRepair+"see it with git show "+store.Ref+":format-version", "cannot read format-version: %v", err)
@@ -46,6 +46,36 @@ func checkFormatVersion(ctx context.Context, e *env) Result {
 	return pass("%d", v)
 }
 
+// missingFormatVersion is the result for a plans ref without a
+// format-version file. --fix can add the version of this bfc unless the ref
+// holds event types this bfc does not know, which may come from a later
+// format version (ADR 0007).
+func missingFormatVersion(ctx context.Context, e *env) Result {
+	detail := fmt.Sprintf("%s has no format-version file", store.Ref)
+	sc, r, ok := e.scan(ctx)
+	if !ok {
+		r.Status, r.Detail = Fail, detail+"; "+r.Detail
+		return r
+	}
+	if len(sc.unknownTypes) > 0 {
+		r := fail("update bfc, which may know these types; bfc doctor --fix does not guess the format version",
+			"%s, and %d event file(s) have a type this bfc does not know", detail, len(sc.unknownTypes))
+		r.Items = sc.unknownTypes
+		return r
+	}
+	r = fail("", "%s", detail)
+	r.Repair = fmt.Sprintf("adds format-version %d in a new commit", core.FormatVersion)
+	return r
+}
+
+// fixFormatVersion adds the format-version of this bfc in a new commit on
+// top of the tip.
+func fixFormatVersion(ctx context.Context, e *env) error {
+	_, err := e.s.Write(ctx, fmt.Sprintf("bfc doctor: add format-version %d", core.FormatVersion),
+		map[string][]byte{"format-version": fmt.Appendf(nil, "%d\n", core.FormatVersion)})
+	return err
+}
+
 func checkIndex(ctx context.Context, e *env) Result {
 	if e.s == nil {
 		return skip("needs a git repository")
@@ -55,7 +85,9 @@ func checkIndex(ctx context.Context, e *env) Result {
 	case err != nil:
 		return fail("check the repository with git rev-parse --git-common-dir", "cannot find the index: %v", err)
 	case h.Problem != "":
-		return fail("bfc doctor --fix", "cannot be read: %s", h.Problem)
+		r := fail("", "cannot be read: %s", h.Problem)
+		r.Repair = "rebuilds it from the plans ref"
+		return r
 	case !h.Built:
 		return pass("not built yet; the next read builds it")
 	case h.RefCommit != e.tip(ctx):
@@ -135,6 +167,7 @@ type scan struct {
 	invalidPlans []string            // plan directories
 	skipped      []string            // "<path> (<type> by <email>)"
 	shortIDs     map[string][]string // Short ID -> plan ULIDs
+	unknownTypes []string            // "<path> (<type>)": not a type of this format version
 }
 
 // scan reads every plan once. Without a plans ref it returns a Skip result
@@ -224,6 +257,9 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 			continue
 		}
 		if ev, err := core.ParseEvent(eid, data); err == nil {
+			if !core.KnownEventType(ev.Type) {
+				sc.unknownTypes = append(sc.unknownTypes, fmt.Sprintf("%s (%s)", path, ev.Type))
+			}
 			parsed = append(parsed, ev)
 			paths[eid] = path
 		}
