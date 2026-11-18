@@ -352,6 +352,28 @@ func TestDoctorChecksTheFormatVersion(t *testing.T) {
 	gitIn(t, dir, "update-ref", plansRef, commit)
 	out, _ = bfcIn(t, dir, "doctor")
 	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
+
+	// Issue #48 Q1: also a plans ref without plans gets one, as after an
+	// interrupted bfc init.
+	out = mustBfc(t, dir, "doctor", "--fix")
+	wantDoctor(t, out, "fixed", "format-version", "1")
+}
+
+// Issue #48 AC-5: a repair that fails still leaves a fix line that says
+// what to do.
+func TestDoctorFixLineAfterAFailedRepair(t *testing.T) {
+	dir := newLocalRepo(t)
+	mustBfc(t, dir, "new", "--no-edit", "Solo plan")
+	dropFromRef(t, dir, "format-version")
+	// Another writer holds the plans ref, so the commit cannot be made.
+	lock := filepath.Join(gitIn(t, dir, "rev-parse", "--path-format=absolute", "--git-common-dir"), "refs", "beforecode", "plans.lock")
+	writeFile(t, lock, "")
+
+	out, _ := bfcIn(t, dir, "doctor", "--fix")
+	wantDoctor(t, out, "FAIL", "format-version")
+	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "fix: bfc doctor --fix: adds format-version 1") {
+		t.Errorf("output lacks the failed fix and what to do:\n%s", out)
+	}
 }
 
 // dropFromRef commits the plans ref without the file at the root named

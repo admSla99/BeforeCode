@@ -134,8 +134,9 @@ const (
 	Done    EventType = "done"
 )
 
-// KnownEventType reports whether t is an Event type of format version 1.
-// A type it does not know may come from a later format version.
+// KnownEventType reports whether t is an Event type that format version 1
+// writes. The reserved claimed, checked and done are not: they belong to a
+// later format version, as may any type this binary does not know.
 func KnownEventType(t EventType) bool {
 	switch t {
 	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed:

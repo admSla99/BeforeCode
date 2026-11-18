@@ -97,9 +97,5 @@ func (s *Store) Refetch(ctx context.Context, remote string) error {
 	if err := checkRemote(remote); err != nil {
 		return err
 	}
-	_, stderr, err := s.run(ctx, nil, nil, "fetch", "--quiet", "--no-tags", "--prune", "--refetch", "--no-write-fetch-head", remote, FetchRefspec)
-	if err != nil {
-		return remoteError(remote, "fetch from", stderr, err)
-	}
-	return nil
+	return s.fetch(ctx, remote, "--refetch")
 }

@@ -58,7 +58,7 @@ func missingFormatVersion(ctx context.Context, e *env) Result {
 		return r
 	}
 	if len(sc.unknownTypes) > 0 {
-		r := fail("update bfc, which may know these types; bfc doctor --fix does not guess the format version",
+		r = fail("update bfc, which may know these types; bfc doctor --fix does not guess the format version",
 			"%s, and %d event file(s) have a type this bfc does not know", detail, len(sc.unknownTypes))
 		r.Items = sc.unknownTypes
 		return r

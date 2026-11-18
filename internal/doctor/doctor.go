@@ -98,8 +98,11 @@ func Run(ctx context.Context, dir string, fix bool) []Result {
 			if err := c.fix(ctx, e); err != nil {
 				r.FixErr = err
 				var h fixHint
-				if errors.As(err, &h) {
+				switch {
+				case errors.As(err, &h):
 					r.Fix = h.fix
+				case r.Fix == "": // no way by hand: try again once the error is solved
+					r.Fix = withRepair(r)
 				}
 			} else {
 				r = c.run(ctx, e)
@@ -326,8 +329,8 @@ func checkRemote(ctx context.Context, e *env) Result {
 	return pass("%s has %s at %s", e.remote, store.Ref, short(tip))
 }
 
-// lost is the fix of objects that neither this clone nor the remote has.
-const lost = "bfc cannot restore them; copy each from a clone that still has it " +
+// lostFix is the fix of objects that neither this clone nor the remote has.
+const lostFix = "bfc cannot restore them; copy each from a clone that still has it " +
 	"(there git cat-file -p <id> prints it, here git hash-object -w --stdin stores it), and run git fsck for the rest of the repository"
 
 // checkObjects looks for objects of the plans ref's tip that this clone
@@ -357,11 +360,11 @@ func checkObjects(ctx context.Context, e *env) Result {
 	_, remote := e.skipWithoutRemote(ctx)
 	switch {
 	case e.remote == "" && e.cfgErr == nil:
-		r = fail(lost, "%d missing from this clone; local mode has no remote to fetch them from: lost", len(missing))
+		r = fail(lostFix, "%d missing from this clone; local mode has no remote to fetch them from: lost", len(missing))
 	case !remote:
-		r = fail(lost, "%d missing from this clone; no usable sync remote to fetch them from: lost", len(missing))
+		r = fail(lostFix, "%d missing from this clone; no usable sync remote to fetch them from: lost", len(missing))
 	case e.refetched:
-		r = fail(lost, "%d missing here and on %s: lost", len(missing), e.remote)
+		r = fail(lostFix, "%d missing here and on %s: lost", len(missing), e.remote)
 	default:
 		r = fail("git fetch --refetch "+e.remote+" '"+store.FetchRefspec+"'", "%d missing from this clone", len(missing))
 		r.Repair = "fetches them again from " + e.remote
