@@ -8,6 +8,7 @@ import (
 	"io/fs"
 	"os"
 	"path/filepath"
+	"strings"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -77,6 +78,25 @@ ends: its Approvals no longer count, and the next bfc submit needs new ones.`,
 	}
 }
 
+func newCloseCmd() *cobra.Command {
+	var reason string
+	cmd := &cobra.Command{
+		Use:   "close <id> [-m <reason>]",
+		Short: "Close a plan for good",
+		Long: `Close a plan that will not be done, or that was finished outside BeforeCode.
+Anyone may close a plan, in any state. Closed is final: the plan can no
+longer be edited, submitted or reviewed, and bfc list hides it unless asked
+with --state closed or --all. The reason, if given, is stored as a Message
+of the plan.`,
+		Args: cobra.ExactArgs(1),
+		RunE: func(cmd *cobra.Command, args []string) error {
+			return runReview(cmd, args[0], core.Closed, reason)
+		},
+	}
+	cmd.Flags().StringVarP(&reason, "message", "m", "", "the reason, stored as a Message of the plan")
+	return cmd
+}
+
 // reviewAction is one review command: the event type it writes, how it is
 // checked, and how its result is reported.
 type reviewAction struct {
@@ -119,11 +139,16 @@ var reviewActions = map[core.EventType]reviewAction{
 		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckWithdraw(v.Status, actor) },
 		detail:  func(core.Status) string { return "withdrawn" },
 	},
+	core.Closed: {
+		command: "close",
+		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckClose(v.Status, actor) },
+		detail:  func(core.Status) string { return "final" },
+	},
 }
 
 // runReview checks that the event fits the plan and its author, writes it
-// (with a Message for the reason of changes-requested) as one commit, and
-// prints the new state.
+// (with the reason as a Message for changes-requested, and for closed when
+// one is given) as one commit, and prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {
@@ -142,8 +167,8 @@ func runReview(cmd *cobra.Command, query string, typ core.EventType, reason stri
 }
 
 // writeReview checks that the event fits the plan and the current user,
-// writes it (with a Message for the reason of changes-requested) as one
-// commit, and returns the plan afterwards. It prints nothing, so the CLI
+// writes it (with the reason as a Message for changes-requested, and for
+// closed when one is given) as one commit, and returns the plan afterwards. It prints nothing, so the CLI
 // and the TUI share it.
 func writeReview(ctx context.Context, s *store.Store, query string, typ core.EventType, reason string) (index.Plan, error) {
 	action := reviewActions[typ]
@@ -154,6 +179,11 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	actor, err := currentUser(ctx, s)
 	if err != nil {
 		return index.Plan{}, err
+	}
+	// An invalid plan has no stored Short ID; name it in refusals by the
+	// one bfc list shows.
+	if v.Status.ShortID == "" {
+		v.Status.ShortID = v.ShortID
 	}
 	if err := action.check(v, actor, reason); err != nil {
 		return index.Plan{}, err
@@ -182,7 +212,9 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	newID := func() ulid.ULID { return ulid.MustNew(ulid.Timestamp(now), entropy) }
 	dir := core.PlanDir(v.ID)
 	files := map[string][]byte{}
-	if typ == core.ChangesRequested {
+	// The reason is a Message: always for changes-requested, and for
+	// closed when one is given.
+	if typ == core.ChangesRequested || typ == core.Closed && strings.TrimSpace(reason) != "" {
 		msg := newID()
 		files[dir+"/messages/"+msg.String()+".md"] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
 		e.Message = msg.String()

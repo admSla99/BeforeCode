@@ -475,3 +475,50 @@ func TestAppListShowsTheSyncStatus(t *testing.T) {
 	waitFor(t, tm, "Could not resolve")
 	golden(t, screen(t, tm))
 }
+
+// openDetailWith opens the detail of bfc-5v7x with these actions, in local
+// mode, which keeps the timer-dependent sync status out of golden files.
+func openDetailWith(t *testing.T, f *fakeTeam, actions ...ReviewAction) *teatest.TestModel {
+	t.Helper()
+	d := f.details["bfc-5v7x"]
+	d.Actions = actions
+	f.details["bfc-5v7x"] = d
+	return startAppWith(t, f, AppOptions{Interval: time.Hour, Local: true})
+}
+
+// #49 AC-5: c asks for confirmation on one line with an optional reason;
+// esc cancels, enter closes.
+func TestAppCloseAsksToConfirmWithAnOptionalReason(t *testing.T) {
+	f := newFakeTeam()
+	tm := openDetailWith(t, f, ActionApprove, ActionClose)
+	send(tm, "c")
+	waitFor(t, tm, "Close bfc-5v7x? Reason (optional):")
+	send(tm, "esc", "c")
+	send(tm, strings.Split("Done elsewhere", "")...)
+	golden(t, screenAfter(t, tm, "enter", "close: done"))
+	if got := f.count(&f.reviews); len(got) != 1 || got[0] != "close bfc-5v7x Done elsewhere" {
+		t.Errorf("reviews = %q", got)
+	}
+}
+
+func TestAppCloseWithoutAReason(t *testing.T) {
+	f := newFakeTeam()
+	tm := openDetailWith(t, f, ActionClose)
+	send(tm, "c", "enter")
+	waitFor(t, tm, "close: done")
+	screen(t, tm)
+	if got := f.count(&f.reviews); len(got) != 1 || got[0] != "close bfc-5v7x" {
+		t.Errorf("reviews = %q", got)
+	}
+}
+
+// #49 AC-5: without the action, c does nothing and is not in the help line.
+func TestAppCloseIsOfferedOnlyWhenAllowed(t *testing.T) {
+	f := newFakeTeam()
+	tm := openDetailWith(t, f, ActionApprove)
+	send(tm, "c")
+	out := screen(t, tm)
+	if strings.Contains(out, "Close bfc-5v7x?") || strings.Contains(out, "c close") {
+		t.Errorf("close offered without the action:\n%s", out)
+	}
+}

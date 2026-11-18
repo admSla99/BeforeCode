@@ -26,7 +26,8 @@ type Plans interface {
 	// way bfc edit does, and then produces a PlanEditedMsg.
 	Edit(shortID string, doc Doc) tea.Cmd
 	// Review writes the event of a review action, the way the CLI command
-	// of the same name does. reason is used by ActionRequestChanges only.
+	// of the same name does. reason is used by ActionRequestChanges and
+	// ActionClose only; for ActionClose it may be empty.
 	Review(ctx context.Context, shortID string, a ReviewAction, reason string) error
 }
 
@@ -86,9 +87,10 @@ const (
 	ActionSubmit         ReviewAction = "submit"
 	ActionApprove        ReviewAction = "approve"
 	ActionRequestChanges ReviewAction = "request-changes"
+	ActionClose          ReviewAction = "close"
 )
 
-var reviewActionOrder = []ReviewAction{ActionSubmit, ActionApprove, ActionRequestChanges}
+var reviewActionOrder = []ReviewAction{ActionSubmit, ActionApprove, ActionRequestChanges, ActionClose}
 
 // PlanCreatedMsg reports the end of a NewPlan command. Err is nil when a
 // plan was created.

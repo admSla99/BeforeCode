@@ -107,17 +107,17 @@ func TestTUIAdapterDetailListsTheActionsOfTheCurrentUser(t *testing.T) {
 		!strings.Contains(string(d.Plan), "## Acceptance criteria") || !strings.Contains(string(d.Intent), "title: Payments") {
 		t.Errorf("detail = %+v", d)
 	}
-	if !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionSubmit}) || !d.Editable {
-		t.Errorf("author's actions on a draft = %v (editable %v), want submit", d.Actions, d.Editable)
+	if !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionSubmit, tui.ActionClose}) || !d.Editable {
+		t.Errorf("author's actions on a draft = %v (editable %v), want submit and close", d.Actions, d.Editable)
 	}
 
 	mustBfc(t, dir, "submit", short)
-	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); len(d.Actions) != 0 || d.RequiredApprovals != 1 {
+	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionClose}) || d.RequiredApprovals != 1 {
 		t.Errorf("author's actions in review = %v, required %d", d.Actions, d.RequiredApprovals)
 	}
 	as(t, dir, janaP)
 	d, _ = reviewAdapter(t, dir).Detail(ctx, short)
-	if !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionApprove, tui.ActionRequestChanges}) {
+	if !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionApprove, tui.ActionRequestChanges, tui.ActionClose}) {
 		t.Errorf("reviewer's actions = %v", d.Actions)
 	}
 }
@@ -198,11 +198,27 @@ func TestTUIAdapterHidesSubmitForAnUnreadyPlanAndEditForAClosedOne(t *testing.T)
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	ctx := context.Background()
-	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); len(d.Actions) != 0 || !d.Editable {
+	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionClose}) || !d.Editable {
 		t.Errorf("draft without plan.md: actions %v, editable %v", d.Actions, d.Editable)
 	}
 	addEvent(t, dir, id, core.Event{Type: core.Closed, Author: adaP})
-	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); d.Editable {
-		t.Error("a closed plan is editable")
+	if d, _ := reviewAdapter(t, dir).Detail(ctx, short); d.Editable || len(d.Actions) != 0 {
+		t.Errorf("closed plan: actions %v, editable %v", d.Actions, d.Editable)
+	}
+}
+
+// #49: close through the TUI writes what bfc close writes; the reason is
+// optional.
+func TestTUIAdapterClosesLikeTheCLI(t *testing.T) {
+	dir, short, id := draftWithPlan(t)
+	as(t, dir, janaP)
+	if err := reviewAdapter(t, dir).Review(context.Background(), short, tui.ActionClose, ""); err != nil {
+		t.Fatal(err)
+	}
+	if e := last(t, dir, id); e.Type != core.Closed || e.Author.Email != janaP.Email || e.Message != "" {
+		t.Errorf("event = %+v", e)
+	}
+	if got := state(t, dir, short); got != "closed" {
+		t.Errorf("state = %s", got)
 	}
 }

@@ -10,8 +10,9 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
-// The review gate (ADR 0002 section 4): who may write submitted, approved
-// and changes-requested, and in which Plan state. These checks run when bfc
+// The review gate and the end of a plan (ADR 0002 section 4): who may write
+// submitted, withdrawn, approved, changes-requested and closed, and in which
+// Plan state. These checks run when bfc
 // writes an event; Derive applies the same rules when it reads them.
 
 // stateError names the current state of a plan that a command does not fit.
@@ -95,6 +96,19 @@ func CheckWithdraw(st Status, actor Person) error {
 	}
 	if !samePerson(actor, st.Author) {
 		return fmt.Errorf("only the plan author (%s) can withdraw %s; to send it back use bfc request-changes", st.Author.Email, st.ShortID)
+	}
+	return nil
+}
+
+// CheckClose reports why actor cannot close the plan with Status st, or nil
+// if they can. Anyone may close a plan in any state (ADR 0002 section 4);
+// closed is final.
+func CheckClose(st Status, _ Person) error {
+	switch st.State {
+	case StateClosed:
+		return stateError(st, "closed is final")
+	case StateInvalid:
+		return stateError(st, "it has no valid created event to close; see bfc doctor")
 	}
 	return nil
 }
