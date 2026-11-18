@@ -52,12 +52,7 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 		if err != nil {
 			return err
 		}
-		byID := make(map[ulid.ULID]index.Plan, len(views))
-		refs := make([]core.PlanHandle, len(views))
-		for i, v := range views {
-			byID[v.ID] = v
-			refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
-		}
+		byID, refs := planHandles(views)
 		id, err := core.ResolveID(query, refs)
 		var amb *core.AmbiguousIDError
 		switch {
@@ -72,6 +67,18 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 		return err
 	})
 	return p, err
+}
+
+// planHandles returns the plans by ULID, and their handles for
+// core.ResolveID and core.CurrentPlan.
+func planHandles(views []index.Plan) (map[ulid.ULID]index.Plan, []core.PlanHandle) {
+	byID := make(map[ulid.ULID]index.Plan, len(views))
+	refs := make([]core.PlanHandle, len(views))
+	for i, v := range views {
+		byID[v.ID] = v
+		refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
+	}
+	return byID, refs
 }
 
 // ambiguousError lists the candidates with their Short IDs, ULIDs and

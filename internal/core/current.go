@@ -43,9 +43,10 @@ func (e *BranchPlanError) Error() string {
 
 func (e *BranchPlanError) Unwrap() error { return e.Err }
 
-// branchShortID finds a Short ID as a whole word: "bfc-" and its random
-// part, with no letter or digit right before or after.
-var branchShortID = regexp.MustCompile(`(?i)(?:^|[^0-9a-z])(bfc-[0-9a-z]+)(?:$|[^0-9a-z])`)
+// branchShortID finds a Short ID as a whole word: "bfc-" and 4 to 16
+// letters or digits, with no letter or digit right before or after. A
+// shorter word such as bfc-v2 is no Short ID.
+var branchShortID = regexp.MustCompile(`(?i)(?:^|[^0-9a-z])(bfc-[0-9a-z]{4,16})(?:$|[^0-9a-z])`)
 
 // ShortIDInBranch returns the first Short ID in a branch name, as written.
 func ShortIDInBranch(branch string) (string, bool) {

@@ -33,4 +33,6 @@ The **Current plan** is the plan that the work in a clone belongs to. `bfc prime
 
 - Only the **first** Short ID in the branch name counts, so a title that itself contains something like `bfc-xxxx` in the slug does not compete with it. It is resolved like any plan ID (`core.ResolveID`), which is how "a longer prefix settles it".
 - `.git/beforecode/current` lives in the worktree's own git directory (`git rev-parse --absolute-git-dir`), not the common one, so in phase 3 every worktree also has its own `bfc use`, as it has its own HEAD.
-- `bfc start` reuses the local branch whose first Short ID is the plan's; with several, it lists them and switches to none.
+- A Short ID in a branch name is `bfc-` and 4 to 16 letters or digits as a whole word, so `release/bfc-v2` carries none.
+- `bfc start` reuses the local branch that makes the plan the Current plan by the same rule, so a branch named with a longer prefix counts; with several, it lists them and switches to none.
+- `bfc use` on a branch that names another plan sets the file but says that the branch's plan stays the Current plan.

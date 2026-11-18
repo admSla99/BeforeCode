@@ -163,3 +163,67 @@ func TestStartRefusesAClosedPlan(t *testing.T) {
 		t.Errorf("branch = %s, want main", got)
 	}
 }
+
+// AC-1: a branch named with a longer prefix of the plan's ULID, which
+// settles a shared Short ID (ADR 0009), is the plan's branch too.
+func TestStartReusesABranchNamedWithALongerPrefix(t *testing.T) {
+	dir := newLocalRepo(t)
+	commit(t, dir)
+	short, id := newPlan(t, dir, "Payments")
+	longer := "fix/" + short + strings.ToLower(id.String()[14:15])
+	gitIn(t, dir, "branch", longer)
+
+	mustBfc(t, dir, "start", short)
+
+	if got := gitIn(t, dir, "symbolic-ref", "--short", "HEAD"); got != longer {
+		t.Errorf("branch = %s, want %s", got, longer)
+	}
+}
+
+// AC-1: uncommitted changes come along, as with git switch.
+func TestStartCarriesUncommittedChanges(t *testing.T) {
+	dir := newLocalRepo(t)
+	commit(t, dir)
+	short, _ := newPlan(t, dir, "Payments")
+	writeFile(t, filepath.Join(dir, "wip.txt"), "draft\n")
+
+	mustBfc(t, dir, "start", short)
+
+	if got := readFile(t, filepath.Join(dir, "wip.txt")); got != "draft\n" {
+		t.Errorf("wip.txt = %q", got)
+	}
+}
+
+// AC-3: bfc use writes nothing to the plans ref, and says when the branch
+// name wins over it.
+func TestUseOnABranchOfAnotherPlanSaysTheBranchWins(t *testing.T) {
+	dir := newLocalRepo(t)
+	commit(t, dir)
+	other, _ := newPlan(t, dir, "Other")
+	short, _ := newPlan(t, dir, "Payments")
+	mustBfc(t, dir, "start", short)
+	before := gitIn(t, dir, "rev-parse", plansRef)
+
+	out := mustBfc(t, dir, "use", other)
+
+	if !strings.Contains(out, "the branch "+gitIn(t, dir, "symbolic-ref", "--short", "HEAD")+" names "+short+", which stays the Current plan") {
+		t.Errorf("use on a plan branch:\n%s", out)
+	}
+	if got := gitIn(t, dir, "rev-parse", plansRef); got != before {
+		t.Error("bfc use changed the plans ref")
+	}
+}
+
+// AC-4: only a whole Short ID of at least four characters counts, so a
+// branch such as release/bfc-v2 has no Short ID.
+func TestABranchWithATooShortBfcWordHasNoShortID(t *testing.T) {
+	dir := newLocalRepo(t)
+	commit(t, dir)
+	short, _ := newPlan(t, dir, "Payments")
+	mustBfc(t, dir, "use", short)
+	gitIn(t, dir, "switch", "-q", "-c", "release/bfc-v2")
+
+	if out := mustBfc(t, dir, "show"); !strings.HasPrefix(out, short+"  Payments\n") {
+		t.Errorf("show on release/bfc-v2:\n%s", out)
+	}
+}

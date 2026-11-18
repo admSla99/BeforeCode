@@ -56,7 +56,18 @@ still wins over it (bfc start). --clear removes it.`,
 			if err := os.WriteFile(path, []byte(v.ID.String()+"\n"), 0o644); err != nil {
 				return err
 			}
-			_, err = fmt.Fprintf(cmd.OutOrStdout(), "%s  %s is the Current plan\n", v.ShortID, v.Title)
+			w := cmd.OutOrStdout()
+			branch, err := s.Branch(cmd.Context())
+			if err != nil {
+				return err
+			}
+			if short, ok := core.ShortIDInBranch(branch); ok {
+				if id, _ := branchPlan(cmd.Context(), s, branch); id != v.ID {
+					_, err = fmt.Fprintf(w, "%s  %s is set with bfc use, but the branch %s names %s, which stays the Current plan\n", v.ShortID, v.Title, branch, short)
+					return err
+				}
+			}
+			_, err = fmt.Fprintf(w, "%s  %s is the Current plan\n", v.ShortID, v.Title)
 			return err
 		},
 	}
@@ -132,15 +143,12 @@ func currentPlan(ctx context.Context, s *store.Store) (index.Plan, error) {
 		if err != nil {
 			return err
 		}
-		byID := make(map[ulid.ULID]index.Plan, len(views))
-		refs := make([]core.PlanHandle, len(views))
-		for i, v := range views {
-			byID[v.ID] = v
-			refs[i] = core.PlanHandle{ID: v.ID, ShortID: v.Status.ShortID}
-		}
+		byID, refs := planHandles(views)
 		cur, err := core.CurrentPlan(branch, used, refs)
 		var be *core.BranchPlanError
 		var amb *core.AmbiguousIDError
+		// An ambiguous Short ID in the branch is also a BranchPlanError, so
+		// it is told apart first.
 		switch {
 		case errors.As(err, &amb) && errors.As(err, &be):
 			return fmt.Errorf("the branch %s names %s, which matches several plans; rename the branch with a longer ID:%s", be.Branch, be.ShortID, candidates(amb, byID))
@@ -183,7 +191,7 @@ nothing to the plans ref.`,
 			if v.Status.State == core.StateClosed {
 				return fmt.Errorf("%s is closed and cannot be started", v.ShortID)
 			}
-			branch, create, err := planBranch(ctx, s, v.ShortID, v.Title)
+			branch, create, err := planBranch(ctx, s, v)
 			if err != nil {
 				return err
 			}
@@ -209,26 +217,51 @@ nothing to the plans ref.`,
 	}
 }
 
-// planBranch returns the local branch that carries the plan's Short ID, or
-// the name of a new one with create set. Several such branches are an
-// error that lists them.
-func planBranch(ctx context.Context, s *store.Store, shortID, title string) (branch string, create bool, err error) {
+// planBranch returns the local branch whose name makes the plan the
+// Current plan (core.CurrentPlan), or the name of a new one with create set.
+// Several such branches are an error that lists them.
+func planBranch(ctx context.Context, s *store.Store, v index.Plan) (branch string, create bool, err error) {
 	branches, err := s.LocalBranches(ctx)
+	if err != nil {
+		return "", false, err
+	}
+	refs, err := planRefs(ctx, s)
 	if err != nil {
 		return "", false, err
 	}
 	var found []string
 	for _, b := range branches {
-		if id, ok := core.ShortIDInBranch(b); ok && strings.EqualFold(id, shortID) {
+		if cur, err := core.CurrentPlan(b, ulid.ULID{}, refs); err == nil && cur.ID == v.ID {
 			found = append(found, b)
 		}
 	}
 	switch len(found) {
 	case 0:
-		return core.BranchName(shortID, title), true, nil
+		return core.BranchName(v.ShortID, v.Title), true, nil
 	case 1:
 		return found[0], false, nil
 	default:
-		return "", false, fmt.Errorf("several branches carry %s; switch to one with git switch:\n  %s", shortID, strings.Join(found, "\n  "))
+		return "", false, fmt.Errorf("several branches carry %s; switch to one with git switch:\n  %s", v.ShortID, strings.Join(found, "\n  "))
 	}
+}
+
+// branchPlan returns the plan the branch name makes the Current plan, or
+// the zero ULID when it names none, or names it badly.
+func branchPlan(ctx context.Context, s *store.Store, branch string) (ulid.ULID, error) {
+	refs, err := planRefs(ctx, s)
+	if err != nil {
+		return ulid.ULID{}, err
+	}
+	cur, err := core.CurrentPlan(branch, ulid.ULID{}, refs)
+	if err != nil {
+		return ulid.ULID{}, nil
+	}
+	return cur.ID, nil
+}
+
+// planRefs returns the handles of every plan, from the index.
+func planRefs(ctx context.Context, s *store.Store) ([]core.PlanHandle, error) {
+	views, err := loadPlans(ctx, s)
+	_, refs := planHandles(views)
+	return refs, err
 }
