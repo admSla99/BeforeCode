@@ -10,7 +10,11 @@ Status: early development (phase 1 of [docs/design.md](docs/design.md)). Plans c
 
 ## Getting started
 
-You need Git 2.38 or newer and Go 1.27 or newer.
+You need Git 2.38 or newer.
+
+**Install.** Download the archive for your system from the [latest release](https://github.com/admSla99/BeforeCode/releases/latest) (Linux, macOS and Windows, amd64 and arm64), unpack it and put `bfc` on your `PATH`. `checksums.txt` in the release lets you verify the download. `bfc version` prints the installed version.
+
+With Go 1.27 or newer you can instead build it yourself:
 
 ```
 go install github.com/admSla99/BeforeCode/cmd/bfc@latest

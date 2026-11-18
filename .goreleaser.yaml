@@ -1,0 +1,50 @@
+# GoReleaser builds the release binaries when a v* tag is pushed
+# (.github/workflows/release.yml). CI checks this file on every pull request.
+version: 2
+
+project_name: bfc
+
+before:
+  hooks:
+    - go mod tidy -diff
+
+builds:
+  - id: bfc
+    main: ./cmd/bfc
+    binary: bfc
+    env:
+      # The SQLite driver is pure Go: one static binary, no C toolchain.
+      - CGO_ENABLED=0
+    goos: [linux, darwin, windows]
+    goarch: [amd64, arm64]
+    flags:
+      - -trimpath
+    # The tag with its "v", so `bfc version` prints "bfc v0.1.0".
+    ldflags:
+      - -s -w -X main.version={{ .Tag }}
+    mod_timestamp: "{{ .CommitTimestamp }}"
+
+archives:
+  - id: bfc
+    formats: [tar.gz]
+    format_overrides:
+      - goos: windows
+        formats: [zip]
+    name_template: "{{ .ProjectName }}_{{ .Version }}_{{ .Os }}_{{ .Arch }}"
+    files:
+      - LICENSE
+      - README.md
+
+checksum:
+  name_template: checksums.txt
+
+changelog:
+  use: github
+  sort: asc
+
+release:
+  github:
+    owner: admSla99
+    name: BeforeCode
+  # A tag such as v0.2.0-rc.1 is marked as a pre-release.
+  prerelease: auto
