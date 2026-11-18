@@ -396,6 +396,7 @@ func gitLog(t *testing.T, before string) (logFile string) {
 }
 
 // AC-3: the retries are bounded, and nothing is force-pushed meanwhile.
+// Serial: gitLog puts a git wrapper first on PATH, which belongs to the process.
 func TestPushGivesUpAfterABoundedNumberOfAttempts(t *testing.T) {
 	bare, _, b, _, _ := shared(t)
 	write(t, b, "ben", map[string]string{"plans/p/events/01B.yaml": "b\n"})
@@ -421,6 +422,7 @@ esac`)
 }
 
 // AC-6: no code path force-pushes the ref.
+// Serial: gitLog puts a git wrapper first on PATH, which belongs to the process.
 func TestNoPushIsEverForced(t *testing.T) {
 	_, a, b, _, _ := shared(t)
 	logFile := gitLog(t, "")

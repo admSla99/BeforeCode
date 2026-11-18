@@ -308,6 +308,7 @@ func fakeGit(t *testing.T, version string) {
 	t.Setenv("PATH", bin)
 }
 
+// Serial: it puts a git script first on PATH, which belongs to the process.
 func TestOpenRejectsAGitOlderThanTheMinimum(t *testing.T) {
 	dir := newRepo(t)
 	fakeGit(t, "2.30.1")
@@ -321,11 +322,11 @@ func TestOpenRejectsAGitOlderThanTheMinimum(t *testing.T) {
 	}
 }
 
+// Serial: it puts a git script first on PATH, which belongs to the process.
 func TestOpenAcceptsVendorVersionStrings(t *testing.T) {
 	dir := newRepo(t)
 	for _, v := range []string{store.MinGitVersion + ".0", "2.39.3 (Apple Git-146)", "2.45.1.windows.1", "3.0.0"} {
 		t.Run(v, func(t *testing.T) {
-			t.Parallel()
 			fakeGit(t, v)
 			if _, err := store.Open(dir); err != nil {
 				t.Errorf("Open with git %s: %v", v, err)
@@ -398,6 +399,7 @@ func TestWriteRejectsFileAndDirectoryClashes(t *testing.T) {
 	}
 }
 
+// Serial: it puts a git script first on PATH, which belongs to the process.
 func TestWriteFailsWithoutLosingACommitWhenAnotherWriterMovesTheRef(t *testing.T) {
 	if runtime.GOOS == "windows" {
 		t.Skip("wrapper git script needs a POSIX shell")
