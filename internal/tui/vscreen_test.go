@@ -1,7 +1,9 @@
 package tui
 
 import (
+	"bytes"
 	"io"
+	"runtime"
 	"strings"
 	"sync"
 	"testing"
@@ -18,6 +20,9 @@ import (
 // in the output; the screen puts the cells together again.
 type vscreen struct {
 	term *vt.Emulator
+	// onlcr makes a newline also return the cursor to the first column,
+	// as the terminal driver does with ONLCR.
+	onlcr bool
 }
 
 func newVScreen(t *testing.T, w, h int) *vscreen {
@@ -31,10 +36,20 @@ func newVScreen(t *testing.T, w, h int) *vscreen {
 	}
 	go func() { _, _ = io.Copy(io.Discard, term) }()
 	t.Cleanup(func() { _ = in.Close() })
-	return &vscreen{term: term}
+	// Bubble Tea leaves the newline mapping to the terminal driver outside
+	// Windows, when it has no tty input (tea.go, mapNl). teatest has none.
+	return &vscreen{term: term, onlcr: runtime.GOOS != "windows"}
 }
 
-func (s *vscreen) Write(p []byte) (int, error) { return s.term.Write(p) }
+func (s *vscreen) Write(p []byte) (int, error) {
+	if s.onlcr {
+		if _, err := s.term.Write(bytes.ReplaceAll(p, []byte("\n"), []byte("\r\n"))); err != nil {
+			return 0, err
+		}
+		return len(p), nil
+	}
+	return s.term.Write(p)
+}
 
 // String returns the text on the screen, one line per row.
 func (s *vscreen) String() string { return s.term.String() }
@@ -105,5 +120,16 @@ func TestVScreenFindsTextTheRendererDidNotRedraw(t *testing.T) {
 	}
 	if s.Contains("enter: request changes") {
 		t.Error("the screen still shows the cleared rest of the line")
+	}
+}
+
+// #73: outside Windows the renderer leaves "\n" to the terminal driver,
+// which also returns the cursor to the first column (ONLCR).
+func TestVScreenMapsNewlinesLikeATerminal(t *testing.T) {
+	s := newVScreen(t, 80, 24)
+	s.onlcr = true
+	_, _ = s.Write([]byte("IN-REVIEW (2)\nPayments via Stripe"))
+	if rows := strings.Split(s.String(), "\n"); rows[1] != "Payments via Stripe" {
+		t.Errorf("second row = %q, want it in the first column", rows[1])
 	}
 }
