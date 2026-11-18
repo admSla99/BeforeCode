@@ -1,12 +1,12 @@
 ## Context
-    Card payments fail for some EU customers.
+Card payments fail for some EU customers.
 ## Approach
-    Move checkout to Stripe Payment Intents.
+Move checkout to Stripe Payment Intents.
 ## Affected areas
-    The checkout service.
+The checkout service.
 ## Out of scope
-    Refunds.
+Refunds.
 ## Tasks
-    - Replace the charge call.
+- Replace the charge call.
 ## Acceptance criteria
-    - AC-1: A card that needs 3-D Secure completes checkout.
+- AC-1: A card that needs 3-D Secure completes checkout.
