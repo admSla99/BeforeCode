@@ -103,24 +103,30 @@ func (s *Store) Blobs(ctx context.Context, ids []string) (map[string][]byte, err
 	return out, nil
 }
 
-// Existing returns those of paths that are files in commit, in git's tree
-// order, with one git call.
+// Existing returns those of paths that are files in commit, in the order
+// given, with one git call. The paths go to git on stdin, so there may be any
+// number of them.
 func (s *Store) Existing(ctx context.Context, commit string, paths []string) ([]string, error) {
 	if len(paths) == 0 {
 		return nil, nil
 	}
-	out, err := s.git(ctx, nil, nil, append([]string{"ls-tree", "-z", commit, "--"}, paths...)...)
+	var in strings.Builder
+	for _, p := range paths {
+		in.WriteString(commit + ":" + p + "\n")
+	}
+	out, err := s.git(ctx, nil, []byte(in.String()), "cat-file", "--batch-check=%(objecttype)")
 	if err != nil {
 		return nil, err
 	}
-	want := make(map[string]bool, len(paths))
-	for _, p := range paths {
-		want[p] = true
+	// One line per path: the object type, or "<name> missing".
+	lines := strings.Split(strings.TrimSuffix(string(out), "\n"), "\n")
+	if len(lines) != len(paths) {
+		return nil, fmt.Errorf("git cat-file --batch-check: %d lines for %d paths", len(lines), len(paths))
 	}
 	var found []string
-	for _, e := range parseLsTree(out) {
-		if e.typ == "blob" && want[e.name] {
-			found = append(found, e.name)
+	for i, line := range lines {
+		if line == "blob" {
+			found = append(found, paths[i])
 		}
 	}
 	return found, nil

@@ -279,3 +279,43 @@ func TestTwoClonesAnswerAtTheSameTime(t *testing.T) {
 		t.Errorf("Question: %+v", q)
 	}
 }
+
+// --to takes a bare email address or the word ai in any case; anything else
+// could never be answered.
+func TestAskChecksTheAddressees(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	short, id := newPlan(t, dir, "Payments")
+	for _, bad := range []string{"Jana <jana@example.com>", "jana@", "@example.com", "jana @example.com", "ben"} {
+		if out, err := bfcIn(t, dir, "ask", short, "--to", bad, "-m", "?"); err == nil || !strings.Contains(out, "neither an email address nor ai") {
+			t.Errorf("--to %q: %v\n%s", bad, err, out)
+		}
+	}
+	qid := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "AI, jana@example.com", "-m", "?"))
+	if got := strings.Join(message(t, dir, id, qid).To, ","); got != "ai,jana@example.com" {
+		t.Errorf("to = %q", got)
+	}
+}
+
+// bfc reply finds the Message among many plans with one git call, whose
+// arguments do not grow with the number of plans.
+func TestReplyFindsTheMessageAmongManyPlans(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	short, id := newPlan(t, dir, "Payments")
+	qid := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "ai", "-m", "?"))
+	// 600 plans: one path argument each would pass 32K characters, the
+	// limit of a Windows command line. Write them in batches, since Write
+	// has the same limit.
+	for b := range 6 {
+		files := map[string][]byte{}
+		for i := range 100 {
+			files[core.PlanDir(ulid.MustNew(uint64(b*100+i+1), strings.NewReader(strings.Repeat("\x02", 16))))+"/intent.md"] = []byte("x\n")
+		}
+		writeRef(t, dir, "many plans", files)
+	}
+	rid := strings.TrimSpace(mustBfc(t, dir, "reply", qid, "-m", "!"))
+	if r := message(t, dir, id, rid); r.ReplyTo != qid {
+		t.Errorf("reply: %+v", r)
+	}
+}

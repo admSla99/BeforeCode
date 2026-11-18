@@ -237,3 +237,19 @@ func TestTUIAdapterClosesLikeTheCLI(t *testing.T) {
 		t.Errorf("state = %s", got)
 	}
 }
+
+// An open Question hides approve in the TUI, like bfc approve refuses it.
+func TestTUIAdapterHidesApproveWhileAQuestionIsOpen(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	mustBfc(t, dir, "submit", short)
+	as(t, dir, janaP)
+	mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "-m", "Why?")
+	d, err := reviewAdapter(t, dir).Detail(context.Background(), short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Equal(d.Actions, []tui.ReviewAction{tui.ActionRequestChanges, tui.ActionClose}) {
+		t.Errorf("reviewer's actions with an open Question = %v", d.Actions)
+	}
+}

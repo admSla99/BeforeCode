@@ -7,9 +7,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net/mail"
+	"os"
 	"strings"
 	"time"
 
+	"github.com/charmbracelet/x/term"
 	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 
@@ -37,8 +40,7 @@ Question; bfc reply answers it by that ULID.`,
 				return errors.New("say whom the Question is for with --to <email> or --to ai")
 			}
 			for i, a := range to {
-				to[i] = strings.TrimSpace(a)
-				if to[i] != core.AI && !strings.Contains(to[i], "@") {
+				if to[i] = addressee(a); to[i] == "" {
 					return fmt.Errorf("--to %q is neither an email address nor ai", a)
 				}
 			}
@@ -59,7 +61,7 @@ Question; bfc reply answers it by that ULID.`,
 			if err != nil {
 				return err
 			}
-			m, err := writeMessage(cmd, s, v, "ask", core.Message{To: to, Ref: ref, Body: body})
+			m, err := writeMessage(cmd, s, v, "ask", core.Message{To: to, Ref: ref, Body: body}, false)
 			if err != nil {
 				return err
 			}
@@ -107,11 +109,8 @@ from stdin. Prints the ULID of the reply.`,
 			if err != nil {
 				return err
 			}
-			m := core.Message{ReplyTo: id.String(), Body: body}
-			if verbatim {
-				m.Agent = "-" // writeMessage leaves it out
-			}
-			if m, err = writeMessage(cmd, s, v, "reply", m); err != nil {
+			m, err := writeMessage(cmd, s, v, "reply", core.Message{ReplyTo: id.String(), Body: body}, verbatim)
+			if err != nil {
 				return err
 			}
 			return printMessage(cmd, v, m, asJSON)
@@ -123,9 +122,27 @@ from stdin. Prints the ULID of the reply.`,
 	return cmd
 }
 
-// messageText is the text of -m when given, otherwise stdin.
+// addressee returns a, trimmed, when it is a bare email address, or core.AI
+// for the word ai in any case. Otherwise it returns "": a Question to
+// anything else could never be answered.
+func addressee(a string) string {
+	a = strings.TrimSpace(a)
+	if strings.EqualFold(a, core.AI) {
+		return core.AI
+	}
+	if addr, err := mail.ParseAddress(a); err == nil && addr.Name == "" && addr.Address == a {
+		return a
+	}
+	return ""
+}
+
+// messageText is the text of -m when given, otherwise stdin. A terminal on
+// stdin is refused rather than waited on.
 func messageText(cmd *cobra.Command, text string) (string, error) {
 	if !cmd.Flags().Changed("message") {
+		if in, ok := cmd.InOrStdin().(*os.File); ok && term.IsTerminal(in.Fd()) {
+			return "", errors.New("give the text with -m or pipe it on stdin")
+		}
 		data, err := io.ReadAll(cmd.InOrStdin())
 		if err != nil {
 			return "", err
@@ -139,9 +156,9 @@ func messageText(cmd *cobra.Command, text string) (string, error) {
 }
 
 // writeMessage completes m with the current user, the time, a new ULID and,
-// inside an agent, the agent (unless m.Agent is "-", for a verbatim
-// answer), and writes it as one new file in one commit.
-func writeMessage(cmd *cobra.Command, s *store.Store, v index.Plan, command string, m core.Message) (core.Message, error) {
+// inside an agent, the agent (unless verbatim: the text is the person's own
+// words), and writes it as one new file in one commit.
+func writeMessage(cmd *cobra.Command, s *store.Store, v index.Plan, command string, m core.Message, verbatim bool) (core.Message, error) {
 	ctx := cmd.Context()
 	short := v.ShortID
 	if v.Status.State == core.StateClosed {
@@ -152,14 +169,12 @@ func writeMessage(cmd *cobra.Command, s *store.Store, v index.Plan, command stri
 		return core.Message{}, err
 	}
 	m.Author, m.At = actor, time.Now()
-	if m.Agent == "-" {
-		m.Agent = ""
-	} else {
+	if !verbatim {
 		m.Agent = insideAgent(cmd)
 	}
 	m.ID = ulid.MustNew(ulid.Timestamp(m.At), rand.Reader)
-	path := core.PlanDir(v.ID) + "/messages/" + m.ID.String() + ".md"
-	if _, err := s.Write(ctx, "bfc "+command+" "+short, map[string][]byte{path: core.EncodeMessage(m)}); err != nil {
+	files := map[string][]byte{core.MessagePath(v.ID, m.ID): core.EncodeMessage(m)}
+	if _, err := s.Write(ctx, "bfc "+command+" "+short, files); err != nil {
 		return core.Message{}, err
 	}
 	// As stored: whole seconds, trimmed body.
@@ -179,7 +194,7 @@ func findMessage(ctx context.Context, s *store.Store, id ulid.ULID) (ulid.ULID, 
 	}
 	paths := make([]string, len(plans))
 	for i, p := range plans {
-		paths[i] = core.PlanDir(p) + "/messages/" + id.String() + ".md"
+		paths[i] = core.MessagePath(p, id)
 	}
 	found, err := s.Existing(ctx, tip, paths)
 	if err != nil {

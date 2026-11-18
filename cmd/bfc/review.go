@@ -226,7 +226,7 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	// closed when one is given.
 	if typ == core.ChangesRequested || typ == core.Closed && strings.TrimSpace(reason) != "" {
 		msg := newID()
-		files[dir+"/messages/"+msg.String()+".md"] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
+		files[core.MessagePath(v.ID, msg)] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
 		e.Message = msg.String()
 	}
 	e.ID = newID()
