@@ -15,8 +15,9 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Message** | One post in the discussion of a Plan, by a person or the AI. Messages are never edited. A Message can reply to another Message and can refer to a part of the Plan (a section or an acceptance criterion). |
 | **Question** | A Message addressed to a person or to the AI. It is open until it is answered. An open question blocks approval. |
 | **Thread** | A Message that replies to nothing, together with all replies to it. People and the AI both post. |
-| **Grill** | An interactive session where the AI challenges the developer one question at a time, driven by a skill. Answers are written into the plan; unanswered ones become Questions. |
+| **Grill** | An interactive session where the AI challenges the developer one question at a time, driven by a Skill. Each question is a Question by the AI to the plan author, each answer a Message that answers it. |
 | **Skill** | A `SKILL.md` file in `.beforecode/skills/` that drives a grill, a review or a plan check. Versioned on normal branches. |
+| **Gate** | A lifecycle step that only a person may take, never an agent: submit, approve, request changes, withdraw, close. |
 | **Approval** | An `approved` event by someone other than the plan author. It approves one exact version of the Plan document; any later edit to `plan.md` makes it stale and the plan returns to `in-review`. Policy is in `.beforecode/config.yaml`; default is one approver. An agent never approves. |
 | **Review round** | The time from a `submitted` Event to the `withdrawn` or `changes-requested` Event that ends it. Only Approvals given within the open round count; a new `bfc submit` starts a new round that needs new Approvals. |
 | **Approval policy** | How many Approvals a Plan needs, set in `.beforecode/config.yaml`. The number in force when the Plan is submitted is the one that counts. |
@@ -31,5 +32,7 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Conflict** | A file that the local and the remote Plans ref changed differently, so they do not merge on their own. Only `intent.md` and `plan.md` can conflict; nothing is committed until one side is kept with `--keep local` or `--keep remote`. |
 | **Plans ref** | The hidden git ref `refs/beforecode/plans` that stores all plans. Not a branch, not a tag. |
 | **Index** | The local SQLite cache of the Plans ref in `.git/beforecode/index.db`, used to list and search plans. Never a source of truth: deleting it loses nothing. |
+| **Current plan** | The plan the work in a clone belongs to: the one whose Short ID is in the current branch name, otherwise the one set with `bfc use`. |
+| **Prime** | The instructions `bfc prime` prints for an agent at the start of a session: how to work with `bfc`, then the Current plan. |
 | **Harness** | An agent runtime such as Claude Code or Codex. |
 | **Agent adapter** | The Go implementation of the `Agent` interface for one harness. |
