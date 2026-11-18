@@ -155,7 +155,7 @@ func currentPlan(ctx context.Context, s *store.Store) (index.Plan, error) {
 		case errors.As(err, &amb) && errors.As(err, &be):
 			return fmt.Errorf("the branch %s names %s, which matches several plans; rename the branch with a longer ID:%s", be.Branch, be.ShortID, candidates(amb, byID))
 		case errors.As(err, &be):
-			return fmt.Errorf("the branch %s names %s, which is no plan; bfc list shows the plans", be.Branch, be.ShortID)
+			return fmt.Errorf("the branch %s names %s, but this clone has no such plan: run bfc pull if someone else created it; otherwise the branch name is wrong (bfc list shows the plans)", be.Branch, be.ShortID)
 		case errors.Is(err, core.ErrUnknownID):
 			return fmt.Errorf("the plan %s set with bfc use does not exist here; run bfc pull, or bfc use --clear", used)
 		case err != nil:
@@ -195,17 +195,20 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
+	// In local mode there is no remote to share branches with.
+	remote, err := syncRemote(s, "", false)
+	if err != nil {
+		remote = ""
+	}
 	v, err := resolvePlan(ctx, s, args[0])
+	if errors.Is(err, core.ErrUnknownID) && remote != "" {
+		return unknownHere(ctx, s, remote, args[0], err)
+	}
 	if err != nil {
 		return err
 	}
 	if v.Status.State == core.StateClosed {
 		return fmt.Errorf("%s is closed and cannot be started", v.ShortID)
-	}
-	// In local mode there is no remote to share branches with.
-	remote, err := syncRemote(s, "", false)
-	if err != nil {
-		remote = ""
 	}
 	if remote != "" {
 		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
@@ -255,6 +258,50 @@ func runStart(cmd *cobra.Command, args []string) error {
 		return err
 	}
 	return reportBehind(ctx, s, w, b.name)
+}
+
+// unknownHere explains a plan ID this clone does not know by asking the
+// remote's plans ref: a plan the remote has needs bfc pull. When the remote
+// cannot be asked, it returns err with that said.
+func unknownHere(ctx context.Context, s *store.Store, remote, query string, err error) error {
+	fctx, cancel := context.WithTimeout(ctx, fetchTimeout)
+	defer cancel()
+	has, ferr := remoteHasPlan(fctx, s, remote, query)
+	switch {
+	case ferr != nil:
+		return fmt.Errorf("%w (could not ask %s: %v)", err, remote, ferr)
+	case has:
+		return fmt.Errorf("%s has %s, but this clone does not yet: run bfc pull, then bfc start %s", remote, query, query)
+	default:
+		return fmt.Errorf("no plan %q, neither in this clone nor on %s; bfc list shows the plans", query, remote)
+	}
+}
+
+// remoteHasPlan fetches the remote's plans ref and reports whether a plan
+// there matches the query. It does not change the local plans ref.
+func remoteHasPlan(ctx context.Context, s *store.Store, remote, query string) (bool, error) {
+	commit, err := s.Fetch(ctx, remote)
+	if err != nil || commit == "" {
+		return false, err
+	}
+	entries, err := s.Entries(ctx, commit, core.PlansDir)
+	if errors.Is(err, store.ErrNotFound) {
+		return false, nil
+	}
+	if err != nil {
+		return false, err
+	}
+	// Without their events the Short IDs are unknown, but a Short ID is a
+	// prefix of the ULID's random part, which ResolveID matches.
+	var refs []core.PlanHandle
+	for _, e := range entries {
+		if id, err := ulid.ParseStrict(e.Name); e.Dir && err == nil {
+			refs = append(refs, core.PlanHandle{ID: id})
+		}
+	}
+	_, err = core.ResolveID(query, refs)
+	var amb *core.AmbiguousIDError
+	return err == nil || errors.As(err, &amb), nil
 }
 
 // reportBehind says when the branch lacks commits of its upstream.

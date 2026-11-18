@@ -60,7 +60,7 @@ func TestTheBranchNameWinsAndIsReportedWhenItNamesNoPlan(t *testing.T) {
 
 	gitIn(t, dir, "switch", "-q", "-c", "feat/bfc-zzzz-typo")
 	out, err := bfcIn(t, dir, "show")
-	if err == nil || !strings.Contains(out, "feat/bfc-zzzz-typo names bfc-zzzz, which is no plan") {
+	if err == nil || !strings.Contains(out, "feat/bfc-zzzz-typo names bfc-zzzz, but this clone has no such plan") {
 		t.Errorf("show on a branch with an unknown Short ID: %v\n%s", err, out)
 	}
 
@@ -307,5 +307,59 @@ func TestStartWithAnUnreachableRemoteWarnsAndGoesOn(t *testing.T) {
 	}
 	if got := gitIn(t, ana, "symbolic-ref", "--short", "HEAD"); !strings.HasPrefix(got, short+"-") {
 		t.Errorf("branch = %s", got)
+	}
+}
+
+// planOnlyOnTheRemote: ana creates a plan, starts it and pushes the plan
+// and its branch; ben fetches the branch but has not pulled the plans.
+func planOnlyOnTheRemote(t *testing.T) (ben, short, branch string) {
+	t.Helper()
+	ana, ben, _ := twoClones(t)
+	short, _ = newPlan(t, ana, "Payments")
+	mustBfc(t, ana, "start", short)
+	branch = gitIn(t, ana, "symbolic-ref", "--short", "HEAD")
+	gitIn(t, ana, "commit", "-q", "--allow-empty", "-m", "work by ana")
+	gitIn(t, ana, "push", "-q", "-u", "origin", branch)
+	mustBfc(t, ana, "push")
+	return ben, short, branch
+}
+
+// On the branch of a plan this clone has not pulled yet, bfc show (which
+// stays offline) names both causes: not pulled, or a wrong branch name.
+func TestShowOnTheBranchOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
+	ben, short, branch := planOnlyOnTheRemote(t)
+	gitIn(t, ben, "fetch", "-q", "origin")
+	gitIn(t, ben, "switch", "-q", branch)
+
+	out, err := bfcIn(t, ben, "show")
+
+	if err == nil || !strings.Contains(out, "names "+short+", but this clone has no such plan") || !strings.Contains(out, "bfc pull") {
+		t.Errorf("show: %v\n%s", err, out)
+	}
+}
+
+// bfc start asks the remote: a plan it has but this clone lacks needs bfc
+// pull.
+func TestStartOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
+	ben, short, _ := planOnlyOnTheRemote(t)
+
+	out, err := bfcIn(t, ben, "start", short)
+
+	if err == nil || !strings.Contains(out, "origin has "+short+", but this clone does not yet: run bfc pull") {
+		t.Errorf("start: %v\n%s", err, out)
+	}
+	if got := gitIn(t, ben, "symbolic-ref", "--short", "HEAD"); got != "main" {
+		t.Errorf("branch = %s, want main", got)
+	}
+}
+
+// bfc start of a plan that exists nowhere says so.
+func TestStartOfAPlanThatExistsNowhereSaysSo(t *testing.T) {
+	ana, _, _ := twoClones(t)
+
+	out, err := bfcIn(t, ana, "start", "bfc-zzzz")
+
+	if err == nil || !strings.Contains(out, "no plan \"bfc-zzzz\", neither in this clone nor on origin") {
+		t.Errorf("start: %v\n%s", err, out)
 	}
 }

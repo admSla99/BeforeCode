@@ -59,7 +59,7 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 		case errors.As(err, &amb):
 			return ambiguousError(amb, byID)
 		case errors.Is(err, core.ErrUnknownID):
-			return fmt.Errorf("no plan %q; bfc list shows the plans", query)
+			return &unknownPlanError{query: query}
 		case err != nil:
 			return err
 		}
@@ -80,6 +80,15 @@ func planHandles(views []index.Plan) (map[ulid.ULID]index.Plan, []core.PlanHandl
 	}
 	return byID, refs
 }
+
+// unknownPlanError is a plan ID that names no plan in this clone.
+type unknownPlanError struct{ query string }
+
+func (e *unknownPlanError) Error() string {
+	return fmt.Sprintf("no plan %q; bfc list shows the plans", e.query)
+}
+
+func (e *unknownPlanError) Is(target error) bool { return target == core.ErrUnknownID }
 
 // ambiguousError lists the candidates with their Short IDs, ULIDs and
 // titles. The ULID always tells them apart.
