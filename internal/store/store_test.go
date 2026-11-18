@@ -66,9 +66,9 @@ func git(t *testing.T, dir string, args ...string) string {
 	return strings.TrimSpace(string(out))
 }
 
-func open(t *testing.T, dir string) *store.Store {
+func open(t *testing.T, dir string, env ...string) *store.Store {
 	t.Helper()
-	s, err := store.Open(dir)
+	s, err := store.Open(dir, env...)
 	if err != nil {
 		t.Fatalf("Open: %v", err)
 	}
@@ -76,6 +76,7 @@ func open(t *testing.T, dir string) *store.Store {
 }
 
 func TestReadBeforeAnyWriteReportsNotInitialised(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 
 	_, err := s.Read(context.Background(), "intent.md")
@@ -85,6 +86,7 @@ func TestReadBeforeAnyWriteReportsNotInitialised(t *testing.T) {
 }
 
 func TestFirstWriteCreatesRootCommitWithMessage(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 
@@ -114,6 +116,7 @@ func TestFirstWriteCreatesRootCommitWithMessage(t *testing.T) {
 }
 
 func TestWriteAddsOneCommitOnTopOfThePreviousTipAndKeepsOtherFiles(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 	ctx := context.Background()
@@ -149,6 +152,7 @@ func TestWriteAddsOneCommitOnTopOfThePreviousTipAndKeepsOtherFiles(t *testing.T)
 }
 
 func TestWriteReplacesAnExistingFile(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	if _, err := s.Write(ctx, "v1", map[string][]byte{"a/plan.md": []byte("v1\n")}); err != nil {
@@ -165,6 +169,7 @@ func TestWriteReplacesAnExistingFile(t *testing.T) {
 }
 
 func TestWriteLeavesWorkingTreeIndexAndBranchAlone(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 
@@ -207,6 +212,7 @@ func TestWriteLeavesWorkingTreeIndexAndBranchAlone(t *testing.T) {
 }
 
 func TestCommitAuthorComesFromGitConfig(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 
@@ -221,6 +227,7 @@ func TestCommitAuthorComesFromGitConfig(t *testing.T) {
 }
 
 func TestReadMissingFileReportsNotFound(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	if _, err := s.Write(ctx, "msg", map[string][]byte{"a/intent.md": []byte("x")}); err != nil {
@@ -235,6 +242,7 @@ func TestReadMissingFileReportsNotFound(t *testing.T) {
 }
 
 func TestListReturnsTheEntriesOfADirectoryAtTheTip(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	if _, err := s.Write(ctx, "one", map[string][]byte{
@@ -267,6 +275,7 @@ func TestListReturnsTheEntriesOfADirectoryAtTheTip(t *testing.T) {
 }
 
 func TestListMissingOrNonDirectoryReportsNotFound(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	if _, err := s.List(ctx, "plans"); !errors.Is(err, store.ErrNotInitialised) {
@@ -284,6 +293,8 @@ func TestListMissingOrNonDirectoryReportsNotFound(t *testing.T) {
 }
 
 // fakeGit puts a git script that prints the given version first on PATH.
+// PATH belongs to the whole process, so a test that calls it stays serial;
+// Go runs parallel tests only after the serial ones.
 func fakeGit(t *testing.T, version string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -314,6 +325,7 @@ func TestOpenAcceptsVendorVersionStrings(t *testing.T) {
 	dir := newRepo(t)
 	for _, v := range []string{store.MinGitVersion + ".0", "2.39.3 (Apple Git-146)", "2.45.1.windows.1", "3.0.0"} {
 		t.Run(v, func(t *testing.T) {
+			t.Parallel()
 			fakeGit(t, v)
 			if _, err := store.Open(dir); err != nil {
 				t.Errorf("Open with git %s: %v", v, err)
@@ -322,6 +334,7 @@ func TestOpenAcceptsVendorVersionStrings(t *testing.T) {
 	}
 }
 
+// Serial: it empties PATH for the whole process.
 func TestOpenReportsMissingGit(t *testing.T) {
 	dir := newRepo(t)
 	t.Setenv("PATH", t.TempDir())
@@ -336,6 +349,7 @@ func TestOpenReportsMissingGit(t *testing.T) {
 }
 
 func TestWriteRejectsBadInputWithoutCommitting(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 	ctx := context.Background()
@@ -363,6 +377,7 @@ func TestWriteRejectsBadInputWithoutCommitting(t *testing.T) {
 }
 
 func TestWriteRejectsFileAndDirectoryClashes(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	if _, err := s.Write(ctx, "dir", map[string][]byte{"a/b": []byte("x")}); err != nil {
@@ -398,7 +413,9 @@ func TestWriteFailsWithoutLosingACommitWhenAnotherWriterMovesTheRef(t *testing.T
 		"-p", store.Ref, "-m", "theirs")
 
 	// A git wrapper that moves the ref to their commit just before our
-	// commit is created, as a concurrent bfc process would.
+	// commit is created, as a concurrent bfc process would. It goes first
+	// on PATH, which belongs to the whole process, so this test stays
+	// serial.
 	realGit, err := exec.LookPath("git")
 	if err != nil {
 		t.Fatal(err)

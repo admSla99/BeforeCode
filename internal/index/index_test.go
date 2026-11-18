@@ -65,12 +65,18 @@ func newStore(t *testing.T) *store.Store {
 	return s
 }
 
-// clock sets the commit time of the next writes.
-func clock(t *testing.T, minute int) time.Time {
+// clock sets the commit time of the next writes through s, and of the git
+// helper on s. It opens s again with the dates as its environment rather
+// than calling t.Setenv, so that the test can run in parallel; an index
+// opened on s sees the change.
+func clock(t *testing.T, s *store.Store, minute int) time.Time {
 	t.Helper()
 	ts := time.Date(2026, 11, 16, 9, minute, 0, 0, time.UTC)
-	t.Setenv("GIT_COMMITTER_DATE", ts.Format(time.RFC3339))
-	t.Setenv("GIT_AUTHOR_DATE", ts.Format(time.RFC3339))
+	dated, err := store.Open(s.Root(), "GIT_COMMITTER_DATE="+ts.Format(time.RFC3339), "GIT_AUTHOR_DATE="+ts.Format(time.RFC3339))
+	if err != nil {
+		t.Fatal(err)
+	}
+	*s = *dated
 	return ts
 }
 
@@ -128,12 +134,13 @@ func titles(ps []index.Plan) []string {
 }
 
 func TestPlansReadsThePlansRefNewestActivityFirst(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	old := newPlan(t, s, "Old draft", "Nothing yet.\n")
-	t2 := clock(t, 2)
+	t2 := clock(t, s, 2)
 	pay := newPlan(t, s, "Payments", "Charge cards.\n")
-	t3 := clock(t, 3)
+	t3 := clock(t, s, 3)
 	write(t, s, map[string]string{core.PlanDir(old) + "/plan.md": "## Context\n"})
 
 	ix := openIndex(t, s)
@@ -167,9 +174,10 @@ func TestPlansReadsThePlansRefNewestActivityFirst(t *testing.T) {
 }
 
 func TestUpdateRecordsTheRefCommitAndRereadsOnlyChangedPlans(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	a := newPlan(t, s, "A", "a\n")
 	b := newPlan(t, s, "B", "b\n")
 	ix := openIndex(t, s)
@@ -186,7 +194,7 @@ func TestUpdateRecordsTheRefCommitAndRereadsOnlyChangedPlans(t *testing.T) {
 		t.Errorf("update without a move = %+v, %v; want nothing read", again, err)
 	}
 
-	t5 := clock(t, 5)
+	t5 := clock(t, s, 5)
 	write(t, s, map[string]string{core.PlanDir(b) + "/plan.md": "## Context\n"})
 	moved, err := ix.Update(ctx)
 	if err != nil {
@@ -205,16 +213,17 @@ func TestUpdateRecordsTheRefCommitAndRereadsOnlyChangedPlans(t *testing.T) {
 }
 
 func TestPlansFollowsARefThatWasReplaced(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "Kept", "k\n")
 	ix := openIndex(t, s)
 	plans(t, ix)
 
 	// Point the ref at a history that does not contain the indexed commit.
 	other := newStore(t)
-	clock(t, 2)
+	clock(t, s, 2)
 	newPlan(t, other, "Elsewhere", "e\n")
 	otherTip, _ := other.Tip(ctx)
 	for _, args := range [][]string{
@@ -232,10 +241,11 @@ func TestPlansFollowsARefThatWasReplaced(t *testing.T) {
 }
 
 func TestDeletingTheDatabaseLosesNothing(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "One", "first\n")
-	clock(t, 2)
+	clock(t, s, 2)
 	newPlan(t, s, "Two", "second\n")
 	ix := openIndex(t, s)
 	before := plans(t, ix)
@@ -266,6 +276,7 @@ func damage(t *testing.T, s *store.Store, spoil func(path string)) {
 }
 
 func TestABrokenDatabaseIsRebuiltSilently(t *testing.T) {
+	t.Parallel()
 	for name, spoil := range map[string]func(t *testing.T, path string){
 		"not a database": func(t *testing.T, path string) {
 			if err := os.WriteFile(path, []byte(strings.Repeat("garbage ", 1000)), 0o600); err != nil {
@@ -301,8 +312,9 @@ func TestABrokenDatabaseIsRebuiltSilently(t *testing.T) {
 		},
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			s := newStore(t)
-			clock(t, 1)
+			clock(t, s, 1)
 			newPlan(t, s, "Survivor", "still here\n")
 			damage(t, s, func(path string) { spoil(t, path) })
 
@@ -319,14 +331,15 @@ func TestABrokenDatabaseIsRebuiltSilently(t *testing.T) {
 }
 
 func TestSearchFindsPlansByIntentAndPlanText(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	pay := newPlan(t, s, "Payments", "Customers pay by card.\n")
-	clock(t, 2)
+	clock(t, s, 2)
 	login := newPlan(t, s, "Login", "Sign in with GitHub.\n")
 	write(t, s, map[string]string{core.PlanDir(login) + "/plan.md": "## Approach\n\nAn invalid card is refused with 402 and the order stays awaiting payment.\n"})
-	clock(t, 3)
+	clock(t, s, 3)
 	newPlan(t, s, "Platby", "Zamietnutá karta vráti chybu.\n")
 	ix := openIndex(t, s)
 
@@ -370,9 +383,10 @@ func TestSearchFindsPlansByIntentAndPlanText(t *testing.T) {
 }
 
 func TestSearchSeesChangesToThePlansRef(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	id := newPlan(t, s, "Payments", "By card.\n")
 	ix := openIndex(t, s)
 	if hits, _ := ix.Search(ctx, "stripe"); len(hits) != 0 {
@@ -385,9 +399,10 @@ func TestSearchSeesChangesToThePlansRef(t *testing.T) {
 }
 
 func TestSearchIgnoresFrontMatterAndTemplateHints(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "Payments", "## Problem\n\n<!-- What is wrong or missing today? -->\nCards are refused.\n")
 	ix := openIndex(t, s)
 
@@ -410,7 +425,9 @@ func TestSearchIgnoresFrontMatterAndTemplateHints(t *testing.T) {
 // git runs git in the repository of s and returns its trimmed output.
 func git(t *testing.T, s *store.Store, args ...string) string {
 	t.Helper()
-	out, err := exec.Command("git", append([]string{"-C", s.Root()}, args...)...).Output()
+	cmd := exec.Command("git", append([]string{"-C", s.Root()}, args...)...)
+	cmd.Env = s.Environ()
+	out, err := cmd.Output()
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}
@@ -418,23 +435,24 @@ func git(t *testing.T, s *store.Store, args ...string) string {
 }
 
 func TestAnIndexKeptUpToDateAcrossAMergeMatchesAFreshOne(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	a := newPlan(t, s, "A", "a\n")
 	base, _ := s.Tip(ctx)
-	clock(t, 5)
+	clock(t, s, 5)
 	write(t, s, map[string]string{core.PlanDir(a) + "/plan.md": "Theirs.\n"})
 	theirs, _ := s.Tip(ctx)
 	git(t, s, "update-ref", store.Ref, base)
-	clock(t, 2)
+	clock(t, s, 2)
 	newPlan(t, s, "B", "b\n")
 	ix := openIndex(t, s)
 	plans(t, ix) // indexed at ours
 
 	ours, _ := s.Tip(ctx)
 	tree := strings.Fields(git(t, s, "merge-tree", "--write-tree", ours, theirs))[0]
-	clock(t, 6)
+	clock(t, s, 6)
 	merge := git(t, s, "commit-tree", tree, "-p", ours, "-p", theirs, "-m", "merge")
 	git(t, s, "update-ref", store.Ref, merge, ours)
 
@@ -456,11 +474,12 @@ func TestAnIndexKeptUpToDateAcrossAMergeMatchesAFreshOne(t *testing.T) {
 }
 
 func TestAReplacedHistoryRereadsOnlyChangedPlans(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "Same", "s\n")
-	clock(t, 2)
+	clock(t, s, 2)
 	changed := newPlan(t, s, "Changed", "c\n")
 	ix := openIndex(t, s)
 	plans(t, ix)
@@ -468,10 +487,10 @@ func TestAReplacedHistoryRereadsOnlyChangedPlans(t *testing.T) {
 	// The same files as a new root commit, so the indexed commit is not in
 	// the history any more, then an edit of one plan on top.
 	old, _ := s.Tip(ctx)
-	clock(t, 3)
+	clock(t, s, 3)
 	root := git(t, s, "commit-tree", old+"^{tree}", "-m", "rewritten")
 	git(t, s, "update-ref", store.Ref, root, old)
-	clock(t, 4)
+	clock(t, s, 4)
 	write(t, s, map[string]string{core.PlanDir(changed) + "/plan.md": "New.\n"})
 
 	u, err := ix.Update(ctx)
@@ -488,8 +507,9 @@ func TestAReplacedHistoryRereadsOnlyChangedPlans(t *testing.T) {
 }
 
 func TestAnEmptyFileIsNotAMissingOne(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	id := newPlan(t, s, "Empty plan", "x\n")
 	write(t, s, map[string]string{core.PlanDir(id) + "/plan.md": ""})
 	ix := openIndex(t, s)
@@ -504,8 +524,9 @@ func TestAnEmptyFileIsNotAMissingOne(t *testing.T) {
 }
 
 func TestAPlanDirectoryWithALowercaseULIDIsListed(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "Normal", "n\n")
 	odd := ulid.MustNew(ulid.Now(), rand.Reader)
 	write(t, s, map[string]string{"plans/" + strings.ToLower(odd.String()) + "/plan.md": "## Context\n"})
@@ -525,9 +546,10 @@ func TestAPlanDirectoryWithALowercaseULIDIsListed(t *testing.T) {
 }
 
 func TestAnIndexBuiltFromACommitThatIsGoneIsRebuilt(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := newStore(t)
-	clock(t, 1)
+	clock(t, s, 1)
 	newPlan(t, s, "Old", "o\n")
 	ix := openIndex(t, s)
 	plans(t, ix)
@@ -548,6 +570,7 @@ func TestAnIndexBuiltFromACommitThatIsGoneIsRebuilt(t *testing.T) {
 }
 
 func TestSearchForTextWithoutWordsIsAnEmptyQuery(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	newPlan(t, s, "Any", "a\n")
 	ix := openIndex(t, s)
@@ -559,6 +582,7 @@ func TestSearchForTextWithoutWordsIsAnEmptyQuery(t *testing.T) {
 }
 
 func TestPlansLeavesOutTheDocuments(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	id := newPlan(t, s, "Docs", "body\n")
 	write(t, s, map[string]string{core.PlanDir(id) + "/plan.md": "plan\n"})
@@ -574,6 +598,7 @@ func TestPlansLeavesOutTheDocuments(t *testing.T) {
 }
 
 func TestARepositoryPathWithAQuestionMark(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("Windows paths cannot contain '?'")
 	}
@@ -585,12 +610,9 @@ func TestARepositoryPathWithAQuestionMark(t *testing.T) {
 	if err != nil {
 		t.Fatalf("git init: %v\n%s", err, out)
 	}
-	s, err := store.Open(parent)
+	s, err := store.Open(parent, "GIT_AUTHOR_NAME="+ada.Name, "GIT_AUTHOR_EMAIL="+ada.Email, "GIT_COMMITTER_NAME="+ada.Name, "GIT_COMMITTER_EMAIL="+ada.Email)
 	if err != nil {
 		t.Fatal(err)
-	}
-	for k, v := range map[string]string{"GIT_AUTHOR_NAME": ada.Name, "GIT_AUTHOR_EMAIL": ada.Email, "GIT_COMMITTER_NAME": ada.Name, "GIT_COMMITTER_EMAIL": ada.Email} {
-		t.Setenv(k, v)
 	}
 	write(t, s, map[string]string{"format-version": "1\n"})
 	newPlan(t, s, "Odd path", "p\n")

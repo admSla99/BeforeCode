@@ -88,6 +88,7 @@ func shared(t *testing.T) (bare string, a, b *store.Store, anaDir, benDir string
 }
 
 func TestPushCreatesTheRefOnTheRemoteAndPullBringsItToTheOtherClone(t *testing.T) {
+	t.Parallel()
 	bare, anaDir, benDir := team(t)
 	a, b := open(t, anaDir), open(t, benDir)
 	tip := write(t, a, "init", map[string]string{"format-version": "1\n"})
@@ -115,6 +116,7 @@ func TestPushCreatesTheRefOnTheRemoteAndPullBringsItToTheOtherClone(t *testing.T
 }
 
 func TestPullFromARemoteWithoutPlans(t *testing.T) {
+	t.Parallel()
 	_, anaDir, _ := team(t)
 	a := open(t, anaDir)
 	if r := pull(t, a, store.KeepNeither); r.Outcome != store.PullRemoteEmpty {
@@ -126,6 +128,7 @@ func TestPullFromARemoteWithoutPlans(t *testing.T) {
 }
 
 func TestPushWithoutPlansRefReportsNotInitialised(t *testing.T) {
+	t.Parallel()
 	_, anaDir, _ := team(t)
 	if _, err := open(t, anaDir).Push(context.Background(), "origin"); !errors.Is(err, store.ErrNotInitialised) {
 		t.Errorf("err = %v, want ErrNotInitialised", err)
@@ -133,6 +136,7 @@ func TestPushWithoutPlansRefReportsNotInitialised(t *testing.T) {
 }
 
 func TestPullFastForwardsAndKeepsLocalCommitsThatAreAhead(t *testing.T) {
+	t.Parallel()
 	_, a, b, _, _ := shared(t)
 	tip := write(t, a, "ana adds", map[string]string{"plans/p/messages/01A.md": "hi\n"})
 	push(t, a)
@@ -149,6 +153,7 @@ func TestPullFastForwardsAndKeepsLocalCommitsThatAreAhead(t *testing.T) {
 // AC-2 and AC-4: diverged clones that only added files merge in memory with
 // a merge commit, and the working tree, index and branch are untouched.
 func TestPullMergesDivergedAdditionsWithoutTouchingTheWorkingTree(t *testing.T) {
+	t.Parallel()
 	_, a, b, _, benDir := shared(t)
 	anaTip := write(t, a, "ana", map[string]string{"plans/p/events/01A.yaml": "a\n", "plans/p/messages/01A.md": "a\n"})
 	push(t, a)
@@ -183,6 +188,7 @@ func TestPullMergesDivergedAdditionsWithoutTouchingTheWorkingTree(t *testing.T) 
 // AC-3 and AC-4: two clones write at once; the second push is rejected,
 // merged and retried, and both sides end up with every file.
 func TestPushAfterAConcurrentPushMergesAndRetries(t *testing.T) {
+	t.Parallel()
 	bare, a, b, _, _ := shared(t)
 	write(t, a, "ana", map[string]string{"plans/p/events/01A.yaml": "a\n"})
 	write(t, b, "ben", map[string]string{"plans/p/events/01B.yaml": "b\n"})
@@ -203,6 +209,7 @@ func TestPushAfterAConcurrentPushMergesAndRetries(t *testing.T) {
 }
 
 func TestPullWithUnrelatedHistoriesMergesThem(t *testing.T) {
+	t.Parallel()
 	_, anaDir, benDir := team(t)
 	a, b := open(t, anaDir), open(t, benDir)
 	write(t, a, "init", map[string]string{"format-version": "1\n", "plans/a/intent.md": "# A\n"})
@@ -228,6 +235,7 @@ func conflicted(t *testing.T) (a, b *store.Store, anaTip, benTip, benDir string)
 
 // AC-5: a real conflict commits nothing and reports both versions.
 func TestPullWithAConflictCommitsNothingAndReportsBothVersions(t *testing.T) {
+	t.Parallel()
 	_, b, anaTip, benTip, benDir := conflicted(t)
 
 	_, err := b.Pull(context.Background(), "origin", store.KeepNeither)
@@ -266,11 +274,13 @@ func TestPullWithAConflictCommitsNothingAndReportsBothVersions(t *testing.T) {
 }
 
 func TestPullKeepResolvesConflictsWithTheChosenSideAndMergesTheRest(t *testing.T) {
+	t.Parallel()
 	for _, tc := range []struct {
 		keep store.Keep
 		want string
 	}{{store.KeepLocal, "one\nBEN\nthree\n"}, {store.KeepRemote, "one\nANA\nthree\n"}} {
 		t.Run(tc.want, func(t *testing.T) {
+			t.Parallel()
 			_, b, anaTip, benTip, benDir := conflicted(t)
 			r := pull(t, b, tc.keep)
 			if r.Outcome != store.PullMerged || !slices.Equal(r.Kept, []string{"plans/p/plan.md"}) {
@@ -311,8 +321,10 @@ func deleteInRef(t *testing.T, dir, path string) {
 }
 
 func TestPullKeepWhenOneSideDeletedTheFile(t *testing.T) {
+	t.Parallel()
 	for _, keep := range []store.Keep{store.KeepLocal, store.KeepRemote} {
 		t.Run(keep.String(), func(t *testing.T) {
+			t.Parallel()
 			_, a, b, anaDir, _ := shared(t)
 			deleteInRef(t, anaDir, "plans/p/plan.md")
 			push(t, a)
@@ -338,6 +350,7 @@ func TestPullKeepWhenOneSideDeletedTheFile(t *testing.T) {
 }
 
 func TestRemoteErrorsCarryGitsOwnMessage(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	s := open(t, dir)
 	write(t, s, "init", map[string]string{"format-version": "1\n"})
@@ -360,6 +373,7 @@ func TestRemoteErrorsCarryGitsOwnMessage(t *testing.T) {
 
 // gitLog puts a git wrapper first on PATH that appends the arguments of
 // every call to a file, runs before (shell code) and then the real git.
+// PATH belongs to the whole process, so a test that calls it stays serial.
 func gitLog(t *testing.T, before string) (logFile string) {
 	t.Helper()
 	if runtime.GOOS == "windows" {
@@ -451,6 +465,7 @@ func TestNoPushIsEverForced(t *testing.T) {
 }
 
 func TestSyncPullsThenPushes(t *testing.T) {
+	t.Parallel()
 	bare, a, b, _, _ := shared(t)
 	write(t, a, "ana", map[string]string{"plans/p/events/01A.yaml": "a\n"})
 	push(t, a)
@@ -469,6 +484,7 @@ func TestSyncPullsThenPushes(t *testing.T) {
 }
 
 func TestARemoteNameThatLooksLikeAnOptionIsRefused(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	write(t, s, "init", map[string]string{"format-version": "1\n"})
 	for _, remote := range []string{"", "--upload-pack=touch pwned"} {
@@ -482,6 +498,7 @@ func TestARemoteNameThatLooksLikeAnOptionIsRefused(t *testing.T) {
 }
 
 func TestFetchAndReadRemoteLeaveTheLocalRefAlone(t *testing.T) {
+	t.Parallel()
 	_, anaDir, benDir := team(t)
 	a, b := open(t, anaDir), open(t, benDir)
 	ctx := context.Background()

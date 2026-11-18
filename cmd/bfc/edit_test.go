@@ -41,6 +41,7 @@ func planCommits(t *testing.T, dir string) string {
 }
 
 func TestEditCreatesPlanMdFromTheTemplateAndCommitsTheSavedText(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	// The editor checks it got the template, then replaces it.
@@ -68,6 +69,7 @@ cat > "$1" <<'PLAN'
 }
 
 func TestEditIntent(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	fakeEditor(t, `printf 'More detail.\n' >> "$1"`)
@@ -85,6 +87,7 @@ func TestEditIntent(t *testing.T) {
 }
 
 func TestEditUnchangedMakesNoCommit(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, _ := newPlan(t, dir, "Payments")
 	before := planCommits(t, dir)
@@ -105,6 +108,7 @@ func TestEditUnchangedMakesNoCommit(t *testing.T) {
 }
 
 func TestEditKeepsTheUsersTextWhenTheDocumentChangedMeanwhile(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	writeRef(t, dir, "plan", map[string][]byte{core.PlanDir(id) + "/plan.md": []byte(validPlan)})
@@ -139,6 +143,7 @@ printf 'my precious words\n' >> "$1"`)
 }
 
 func TestEditingAnApprovedPlanReturnsItToReviewWithoutAnEvent(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	writeRef(t, dir, "plan", map[string][]byte{core.PlanDir(id) + "/plan.md": []byte(validPlan)})
@@ -168,6 +173,7 @@ func TestEditingAnApprovedPlanReturnsItToReviewWithoutAnEvent(t *testing.T) {
 }
 
 func TestEditWarnsAboutPlanProblemsButCommits(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	fakeEditor(t, `printf '## Context\n\n## Acceptance criteria\n\n- AC-1: a\n- AC-1: b\n' > "$1"`)
@@ -188,6 +194,7 @@ func TestEditWarnsAboutPlanProblemsButCommits(t *testing.T) {
 }
 
 func TestEditIntentWithoutTitleKeepsTheText(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, _ := newPlan(t, dir, "Payments")
 	before := planCommits(t, dir)
@@ -204,6 +211,7 @@ func TestEditIntentWithoutTitleKeepsTheText(t *testing.T) {
 }
 
 func TestEditRefusesAClosedPlan(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	addEvent(t, dir, id, core.Event{Type: core.Closed, Author: adaP})
@@ -217,6 +225,7 @@ func TestEditRefusesAClosedPlan(t *testing.T) {
 }
 
 func TestEditUnknownPlan(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 
 	out, err := bfcIn(t, dir, "edit", "bfc-zzzz")
@@ -226,6 +235,7 @@ func TestEditUnknownPlan(t *testing.T) {
 }
 
 func TestEditingAPlanInReviewWithSomeApprovalsSaysNothingAboutReturning(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	writeRef(t, dir, "plan", map[string][]byte{core.PlanDir(id) + "/plan.md": []byte(validPlan)})

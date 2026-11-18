@@ -29,6 +29,7 @@ func tip(t *testing.T, s *store.Store) string {
 }
 
 func TestCheckReportsTheIndexWithoutChangingIt(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	newPlan(t, s, "First", "")
 	if h := check(t, s); h.Built || h.Problem != "" {
@@ -59,6 +60,7 @@ func TestCheckReportsTheIndexWithoutChangingIt(t *testing.T) {
 }
 
 func TestCheckFindsAnUnreadableIndexAndRebuildRepairsIt(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	newPlan(t, s, "First", "")
 	damage(t, s, func(path string) {
@@ -79,6 +81,7 @@ func TestCheckFindsAnUnreadableIndexAndRebuildRepairsIt(t *testing.T) {
 }
 
 func TestCheckOfAnIndexOfAnotherSchemaVersion(t *testing.T) {
+	t.Parallel()
 	s := newStore(t)
 	damage(t, s, func(path string) {
 		if err := os.Remove(path); err != nil {

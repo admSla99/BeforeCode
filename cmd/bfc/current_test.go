@@ -10,6 +10,7 @@ import (
 // AC-3 and AC-5: bfc use sets the Current plan, which bfc show prints
 // without an ID; bfc use --clear removes it again.
 func TestUseSetsTheCurrentPlanThatShowPrints(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	newPlan(t, dir, "Other")
 	short, id := newPlan(t, dir, "Payments")
@@ -47,6 +48,7 @@ func commit(t *testing.T, dir string) {
 // AC-4: the Short ID in the branch name wins over bfc use; one that names
 // no plan is reported; a detached HEAD uses bfc use only.
 func TestTheBranchNameWinsAndIsReportedWhenItNamesNoPlan(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	other, _ := newPlan(t, dir, "Other")
@@ -73,6 +75,7 @@ func TestTheBranchNameWinsAndIsReportedWhenItNamesNoPlan(t *testing.T) {
 // AC-1 and AC-2: bfc start makes the branch <Short ID>-<slug of the title>
 // from HEAD, switches to it, and writes nothing to the plans ref.
 func TestStartCreatesTheBranchOfThePlanFromHead(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	head := gitIn(t, dir, "rev-parse", "HEAD")
@@ -101,6 +104,7 @@ func TestStartCreatesTheBranchOfThePlanFromHead(t *testing.T) {
 
 // AC-1: a local branch that carries the Short ID is reused, under any name.
 func TestStartSwitchesToTheBranchThatAlreadyCarriesTheShortID(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	short, _ := newPlan(t, dir, "Payments")
@@ -121,6 +125,7 @@ func TestStartSwitchesToTheBranchThatAlreadyCarriesTheShortID(t *testing.T) {
 
 // AC-1: when git refuses to switch, the error is shown and nothing changes.
 func TestStartShowsGitsRefusalAndChangesNothing(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	writeFile(t, filepath.Join(dir, "a.txt"), "main\n")
 	gitIn(t, dir, "add", "a.txt")
@@ -147,6 +152,7 @@ func TestStartShowsGitsRefusalAndChangesNothing(t *testing.T) {
 
 // AC-2: a closed plan cannot be started; any other state can.
 func TestStartRefusesAClosedPlan(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	commit(t, dir)
 	mustBfc(t, dir, "submit", short)
@@ -167,6 +173,7 @@ func TestStartRefusesAClosedPlan(t *testing.T) {
 // AC-1: a branch named with a longer prefix of the plan's ULID, which
 // settles a shared Short ID (ADR 0009), is the plan's branch too.
 func TestStartReusesABranchNamedWithALongerPrefix(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	short, id := newPlan(t, dir, "Payments")
@@ -182,6 +189,7 @@ func TestStartReusesABranchNamedWithALongerPrefix(t *testing.T) {
 
 // AC-1: uncommitted changes come along, as with git switch.
 func TestStartCarriesUncommittedChanges(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	short, _ := newPlan(t, dir, "Payments")
@@ -197,6 +205,7 @@ func TestStartCarriesUncommittedChanges(t *testing.T) {
 // AC-3: bfc use writes nothing to the plans ref, and says when the branch
 // name wins over it.
 func TestUseOnABranchOfAnotherPlanSaysTheBranchWins(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	other, _ := newPlan(t, dir, "Other")
@@ -217,6 +226,7 @@ func TestUseOnABranchOfAnotherPlanSaysTheBranchWins(t *testing.T) {
 // AC-4: only a whole Short ID of at least four characters counts, so a
 // branch such as release/bfc-v2 has no Short ID.
 func TestABranchWithATooShortBfcWordHasNoShortID(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	commit(t, dir)
 	short, _ := newPlan(t, dir, "Payments")
@@ -247,6 +257,7 @@ func sharedPlanBranch(t *testing.T) (ana, ben, short, branch string) {
 // A teammate's bfc start takes the plan's branch from the remote, so both
 // work on one branch.
 func TestStartTakesThePlanBranchFromTheRemote(t *testing.T) {
+	t.Parallel()
 	ana, ben, short, branch := sharedPlanBranch(t)
 
 	out := mustBfc(t, ben, "start", short)
@@ -265,6 +276,7 @@ func TestStartTakesThePlanBranchFromTheRemote(t *testing.T) {
 // bfc start fetches first, and says when the local branch is behind the
 // remote one.
 func TestStartSaysWhenThePlanBranchIsBehindTheRemote(t *testing.T) {
+	t.Parallel()
 	ana, ben, short, branch := sharedPlanBranch(t)
 	mustBfc(t, ben, "start", short)
 	gitIn(t, ben, "switch", "-q", "main")
@@ -280,6 +292,7 @@ func TestStartSaysWhenThePlanBranchIsBehindTheRemote(t *testing.T) {
 
 // A new branch is not pushed, but bfc start says how to share it.
 func TestStartSaysHowToShareANewBranch(t *testing.T) {
+	t.Parallel()
 	ana, _, _ := twoClones(t)
 	short, _ := newPlan(t, ana, "Payments")
 
@@ -296,6 +309,7 @@ func TestStartSaysHowToShareANewBranch(t *testing.T) {
 
 // Without the network bfc start warns and works with what the clone knows.
 func TestStartWithAnUnreachableRemoteWarnsAndGoesOn(t *testing.T) {
+	t.Parallel()
 	ana, _, _ := twoClones(t)
 	short, _ := newPlan(t, ana, "Payments")
 	gitIn(t, ana, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
@@ -327,6 +341,7 @@ func planOnlyOnTheRemote(t *testing.T) (ben, short, branch string) {
 // On the branch of a plan this clone has not pulled yet, bfc show (which
 // stays offline) names both causes: not pulled, or a wrong branch name.
 func TestShowOnTheBranchOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
+	t.Parallel()
 	ben, short, branch := planOnlyOnTheRemote(t)
 	gitIn(t, ben, "fetch", "-q", "origin")
 	gitIn(t, ben, "switch", "-q", branch)
@@ -341,6 +356,7 @@ func TestShowOnTheBranchOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
 // bfc start asks the remote: a plan it has but this clone lacks needs bfc
 // pull.
 func TestStartOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
+	t.Parallel()
 	ben, short, _ := planOnlyOnTheRemote(t)
 
 	out, err := bfcIn(t, ben, "start", short)
@@ -355,6 +371,7 @@ func TestStartOfAPlanNotPulledYetSuggestsPull(t *testing.T) {
 
 // bfc start of a plan that exists nowhere says so.
 func TestStartOfAPlanThatExistsNowhereSaysSo(t *testing.T) {
+	t.Parallel()
 	ana, _, _ := twoClones(t)
 
 	out, err := bfcIn(t, ana, "start", "bfc-zzzz")

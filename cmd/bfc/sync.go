@@ -4,7 +4,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -126,11 +125,7 @@ func prepareSync(cmd *cobra.Command, f syncFlags) (*store.Store, string, store.K
 	default:
 		return nil, "", 0, fmt.Errorf("--keep must be local or remote, not %q", f.keep)
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, "", 0, err
-	}
-	s, err := store.Open(wd)
+	s, err := openStore(cmd)
 	if err != nil {
 		return nil, "", 0, err
 	}

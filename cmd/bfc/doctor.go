@@ -3,7 +3,6 @@ package main
 import (
 	"fmt"
 	"io"
-	"os"
 
 	"github.com/spf13/cobra"
 
@@ -30,11 +29,11 @@ ref. Broken event files and plans without a valid created event are only
 reported.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
-			wd, err := os.Getwd()
+			wd, err := workDir(cmd)
 			if err != nil {
 				return err
 			}
-			results := doctor.Run(cmd.Context(), wd, fix)
+			results := doctor.Run(cmd.Context(), wd, fix, extraEnv(cmd)...)
 			if failed := printDoctor(cmd.OutOrStdout(), results, fix); failed > 0 {
 				return fmt.Errorf("%d check(s) failed", failed)
 			}

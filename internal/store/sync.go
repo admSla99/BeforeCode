@@ -404,7 +404,7 @@ func (s *Store) keepSide(ctx context.Context, tree string, conflicts []Conflict,
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
-	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(tmp, "index"))
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(tmp, "index")}
 	if _, err := s.git(ctx, env, nil, "read-tree", tree); err != nil {
 		return "", err
 	}

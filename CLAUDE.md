@@ -24,6 +24,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 1. Work only on a GitHub issue. Each issue is one thin vertical slice with acceptance criteria. If the issue is unclear, grill the maintainer before writing code.
 2. One issue, one branch, one small pull request that says `Closes #<n>`.
 3. Test first. Storage and sync code is tested against temporary git repositories, with a local bare repository as the remote. No network in unit tests.
+   Starting git is slow on Windows, so tests run in parallel (`t.Parallel()`) and never change process state: in `cmd/bfc` run commands with `bfcIn` (the directory goes in the command's context, see `cmd/bfc/workdir.go`), set variables with `setEnv`, not `t.Setenv` or `t.Chdir`, and start from a fixture (`newLocalRepo`, `newClone`, `twoClones`, `sharedProject`, `joinedClones`; `copyFixture` makes a new one). In `internal/store` and `internal/index`, pass variables to `store.Open`. A test that must change process state, such as `PATH`, stays serial and says why.
 4. Run the checks below before opening a pull request, then review the diff against the issue's acceptance criteria.
 5. If the implementation must depart from the issue or from `docs/design.md`, say so in the pull request and update the document in the same pull request. Record a non-obvious decision as an ADR in `docs/adr/`.
 

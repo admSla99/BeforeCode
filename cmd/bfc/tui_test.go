@@ -17,13 +17,13 @@ import (
 // adapterIn returns the TUI's Plans adapter for the repository in dir.
 func adapterIn(t *testing.T, dir string) tui.Plans {
 	t.Helper()
-	t.Chdir(dir)
 	cmd := &cobra.Command{}
-	cmd.SetContext(context.Background())
+	cmd.SetContext(inPlace(t, dir))
 	return &tuiPlans{cmd: cmd}
 }
 
 func TestTUIAdapterLoadsThePlansLikeBfcList(t *testing.T) {
+	t.Parallel()
 	clock(t, 10)
 	dir, short, _ := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
@@ -47,6 +47,7 @@ func TestTUIAdapterLoadsThePlansLikeBfcList(t *testing.T) {
 }
 
 func TestTUIAdapterReportsAMissingPlansRef(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")
 	_, err := adapterIn(t, dir).Load(context.Background())
@@ -57,6 +58,7 @@ func TestTUIAdapterReportsAMissingPlansRef(t *testing.T) {
 }
 
 func TestTUIAdapterGivesThePreciseAdviceWhenTheRemoteHasPlans(t *testing.T) {
+	t.Parallel()
 	_, bare := sharedProject(t, "First")
 	ben := plainClone(t, bare)
 	_, err := adapterIn(t, ben).Load(context.Background())
@@ -67,6 +69,7 @@ func TestTUIAdapterGivesThePreciseAdviceWhenTheRemoteHasPlans(t *testing.T) {
 }
 
 func TestBareBfcPrintsUsageWhenNotInATerminal(t *testing.T) {
+	t.Parallel()
 	out := run(t, "dev")
 	if !strings.Contains(out, "Usage:") || !strings.Contains(out, "tui") {
 		t.Errorf("bfc without a terminal:\n%s", out)
@@ -74,6 +77,7 @@ func TestBareBfcPrintsUsageWhenNotInATerminal(t *testing.T) {
 }
 
 func TestTUIRefusesWithoutATerminal(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	if out, err := bfcIn(t, dir, "tui"); err == nil || !strings.Contains(out, "terminal") {
 		t.Errorf("bfc tui without a terminal: %v\n%s", err, out)
@@ -81,6 +85,7 @@ func TestTUIRefusesWithoutATerminal(t *testing.T) {
 }
 
 func TestTUIAdapterGivesNoAdviceWhenTheRemoteHasNoPlans(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	_, err := adapterIn(t, ana).Load(context.Background())
 	var nse *tui.NotSetUpError
@@ -96,6 +101,7 @@ func reviewAdapter(t *testing.T, dir string) *tuiPlans {
 
 // The detail carries the actions valid for the current user.
 func TestTUIAdapterDetailListsTheActionsOfTheCurrentUser(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	ctx := context.Background()
 
@@ -123,6 +129,7 @@ func TestTUIAdapterDetailListsTheActionsOfTheCurrentUser(t *testing.T) {
 }
 
 func TestTUIAdapterReviewWritesLikeTheCLI(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	ctx := context.Background()
 	if err := reviewAdapter(t, dir).Review(ctx, short, tui.ActionSubmit, ""); err != nil {
@@ -145,8 +152,10 @@ func TestTUIAdapterReviewWritesLikeTheCLI(t *testing.T) {
 }
 
 func TestTUISyncerReportsEachOutcome(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	t.Run("ok and changed", func(t *testing.T) {
+		t.Parallel()
 		ana, ben, _ := twoClones(t)
 		if r := syncerIn(t, ben).Sync(ctx); r.Outcome != tui.SyncOK || r.Changed {
 			t.Errorf("nothing new: %+v", r)
@@ -158,6 +167,7 @@ func TestTUISyncerReportsEachOutcome(t *testing.T) {
 		}
 	})
 	t.Run("offline", func(t *testing.T) {
+		t.Parallel()
 		ana, _ := newClone(t)
 		mustBfc(t, ana, "init")
 		gitIn(t, ana, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
@@ -167,6 +177,7 @@ func TestTUISyncerReportsEachOutcome(t *testing.T) {
 		}
 	})
 	t.Run("conflict", func(t *testing.T) {
+		t.Parallel()
 		ana, ben, _ := twoClones(t)
 		mustBfc(t, ana, "new", "--no-edit", "Shared plan")
 		mustBfc(t, ana, "push")
@@ -180,6 +191,7 @@ func TestTUISyncerReportsEachOutcome(t *testing.T) {
 		}
 	})
 	t.Run("local mode", func(t *testing.T) {
+		t.Parallel()
 		if r := syncerIn(t, newLocalRepo(t)).Sync(ctx); r.Outcome != tui.SyncLocalOnly {
 			t.Errorf("result = %+v", r)
 		}
@@ -188,13 +200,15 @@ func TestTUISyncerReportsEachOutcome(t *testing.T) {
 
 func syncerIn(t *testing.T, dir string) tui.Syncer {
 	t.Helper()
-	t.Chdir(dir)
-	return &tuiSyncer{}
+	cmd := &cobra.Command{}
+	cmd.SetContext(inPlace(t, dir))
+	return &tuiSyncer{cmd: cmd}
 }
 
 // Submit is offered only when core.CheckSubmit allows it, and a closed plan
 // is not editable.
 func TestTUIAdapterHidesSubmitForAnUnreadyPlanAndEditForAClosedOne(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	ctx := context.Background()
@@ -210,6 +224,7 @@ func TestTUIAdapterHidesSubmitForAnUnreadyPlanAndEditForAClosedOne(t *testing.T)
 // #49: close through the TUI writes what bfc close writes; the reason is
 // optional.
 func TestTUIAdapterClosesLikeTheCLI(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	as(t, dir, janaP)
 	if err := reviewAdapter(t, dir).Review(context.Background(), short, tui.ActionClose, ""); err != nil {

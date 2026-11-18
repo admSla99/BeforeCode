@@ -23,18 +23,34 @@ func plainClone(t *testing.T, bare string) string {
 // plan and pushes everything. It returns the clone and the bare remote.
 func sharedProject(t *testing.T, title string) (ana, bare string) {
 	t.Helper()
-	ana, bare = newClone(t)
-	mustBfc(t, ana, "init")
-	gitIn(t, ana, "add", ".beforecode")
-	gitIn(t, ana, "commit", "-q", "-m", "Set up BeforeCode")
-	gitIn(t, ana, "push", "-q", "origin", "main")
-	mustBfc(t, ana, "new", "--no-edit", title)
-	mustBfc(t, ana, "push")
-	return ana, bare
+	dir := copyFixture(t, "shared-"+strings.ReplaceAll(title, " ", "-"), func(dir string) error {
+		return buildSharedProject(dir, title)
+	})
+	return filepath.Join(dir, "work"), filepath.Join(dir, "remote.git")
+}
+
+// buildSharedProject makes the repositories of sharedProject in dir.
+func buildSharedProject(dir, title string) error {
+	if err := buildClone(dir); err != nil {
+		return err
+	}
+	ana := filepath.Join(dir, "work")
+	if err := bfcSteps([]string{ana, "init"}); err != nil {
+		return err
+	}
+	if err := gitSteps(
+		[]string{ana, "add", ".beforecode"},
+		[]string{ana, "commit", "-q", "-m", "Set up BeforeCode"},
+		[]string{ana, "push", "-q", "origin", "main"},
+	); err != nil {
+		return err
+	}
+	return bfcSteps([]string{ana, "new", "--no-edit", title}, []string{ana, "push"})
 }
 
 // AC-1 and AC-6: the full path from a plain clone to the plans.
 func TestBootstrapAPlainCloneGetsThePlans(t *testing.T) {
+	t.Parallel()
 	ana, bare := sharedProject(t, "Payments via Stripe")
 	ben := plainClone(t, bare)
 	head := gitIn(t, ben, "rev-parse", "HEAD")
@@ -71,6 +87,7 @@ func TestBootstrapAPlainCloneGetsThePlans(t *testing.T) {
 
 // AC-2
 func TestBootstrapWithoutPlansOnTheRemotePointsToInit(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	out, err := bfcIn(t, ana, "bootstrap")
 	if err == nil || !strings.Contains(out, "origin has no plans") || !strings.Contains(out, "bfc init") {
@@ -86,6 +103,7 @@ func TestBootstrapWithoutPlansOnTheRemotePointsToInit(t *testing.T) {
 
 // AC-3
 func TestBootstrapTwiceBehavesLikePull(t *testing.T) {
+	t.Parallel()
 	ana, bare := sharedProject(t, "First")
 	ben := plainClone(t, bare)
 	mustBfc(t, ben, "bootstrap")
@@ -105,6 +123,7 @@ func TestBootstrapTwiceBehavesLikePull(t *testing.T) {
 
 // AC-4
 func TestBootstrapRefusesANewerFormatVersion(t *testing.T) {
+	t.Parallel()
 	ana, bare := sharedProject(t, "First")
 	writeRef(t, ana, "from the future", map[string][]byte{"format-version": []byte("99\n")})
 	mustBfc(t, ana, "push")
@@ -123,6 +142,7 @@ func TestBootstrapRefusesANewerFormatVersion(t *testing.T) {
 }
 
 func TestBootstrapUsesTheRemoteFromTheConfig(t *testing.T) {
+	t.Parallel()
 	ana, bare := newClone(t)
 	gitIn(t, ana, "remote", "rename", "origin", "upstream")
 	mustBfc(t, ana, "init", "--remote", "upstream")
@@ -140,6 +160,7 @@ func TestBootstrapUsesTheRemoteFromTheConfig(t *testing.T) {
 
 // AC-5: commands in a clone that lacks the local ref say which command fits.
 func TestCommandsInAFreshCloneSuggestBootstrap(t *testing.T) {
+	t.Parallel()
 	_, bare := sharedProject(t, "First")
 	ben := plainClone(t, bare)
 	for _, args := range [][]string{{"list"}, {"show", "bfc-0000"}, {"new", "--no-edit", "x"}, {"edit", "bfc-0000"}, {"push"}} {
@@ -151,6 +172,7 @@ func TestCommandsInAFreshCloneSuggestBootstrap(t *testing.T) {
 }
 
 func TestCommandsWithoutPlansAnywhereSuggestInit(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	out, err := bfcIn(t, ana, "list")
 	if err == nil || !strings.Contains(out, "bfc init") || strings.Contains(out, "bootstrap") {
@@ -159,6 +181,7 @@ func TestCommandsWithoutPlansAnywhereSuggestInit(t *testing.T) {
 }
 
 func TestCommandsWithAnUnreachableRemoteFallBackToTheGeneralAdvice(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	gitIn(t, ana, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 	out, err := bfcIn(t, ana, "list")

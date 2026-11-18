@@ -42,6 +42,7 @@ func wantDoctor(t *testing.T, out, status, check string, want ...string) {
 
 // AC-1: a healthy clone passes every check, one line each.
 func TestDoctorPassesEveryCheckOfAHealthySetup(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 
 	out := mustBfc(t, ana, "doctor")
@@ -57,6 +58,7 @@ func TestDoctorPassesEveryCheckOfAHealthySetup(t *testing.T) {
 // AC-2, AC-3, AC-4: a failure prints its fix and fails the run; --fix
 // applies it.
 func TestDoctorFixesAMissingFetchRefspec(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	gitIn(t, ana, "config", "--unset-all", "remote.origin.fetch", `^\+refs/beforecode/`)
 
@@ -83,15 +85,27 @@ func TestDoctorFixesAMissingFetchRefspec(t *testing.T) {
 // joined with bfc bootstrap, and the bare remote.
 func joinedClones(t *testing.T) (ana, ben, bare string) {
 	t.Helper()
-	ana, bare = sharedProject(t, "First plan")
-	ben = plainClone(t, bare)
-	mustBfc(t, ben, "bootstrap")
-	return ana, ben, bare
+	dir := copyFixture(t, "joined", func(dir string) error {
+		if err := buildSharedProject(dir, "First plan"); err != nil {
+			return err
+		}
+		ben := filepath.Join(dir, "ben")
+		if err := gitSteps(
+			[]string{dir, "clone", "-q", filepath.ToSlash(filepath.Join(dir, "remote.git")), ben},
+			[]string{ben, "config", "user.name", "Ben Bitdiddle"},
+			[]string{ben, "config", "user.email", "ben@example.com"},
+		); err != nil {
+			return err
+		}
+		return bfcSteps([]string{ben, "bootstrap"})
+	})
+	return filepath.Join(dir, "work"), filepath.Join(dir, "ben"), filepath.Join(dir, "remote.git")
 }
 
 // AC-1, AC-2, AC-3: a plans ref behind the remote fails with bfc pull as
 // the fix, and --fix pulls.
 func TestDoctorPullsWhenThePlansRefIsBehind(t *testing.T) {
+	t.Parallel()
 	ana, ben, bare := joinedClones(t)
 	mustBfc(t, ana, "new", "--no-edit", "Second plan")
 	mustBfc(t, ana, "push")
@@ -115,6 +129,7 @@ func TestDoctorPullsWhenThePlansRefIsBehind(t *testing.T) {
 // AC-3: on a diverged plans ref --fix merges; it neither pushes nor
 // rewrites the ref.
 func TestDoctorMergesADivergedPlansRefWithoutPushing(t *testing.T) {
+	t.Parallel()
 	ana, ben, bare := joinedClones(t)
 	mustBfc(t, ben, "new", "--no-edit", "Ben's plan")
 	mustBfc(t, ana, "new", "--no-edit", "Ana's plan")
@@ -142,6 +157,7 @@ func TestDoctorMergesADivergedPlansRefWithoutPushing(t *testing.T) {
 // AC-3: a conflict stops the pull; nothing is committed and the check
 // stays failed with the way out.
 func TestDoctorFixLeavesAConflictToTheUser(t *testing.T) {
+	t.Parallel()
 	ana, ben, _ := joinedClones(t)
 	_, id := newPlan(t, ana, "Shared plan")
 	mustBfc(t, ana, "push")
@@ -168,6 +184,7 @@ func TestDoctorFixLeavesAConflictToTheUser(t *testing.T) {
 // AC-1, AC-3: a damaged index fails and --fix rebuilds it; one that is only
 // behind the plans ref passes, because the next read updates it.
 func TestDoctorRebuildsAnUnreadableIndex(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	mustBfc(t, ana, "list")
 	mustBfc(t, ana, "new", "--no-edit", "Second plan")
@@ -198,6 +215,7 @@ func TestDoctorRebuildsAnUnreadableIndex(t *testing.T) {
 // AC-5: every event file is validated; broken and unreadable ones are
 // listed and the run goes on. A plan without a valid created event fails.
 func TestDoctorListsInvalidEventFilesAndPlans(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	_, id := newPlan(t, ana, "Second plan")
 	events := core.PlanDir(id) + "/events/"
@@ -251,6 +269,7 @@ func TestDoctorListsInvalidEventFilesAndPlans(t *testing.T) {
 // ADR 0002 sections 4 and 8: skipped events and duplicate Short IDs are
 // warnings; they do not fail the run.
 func TestDoctorWarnsAboutSkippedEventsAndDuplicateShortIDs(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	short, id := newPlan(t, ana, "Second plan")
 	// The plan author cannot approve their own plan.
@@ -280,6 +299,7 @@ func TestDoctorWarnsAboutSkippedEventsAndDuplicateShortIDs(t *testing.T) {
 
 // In local mode the remote checks are skipped, not failed.
 func TestDoctorSkipsTheRemoteChecksInLocalMode(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	mustBfc(t, dir, "new", "--no-edit", "Solo plan")
 
@@ -293,6 +313,7 @@ func TestDoctorSkipsTheRemoteChecksInLocalMode(t *testing.T) {
 
 // AC-2: what fails before anything is set up says what to run.
 func TestDoctorPointsAPlainCloneToBootstrap(t *testing.T) {
+	t.Parallel()
 	_, bare := sharedProject(t, "Payments via Stripe")
 	ben := plainClone(t, bare)
 
@@ -311,6 +332,7 @@ func TestDoctorPointsAPlainCloneToBootstrap(t *testing.T) {
 }
 
 func TestDoctorWithoutConfigOrSharedPlans(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	mustBfc(t, ana, "init")
 	if err := os.Remove(filepath.Join(ana, ".beforecode", "config.yaml")); err != nil {
@@ -328,6 +350,7 @@ func TestDoctorWithoutConfigOrSharedPlans(t *testing.T) {
 }
 
 func TestDoctorOutsideARepository(t *testing.T) {
+	t.Parallel()
 	out, err := bfcIn(t, t.TempDir(), "doctor")
 	if err == nil {
 		t.Errorf("doctor exited 0:\n%s", out)
@@ -339,6 +362,7 @@ func TestDoctorOutsideARepository(t *testing.T) {
 
 // AC-1, AC-2: a format-version this binary cannot use fails.
 func TestDoctorChecksTheFormatVersion(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	writeRef(t, dir, "from the future", map[string][]byte{"format-version": []byte("99\n")})
 	out, _ := bfcIn(t, dir, "doctor")
@@ -362,6 +386,7 @@ func TestDoctorChecksTheFormatVersion(t *testing.T) {
 // Issue #48 AC-5: a repair that fails still leaves a fix line that says
 // what to do.
 func TestDoctorFixLineAfterAFailedRepair(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	mustBfc(t, dir, "new", "--no-edit", "Solo plan")
 	dropFromRef(t, dir, "format-version")
@@ -394,6 +419,7 @@ func dropFromRef(t *testing.T, dir, name string) {
 // Issue #48 AC-1, AC-3, AC-5: a plans ref with plans but no format-version
 // gets one in a new commit on top of the tip; nothing else is touched.
 func TestDoctorFixAddsAMissingFormatVersion(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	dropFromRef(t, ana, "format-version")
 	head := gitIn(t, ana, "rev-parse", "HEAD")
@@ -436,6 +462,7 @@ func TestDoctorFixAddsAMissingFormatVersion(t *testing.T) {
 // Issue #48 Q1: a ref with an event type this bfc does not know may be of
 // another format version, so --fix does not guess it.
 func TestDoctorDoesNotAddAFormatVersionOverUnknownEventTypes(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	_, id := newPlan(t, dir, "Solo plan")
 	unknown := core.PlanDir(id) + "/events/01JD3K8Q2X0000000000000009.yaml"
@@ -471,6 +498,7 @@ func loseObject(t *testing.T, dir, content string) string {
 // Issue #48 AC-2, AC-3, AC-5: objects the plans ref needs and this clone
 // lacks are fetched again from the sync remote, without a new commit.
 func TestDoctorFixFetchesMissingObjectsAgain(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	_, id := newPlan(t, ana, "Second plan")
 	mustBfc(t, ana, "push")
@@ -504,6 +532,7 @@ func TestDoctorFixFetchesMissingObjectsAgain(t *testing.T) {
 // Issue #48 AC-2: an object the remote does not have either is lost, and
 // bfc doctor says which file it was and what to do next.
 func TestDoctorListsObjectsTheRemoteLacksAsLost(t *testing.T) {
+	t.Parallel()
 	ana, _ := sharedProject(t, "Payments via Stripe")
 	_, id := newPlan(t, ana, "Never pushed")
 	path := core.PlanDir(id) + "/intent.md"
@@ -523,6 +552,7 @@ func TestDoctorListsObjectsTheRemoteLacksAsLost(t *testing.T) {
 
 // Issue #48 Q3: in local mode there is no remote to fetch from.
 func TestDoctorHasNoRepairForMissingObjectsInLocalMode(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	_, id := newPlan(t, dir, "Solo plan")
 	path := core.PlanDir(id) + "/intent.md"

@@ -13,6 +13,7 @@ import (
 // #49 AC-1, AC-2: close writes a closed event, with the reason as a
 // Message when there is one, and the plan is closed from any state.
 func TestCloseWritesAClosedEventWithAnOptionalReason(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	as(t, dir, janaP)
@@ -45,6 +46,7 @@ func TestCloseWritesAClosedEventWithAnOptionalReason(t *testing.T) {
 // #49 AC-3, AC-4: closed is final; every other command refuses and names
 // the state.
 func TestAClosedPlanRefusesEveryCommand(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	mustBfc(t, dir, "close", short)
 
@@ -64,6 +66,7 @@ func TestAClosedPlanRefusesEveryCommand(t *testing.T) {
 
 // #49 AC-4: bfc list hides closed plans unless asked for them.
 func TestListHidesClosedPlansByDefault(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	open, _ := newPlan(t, dir, "Still open")
 	closed, _ := newPlan(t, dir, "Closed one")
@@ -103,6 +106,7 @@ func TestListHidesClosedPlansByDefault(t *testing.T) {
 // A plan without a valid created event cannot be closed, and the refusal
 // names it by the Short ID bfc list shows.
 func TestCloseRefusesAnInvalidPlanByName(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	id := ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D")
 	writeRef(t, dir, "orphan", map[string][]byte{core.PlanDir(id) + "/intent.md": []byte("---\ntitle: Orphan\n---\n")})
