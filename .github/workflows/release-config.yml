@@ -1,0 +1,38 @@
+name: Release config
+
+# Checks .goreleaser.yaml, so that a broken release config fails in the pull
+# request that breaks it, not after a tag is pushed. It runs only when a file
+# the release build depends on changes; the job is in its own workflow because
+# GitHub filters by changed paths per workflow, not per job.
+on:
+  pull_request:
+    paths:
+      - .goreleaser.yaml
+      - go.mod
+      - cmd/bfc/**
+      - .github/workflows/release-config.yml
+  push:
+    branches: [main]
+    paths:
+      - .goreleaser.yaml
+      - go.mod
+      - cmd/bfc/**
+      - .github/workflows/release-config.yml
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-config-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  release-config:
+    name: Release config
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: goreleaser/goreleaser-action@v7
+        with:
+          version: "~> v2"
+          args: check
