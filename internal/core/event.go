@@ -134,6 +134,17 @@ const (
 	Done    EventType = "done"
 )
 
+// KnownEventType reports whether t is an Event type that format version 1
+// writes. The reserved claimed, checked and done are not: they belong to a
+// later format version, as may any type this binary does not know.
+func KnownEventType(t EventType) bool {
+	switch t {
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed:
+		return true
+	}
+	return false
+}
+
 // objectIDPattern matches a git object ID: SHA-1 or SHA-256 in hex.
 var objectIDPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 

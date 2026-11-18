@@ -2,7 +2,8 @@
 // `bfc doctor`. Each check is one unit: it reports pass, warn, fail or skip
 // with the command that fixes a failure, and some checks have a safe fix
 // that Run applies on request. No fix pushes, and none rewrites the plans
-// ref: the only change to the ref is a pull, which fast-forwards or merges.
+// ref: a fix changes the ref only with a pull, which fast-forwards or
+// merges, or with a new commit on top of its tip (ADR 0007).
 package doctor
 
 import (
@@ -35,8 +36,12 @@ type Result struct {
 	Status Status
 	Detail string   // one line
 	Items  []string // the files or plans a check lists, one per line
-	// Fix says how to fix a Fail: a command where there is one.
+	// Fix says how to fix a Fail: a command where there is one. Without
+	// --fix, Run puts the Repair in front of it.
 	Fix string
+	// Repair says what bfc doctor --fix does about this Fail, "" when it
+	// has no repair for it.
+	Repair string
 	// Fixed is set when Run applied the check's fix and the check passed
 	// afterwards; Status and Detail are then those of the second run.
 	Fixed bool
@@ -47,8 +52,8 @@ type Result struct {
 // remoteTimeout bounds the question to the remote.
 const remoteTimeout = 30 * time.Second
 
-// check is one diagnosis. run reports; fix, when not nil, is the safe fix
-// for a Fail, after which run is called again.
+// check is one diagnosis. run reports; fix is the safe fix for a Fail
+// whose Repair run has set, after which run is called again.
 type check struct {
 	name string
 	run  func(ctx context.Context, e *env) Result
@@ -64,8 +69,9 @@ var checks = []check{
 	{name: "plans ref", run: checkPlansRef},
 	{name: "fetch refspec", run: checkRefspec, fix: fixRefspec},
 	{name: "remote", run: checkRemote},
+	{name: "objects", run: checkObjects, fix: fixObjects},
 	{name: "in sync", run: checkInSync, fix: fixInSync},
-	{name: "format-version", run: checkFormatVersion},
+	{name: "format-version", run: checkFormatVersion, fix: fixFormatVersion},
 	{name: "index", run: checkIndex, fix: fixIndex},
 	{name: "event files", run: checkEventFiles},
 	{name: "plans", run: checkPlans},
@@ -75,19 +81,28 @@ var checks = []check{
 
 // Run checks the setup of the repository around dir and returns one Result
 // per check, in a fixed order. With fix it applies the safe fix of each
-// failed check that has one: add the fetch refspec, pull the plans ref when
-// it is behind or diverged, rebuild the index.
+// failed check that has a Repair: add the fetch refspec, pull the plans ref
+// when it is behind or diverged, rebuild the index, add a missing
+// format-version (ADR 0007). Without fix, the Fix of such a check names
+// bfc doctor --fix and what it would do.
 func Run(ctx context.Context, dir string, fix bool) []Result {
 	e := &env{dir: dir}
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
 		r := c.run(ctx, e)
-		if r.Status == Fail && fix && c.fix != nil {
+		repairable := r.Status == Fail && r.Repair != "" && c.fix != nil
+		if repairable && !fix {
+			r.Fix = withRepair(r)
+		}
+		if repairable && fix {
 			if err := c.fix(ctx, e); err != nil {
 				r.FixErr = err
 				var h fixHint
-				if errors.As(err, &h) {
+				switch {
+				case errors.As(err, &h):
 					r.Fix = h.fix
+				case r.Fix == "": // no way by hand: try again once the error is solved
+					r.Fix = withRepair(r)
 				}
 			} else {
 				r = c.run(ctx, e)
@@ -98,6 +113,16 @@ func Run(ctx context.Context, dir string, fix bool) []Result {
 		results = append(results, r)
 	}
 	return results
+}
+
+// withRepair returns the fix line of a repairable failure: bfc doctor --fix
+// and what it does, then the way by hand when there is one.
+func withRepair(r Result) string {
+	fix := "bfc doctor --fix: " + r.Repair
+	if r.Fix != "" {
+		fix += "; or " + r.Fix
+	}
+	return fix
 }
 
 // fixHint is a failed fix that knows a better way out than the check's
@@ -123,6 +148,7 @@ type env struct {
 	asked     bool // the remote was asked for its plans ref
 	remoteTip string
 	remoteErr error
+	refetched bool // --fix fetched every object of the remote's plans ref
 	scanned   *scan
 	scannedAt string // the plans ref commit scanned was read from
 }
@@ -268,7 +294,9 @@ func checkRefspec(ctx context.Context, e *env) Result {
 		return fail("check .git/config with git config --get-all remote."+e.remote+".fetch", "cannot read the fetch refspecs of %s: %v", e.remote, err)
 	}
 	if !has {
-		return fail("git config --add remote."+e.remote+".fetch '"+store.FetchRefspec+"'", "%s is missing for %s", store.FetchRefspec, e.remote)
+		r := fail("git config --add remote."+e.remote+".fetch '"+store.FetchRefspec+"'", "%s is missing for %s", store.FetchRefspec, e.remote)
+		r.Repair = "adds it"
+		return r
 	}
 	return pass("%s for %s", store.FetchRefspec, e.remote)
 }
@@ -301,6 +329,60 @@ func checkRemote(ctx context.Context, e *env) Result {
 	return pass("%s has %s at %s", e.remote, store.Ref, short(tip))
 }
 
+// lostFix is the fix of objects that neither this clone nor the remote has.
+const lostFix = "bfc cannot restore them; copy each from a clone that still has it " +
+	"(there git cat-file -p <id> prints it, here git hash-object -w --stdin stores it), and run git fsck for the rest of the repository"
+
+// checkObjects looks for objects of the plans ref's tip that this clone
+// lacks. Those the sync remote has, --fix fetches again; the rest are lost
+// (ADR 0007).
+func checkObjects(ctx context.Context, e *env) Result {
+	tip := e.tip(ctx)
+	if tip == "" {
+		return skip("needs " + store.Ref)
+	}
+	missing, err := e.s.MissingObjects(ctx, tip)
+	if err != nil {
+		return fail("check the repository with git fsck", "cannot read the tree of %s: %s", store.Ref, firstLine(err))
+	}
+	if len(missing) == 0 {
+		return pass("all present")
+	}
+	items := make([]string, len(missing))
+	for i, o := range missing {
+		path := o.Path
+		if path == "" {
+			path = "(root tree)"
+		}
+		items[i] = path + " (" + o.ID + ")"
+	}
+	var r Result
+	_, remote := e.skipWithoutRemote(ctx)
+	switch {
+	case e.remote == "" && e.cfgErr == nil:
+		r = fail(lostFix, "%d missing from this clone; local mode has no remote to fetch them from: lost", len(missing))
+	case !remote:
+		r = fail(lostFix, "%d missing from this clone; no usable sync remote to fetch them from: lost", len(missing))
+	case e.refetched:
+		r = fail(lostFix, "%d missing here and on %s: lost", len(missing), e.remote)
+	default:
+		r = fail("git fetch --refetch "+e.remote+" '"+store.FetchRefspec+"'", "%d missing from this clone", len(missing))
+		r.Repair = "fetches them again from " + e.remote
+	}
+	r.Items = items
+	return r
+}
+
+// fixObjects fetches every object of the remote's plans ref again. The
+// plans ref does not move, so no commit is needed.
+func fixObjects(ctx context.Context, e *env) error {
+	if err := e.s.Refetch(ctx, e.remote); err != nil {
+		return err
+	}
+	e.refetched = true
+	return nil
+}
+
 func checkInSync(ctx context.Context, e *env) Result {
 	if r, ok := e.skipWithoutRemote(ctx); !ok {
 		return r
@@ -313,17 +395,21 @@ func checkInSync(ctx context.Context, e *env) Result {
 	if ours == theirs {
 		return pass("up to date with %s", e.remote)
 	}
-	const pull = "bfc pull"
+	pull := func(format string, args ...any) Result {
+		r := fail("bfc pull", format, args...)
+		r.Repair = "pulls, with a fast-forward or a merge commit"
+		return r
+	}
 	if !e.s.HasCommit(ctx, theirs) {
-		return fail(pull, "%s has commits this clone lacks (behind or diverged)", e.remote)
+		return pull("%s has commits this clone lacks (behind or diverged)", e.remote)
 	}
 	if ahead, err := e.s.IsAncestor(ctx, theirs, ours); err == nil && ahead {
 		return pass("ahead of %s; bfc push shares the new commits", e.remote)
 	}
 	if behind, err := e.s.IsAncestor(ctx, ours, theirs); err == nil && behind {
-		return fail(pull, "behind %s", e.remote)
+		return pull("behind %s", e.remote)
 	}
-	return fail(pull, "diverged from %s", e.remote)
+	return pull("diverged from %s", e.remote)
 }
 
 // fixInSync pulls: a fast-forward or a merge commit, never a rewrite. On a

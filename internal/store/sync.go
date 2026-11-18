@@ -280,9 +280,10 @@ func (s *Store) Sync(ctx context.Context, remote string, keep Keep) (PullResult,
 
 // fetch brings the remote's plans ref to RemoteRef, and removes RemoteRef if
 // the remote has none. The wildcard refspec does not fail on a remote
-// without plans.
-func (s *Store) fetch(ctx context.Context, remote string) error {
-	_, stderr, err := s.run(ctx, nil, nil, "fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head", remote, FetchRefspec)
+// without plans. flags go to git fetch.
+func (s *Store) fetch(ctx context.Context, remote string, flags ...string) error {
+	args := append([]string{"fetch", "--quiet", "--no-tags", "--prune", "--no-write-fetch-head"}, flags...)
+	_, stderr, err := s.run(ctx, nil, nil, append(args, remote, FetchRefspec)...)
 	if err != nil {
 		return remoteError(remote, "fetch from", stderr, err)
 	}

@@ -45,7 +45,7 @@ func TestDoctorPassesEveryCheckOfAHealthySetup(t *testing.T) {
 	ana, _ := sharedProject(t, "Payments via Stripe")
 
 	out := mustBfc(t, ana, "doctor")
-	for _, check := range []string{"git version", "repository", "config", "plans ref", "fetch refspec", "remote",
+	for _, check := range []string{"git version", "repository", "config", "plans ref", "fetch refspec", "remote", "objects",
 		"in sync", "format-version", "index", "event files", "plans", "skipped events", "short IDs"} {
 		wantDoctor(t, out, "ok", check)
 	}
@@ -65,7 +65,7 @@ func TestDoctorFixesAMissingFetchRefspec(t *testing.T) {
 		t.Errorf("doctor exited 0 with a failed check:\n%s", out)
 	}
 	wantDoctor(t, out, "FAIL", "fetch refspec", "missing for origin")
-	wantFix := "fix: git config --add remote.origin.fetch '" + store.FetchRefspec + "'"
+	wantFix := "fix: bfc doctor --fix: adds it; or git config --add remote.origin.fetch '" + store.FetchRefspec + "'"
 	if !strings.Contains(out, wantFix) {
 		t.Errorf("output lacks %q:\n%s", wantFix, out)
 	}
@@ -98,7 +98,7 @@ func TestDoctorPullsWhenThePlansRefIsBehind(t *testing.T) {
 
 	out, _ := bfcIn(t, ben, "doctor")
 	wantDoctor(t, out, "FAIL", "in sync", "origin has commits this clone lacks")
-	if !strings.Contains(out, "fix: bfc pull") {
+	if !strings.Contains(out, "fix: bfc doctor --fix: pulls, with a fast-forward or a merge commit; or bfc pull\n") {
 		t.Errorf("output lacks the fix:\n%s", out)
 	}
 	gitIn(t, ben, "fetch", "-q", "origin")
@@ -181,7 +181,7 @@ func TestDoctorRebuildsAnUnreadableIndex(t *testing.T) {
 		t.Errorf("doctor exited 0 with a broken index:\n%s", out)
 	}
 	wantDoctor(t, out, "FAIL", "index", "cannot be read")
-	if !strings.Contains(out, "fix: bfc doctor --fix") {
+	if !strings.Contains(out, "fix: bfc doctor --fix: rebuilds it from the plans ref\n") {
 		t.Errorf("output lacks the fix:\n%s", out)
 	}
 	if got := readFile(t, db); got != "this is not a database" {
@@ -236,6 +236,16 @@ func TestDoctorListsInvalidEventFilesAndPlans(t *testing.T) {
 	}
 	// The run went on to the last check.
 	wantDoctor(t, out, "ok", "short IDs")
+
+	// Issue #48 AC-4: --fix leaves broken event files and invalid plans
+	// as they are; it only reports them.
+	before := gitIn(t, ana, "rev-parse", plansRef)
+	out, _ = bfcIn(t, ana, "doctor", "--fix")
+	wantDoctor(t, out, "FAIL", "event files", "2 of 4 not valid")
+	wantDoctor(t, out, "FAIL", "plans", "1 of 3 without a valid created event")
+	if got := gitIn(t, ana, "rev-parse", plansRef); got != before {
+		t.Errorf("--fix moved the plans ref over broken event files:\n%s", gitIn(t, ana, "log", "--stat", before+".."+got, plansRef))
+	}
 }
 
 // ADR 0002 sections 4 and 8: skipped events and duplicate Short IDs are
@@ -342,4 +352,185 @@ func TestDoctorChecksTheFormatVersion(t *testing.T) {
 	gitIn(t, dir, "update-ref", plansRef, commit)
 	out, _ = bfcIn(t, dir, "doctor")
 	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
+
+	// Issue #48 Q1: also a plans ref without plans gets one, as after an
+	// interrupted bfc init.
+	out = mustBfc(t, dir, "doctor", "--fix")
+	wantDoctor(t, out, "fixed", "format-version", "1")
+}
+
+// Issue #48 AC-5: a repair that fails still leaves a fix line that says
+// what to do.
+func TestDoctorFixLineAfterAFailedRepair(t *testing.T) {
+	dir := newLocalRepo(t)
+	mustBfc(t, dir, "new", "--no-edit", "Solo plan")
+	dropFromRef(t, dir, "format-version")
+	// Another writer holds the plans ref, so the commit cannot be made.
+	lock := filepath.Join(gitIn(t, dir, "rev-parse", "--path-format=absolute", "--git-common-dir"), "refs", "beforecode", "plans.lock")
+	writeFile(t, lock, "")
+
+	out, _ := bfcIn(t, dir, "doctor", "--fix")
+	wantDoctor(t, out, "FAIL", "format-version")
+	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "fix: bfc doctor --fix: adds format-version 1") {
+		t.Errorf("output lacks the failed fix and what to do:\n%s", out)
+	}
+}
+
+// dropFromRef commits the plans ref without the file at the root named
+// name, as a damaged clone might have it.
+func dropFromRef(t *testing.T, dir, name string) {
+	t.Helper()
+	var keep []string
+	for _, line := range strings.Split(gitIn(t, dir, "ls-tree", plansRef), "\n") {
+		if !strings.HasSuffix(line, "\t"+name) {
+			keep = append(keep, line)
+		}
+	}
+	tree := gitInStdin(t, dir, strings.Join(keep, "\n")+"\n", "mktree")
+	commit := gitIn(t, dir, "commit-tree", tree, "-p", plansRef, "-m", "lose "+name)
+	gitIn(t, dir, "update-ref", plansRef, commit)
+}
+
+// Issue #48 AC-1, AC-3, AC-5: a plans ref with plans but no format-version
+// gets one in a new commit on top of the tip; nothing else is touched.
+func TestDoctorFixAddsAMissingFormatVersion(t *testing.T) {
+	ana, _ := sharedProject(t, "Payments via Stripe")
+	dropFromRef(t, ana, "format-version")
+	head := gitIn(t, ana, "rev-parse", "HEAD")
+	status := gitIn(t, ana, "status", "--porcelain")
+
+	out, err := bfcIn(t, ana, "doctor")
+	if err == nil {
+		t.Errorf("doctor exited 0:\n%s", out)
+	}
+	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
+	for _, want := range []string{"fix: bfc doctor --fix: adds format-version 1 in a new commit",
+		"1 failed check can be repaired with bfc doctor --fix"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	before := gitIn(t, ana, "rev-parse", plansRef)
+
+	out = mustBfc(t, ana, "doctor", "--fix")
+	wantDoctor(t, out, "fixed", "format-version", "1")
+	if got := gitIn(t, ana, "rev-parse", plansRef+"^"); got != before {
+		t.Errorf("the repair is not one new commit on top of %s (parent %s)", before, got)
+	}
+	if msg := gitIn(t, ana, "log", "-1", "--format=%s", plansRef); msg != "bfc doctor: add format-version 1" {
+		t.Errorf("commit message %q", msg)
+	}
+	if got := gitIn(t, ana, "show", plansRef+":format-version"); got != "1" {
+		t.Errorf("format-version = %q", got)
+	}
+	if gitIn(t, ana, "rev-parse", "HEAD") != head || gitIn(t, ana, "status", "--porcelain") != status {
+		t.Error("the repair touched the current branch, the index or the working tree")
+	}
+	out = mustBfc(t, ana, "doctor")
+	wantDoctor(t, out, "ok", "format-version", "1")
+	if out := mustBfc(t, ana, "list"); !strings.Contains(out, "Payments via Stripe") {
+		t.Errorf("list after the repair:\n%s", out)
+	}
+}
+
+// Issue #48 Q1: a ref with an event type this bfc does not know may be of
+// another format version, so --fix does not guess it.
+func TestDoctorDoesNotAddAFormatVersionOverUnknownEventTypes(t *testing.T) {
+	dir := newLocalRepo(t)
+	_, id := newPlan(t, dir, "Solo plan")
+	unknown := core.PlanDir(id) + "/events/01JD3K8Q2X0000000000000009.yaml"
+	writeRef(t, dir, "from the future", map[string][]byte{unknown: []byte("type: claimed\nplan: " + id.String() +
+		"\nauthor: {name: Ana, email: ana@example.com}\nat: 2026-11-16T21:30:00Z\n")})
+	dropFromRef(t, dir, "format-version")
+	before := gitIn(t, dir, "rev-parse", plansRef)
+
+	out, _ := bfcIn(t, dir, "doctor", "--fix")
+	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
+	for _, want := range []string{unknown + " (claimed)", "fix: update bfc"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+	if gitIn(t, dir, "rev-parse", plansRef) != before {
+		t.Error("--fix wrote to the plans ref")
+	}
+}
+
+// loseObject removes the loose object of the blob with this content from
+// the clone, as a broken clone would have lost it, and returns its ID.
+func loseObject(t *testing.T, dir, content string) string {
+	t.Helper()
+	blob := gitInStdin(t, dir, content, "hash-object", "--stdin")
+	objects := gitIn(t, dir, "rev-parse", "--path-format=absolute", "--git-common-dir")
+	if err := os.Remove(filepath.Join(objects, "objects", blob[:2], blob[2:])); err != nil {
+		t.Fatal(err)
+	}
+	return blob
+}
+
+// Issue #48 AC-2, AC-3, AC-5: objects the plans ref needs and this clone
+// lacks are fetched again from the sync remote, without a new commit.
+func TestDoctorFixFetchesMissingObjectsAgain(t *testing.T) {
+	ana, _ := sharedProject(t, "Payments via Stripe")
+	_, id := newPlan(t, ana, "Second plan")
+	mustBfc(t, ana, "push")
+	path := core.PlanDir(id) + "/intent.md"
+	blob := loseObject(t, ana, gitIn(t, ana, "show", plansRef+":"+path)+"\n")
+	before := gitIn(t, ana, "rev-parse", plansRef)
+
+	out, err := bfcIn(t, ana, "doctor")
+	if err == nil {
+		t.Errorf("doctor exited 0:\n%s", out)
+	}
+	wantDoctor(t, out, "FAIL", "objects", "1 missing from this clone")
+	for _, want := range []string{"      " + path + " (" + blob + ")\n",
+		"fix: bfc doctor --fix: fetches them again from origin"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+
+	out = mustBfc(t, ana, "doctor", "--fix")
+	wantDoctor(t, out, "fixed", "objects", "all present")
+	if _, err := gitTry(ana, "cat-file", "-e", blob); err != nil {
+		t.Errorf("object %s is still missing", blob)
+	}
+	if got := gitIn(t, ana, "rev-parse", plansRef); got != before {
+		t.Error("fetching objects again moved the plans ref")
+	}
+	wantDoctor(t, mustBfc(t, ana, "doctor"), "ok", "objects")
+}
+
+// Issue #48 AC-2: an object the remote does not have either is lost, and
+// bfc doctor says which file it was and what to do next.
+func TestDoctorListsObjectsTheRemoteLacksAsLost(t *testing.T) {
+	ana, _ := sharedProject(t, "Payments via Stripe")
+	_, id := newPlan(t, ana, "Never pushed")
+	path := core.PlanDir(id) + "/intent.md"
+	blob := loseObject(t, ana, gitIn(t, ana, "show", plansRef+":"+path)+"\n")
+
+	out, err := bfcIn(t, ana, "doctor", "--fix")
+	if err == nil {
+		t.Errorf("doctor --fix exited 0 with a lost object:\n%s", out)
+	}
+	wantDoctor(t, out, "FAIL", "objects", "1 missing here and on origin: lost")
+	for _, want := range []string{"      " + path + " (" + blob + ")\n", "fix: bfc cannot restore them"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("output lacks %q:\n%s", want, out)
+		}
+	}
+}
+
+// Issue #48 Q3: in local mode there is no remote to fetch from.
+func TestDoctorHasNoRepairForMissingObjectsInLocalMode(t *testing.T) {
+	dir := newLocalRepo(t)
+	_, id := newPlan(t, dir, "Solo plan")
+	path := core.PlanDir(id) + "/intent.md"
+	loseObject(t, dir, gitIn(t, dir, "show", plansRef+":"+path)+"\n")
+
+	out, _ := bfcIn(t, dir, "doctor")
+	wantDoctor(t, out, "FAIL", "objects", "1 missing from this clone; local mode has no remote to fetch them from: lost")
+	if strings.Contains(out, "bfc doctor --fix") {
+		t.Errorf("a failure without a repair offers --fix:\n%s", out)
+	}
 }

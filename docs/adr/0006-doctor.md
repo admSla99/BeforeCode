@@ -16,8 +16,9 @@ Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #18.
 | plans ref | `refs/beforecode/plans` missing | `bfc bootstrap` when the remote has plans, else `bfc init` | |
 | fetch refspec | `+refs/beforecode/*:refs/beforecode-remote/*` missing for the sync remote | `git config --add remote.<r>.fetch '…'` | adds it |
 | remote | no such git remote, not reachable, or no plans ref there | `git remote add`, `git ls-remote`, `bfc push` or `bfc init` | |
+| objects | objects of the tip's tree are missing (ADR 0007) | copy them from another clone | fetches them again |
 | in sync | the local plans ref is behind the remote's or diverged from it | `bfc pull` | pulls |
-| format-version | missing, unreadable, newer or older than this binary | update bfc; for an older one, the bfc release that wrote it; else no repair (see below) | |
+| format-version | missing, unreadable, newer or older than this binary | update bfc; for an older one, the bfc release that wrote it; else no repair (see below) | adds a missing one (ADR 0007) |
 | index | the database cannot be read: damaged, not SQLite, another schema version | `bfc doctor --fix` | rebuilds it |
 | event files | an event file breaks ADR 0002, or cannot be read | no repair | |
 | plans | a plan has no valid `created` event (an invalid plan) | no repair; `bfc new` | |
@@ -38,7 +39,7 @@ Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #18.
 
 **State as `bfc list` sees it.** The plans, skipped-events and Short ID checks derive state from every event that parses, exactly as the index does, so `bfc doctor` and `bfc list` agree. A `created` event with a wrong `short_id` therefore still makes a valid plan; the event-files check reports the file.
 
-**Problems in the plans ref have no automatic fix.** Events are append-only, and repairing a corrupted ref is out of scope for #18. For a broken event file, an invalid plan or a missing `format-version`, the fix line says that `bfc doctor` does not rewrite the ref and how to inspect the file.
+**Problems in the plans ref have no automatic fix.** Events are append-only, and repairing a corrupted ref is out of scope for #18. For a broken event file, an invalid plan or a missing `format-version`, the fix line says that `bfc doctor` does not rewrite the ref and how to inspect the file. Issue #48 changed this for a missing `format-version` and for missing objects; see ADR 0007.
 
 ## Considered
 
