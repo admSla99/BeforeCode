@@ -173,6 +173,7 @@ Does "exactly one" also apply when the customer retries the payment?
 
 - **Thread.** A Message without `reply_to`, together with every Message that replies to it, directly or through other replies.
 - **Answered Question.** A Question is answered when a direct reply exists whose author email is in `to`. For `ai`, a direct reply with `agent` set answers it. Other replies are discussion and leave the Question open.
+- **The Grill** (issue #55) uses these Messages with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, recorded word for word by the agent, has no `agent`; its author is the plan author, so it answers the Question.
 - **References that go stale.** A `ref` whose heading or criterion no longer exists stays in the Message unchanged. The TUI shows it as stale.
 
 ## 8. Short ID
