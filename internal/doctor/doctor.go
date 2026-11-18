@@ -84,9 +84,10 @@ var checks = []check{
 // failed check that has a Repair: add the fetch refspec, pull the plans ref
 // when it is behind or diverged, rebuild the index, add a missing
 // format-version (ADR 0007). Without fix, the Fix of such a check names
-// bfc doctor --fix and what it would do.
-func Run(ctx context.Context, dir string, fix bool) []Result {
-	e := &env{dir: dir}
+// bfc doctor --fix and what it would do. vars are passed to store.Open as
+// its extra environment.
+func Run(ctx context.Context, dir string, fix bool, vars ...string) []Result {
+	e := &env{dir: dir, vars: vars}
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
 		r := c.run(ctx, e)
@@ -135,6 +136,7 @@ type fixHint struct {
 // env is what the checks learn about the repository, shared between them.
 type env struct {
 	dir   string
+	vars  []string // extra environment of git, see store.Open
 	gitOK bool
 	s     *store.Store // nil outside a repository
 
@@ -227,7 +229,7 @@ func checkRepository(_ context.Context, e *env) Result {
 	if !e.gitOK {
 		return skip("needs git")
 	}
-	s, err := store.Open(e.dir)
+	s, err := store.Open(e.dir, e.vars...)
 	if err != nil {
 		return fail("run bfc inside a git working tree; git init creates one", "%s", strings.TrimPrefix(err.Error(), "store: "))
 	}

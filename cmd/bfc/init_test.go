@@ -2,11 +2,13 @@ package main
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/admSla99/BeforeCode/internal/config"
@@ -19,6 +21,10 @@ const plansRef = "refs/beforecode/plans"
 func TestMain(m *testing.M) {
 	dir, err := os.MkdirTemp("", "bfc-cmd-test")
 	if err != nil {
+		panic(err)
+	}
+	fixtureRoot = filepath.Join(dir, "fixtures")
+	if err := os.Mkdir(fixtureRoot, 0o755); err != nil {
 		panic(err)
 	}
 	empty := filepath.Join(dir, "gitconfig")
@@ -35,23 +41,70 @@ func TestMain(m *testing.M) {
 	os.Exit(code)
 }
 
-// bfcIn runs bfc with args in dir and returns its combined output.
+// bfcIn runs bfc with args in dir and returns its combined output. bfc
+// gets the test's environment (setEnv), not the process's working directory,
+// so tests can run in parallel.
 func bfcIn(t *testing.T, dir string, args ...string) (string, error) {
 	t.Helper()
-	t.Chdir(dir)
 	var out bytes.Buffer
 	cmd := newRootCmd("dev")
 	cmd.SetOut(&out)
 	cmd.SetErr(&out)
 	cmd.SetArgs(args)
-	err := cmd.Execute()
+	err := cmd.ExecuteContext(inPlace(t, dir))
 	return out.String(), err
+}
+
+// inPlace returns a context in which bfc commands run in dir with the
+// test's environment.
+func inPlace(t *testing.T, dir string) context.Context {
+	return withPlace(context.Background(), place{dir: dir, env: envOf(t)})
+}
+
+// testEnvs holds, per test, the environment variables that bfc and git get
+// on top of the process environment. It replaces t.Setenv, which forbids
+// t.Parallel.
+var testEnvs sync.Map // *testing.T → *testEnv
+
+type testEnv struct {
+	mu   sync.Mutex
+	vars map[string]string
+}
+
+// setEnv sets an environment variable for the bfc and git commands the test
+// runs from now on.
+func setEnv(t *testing.T, name, value string) {
+	t.Helper()
+	v, loaded := testEnvs.LoadOrStore(t, &testEnv{vars: map[string]string{}})
+	if !loaded {
+		t.Cleanup(func() { testEnvs.Delete(t) })
+	}
+	e := v.(*testEnv)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	e.vars[name] = value
+}
+
+// envOf returns the variables set with setEnv as NAME=value.
+func envOf(t *testing.T) []string {
+	v, ok := testEnvs.Load(t)
+	if !ok {
+		return nil
+	}
+	e := v.(*testEnv)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+	env := make([]string, 0, len(e.vars))
+	for k, val := range e.vars {
+		env = append(env, k+"="+val)
+	}
+	return env
 }
 
 // gitIn runs git in dir and returns its trimmed output.
 func gitIn(t *testing.T, dir string, args ...string) string {
 	t.Helper()
-	out, err := gitTry(dir, args...)
+	out, err := gitTryEnv(dir, envOf(t), args...)
 	if err != nil {
 		t.Fatalf("git %v: %v", args, err)
 	}
@@ -63,6 +116,7 @@ func gitInStdin(t *testing.T, dir, stdin string, args ...string) string {
 	t.Helper()
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), envOf(t)...)
 	cmd.Stdin = strings.NewReader(stdin)
 	out, err := cmd.Output()
 	if err != nil {
@@ -72,8 +126,13 @@ func gitInStdin(t *testing.T, dir, stdin string, args ...string) string {
 }
 
 func gitTry(dir string, args ...string) (string, error) {
+	return gitTryEnv(dir, nil, args...)
+}
+
+func gitTryEnv(dir string, env []string, args ...string) (string, error) {
 	cmd := exec.Command("git", args...)
 	cmd.Dir = dir
+	cmd.Env = append(os.Environ(), env...)
 	out, err := cmd.Output()
 	var exitErr *exec.ExitError
 	if errors.As(err, &exitErr) {
@@ -86,18 +145,8 @@ func gitTry(dir string, args ...string) (string, error) {
 // it with one commit, and returns the clone and the bare repository.
 func newClone(t *testing.T) (clone, bare string) {
 	t.Helper()
-	bare = filepath.Join(t.TempDir(), "remote.git")
-	gitIn(t, ".", "init", "-q", "--bare", "-b", "main", bare)
-	clone = filepath.Join(t.TempDir(), "work")
-	gitIn(t, ".", "init", "-q", "-b", "main", clone)
-	gitIn(t, clone, "config", "user.name", "Ada Lovelace")
-	gitIn(t, clone, "config", "user.email", "ada@example.com")
-	gitIn(t, clone, "remote", "add", "origin", bare)
-	writeFile(t, filepath.Join(clone, "README.md"), "hello\n")
-	gitIn(t, clone, "add", "README.md")
-	gitIn(t, clone, "commit", "-q", "-m", "initial")
-	gitIn(t, clone, "push", "-q", "origin", "main")
-	return clone, bare
+	dir := copyFixture(t, "clone", buildClone)
+	return filepath.Join(dir, "work"), filepath.Join(dir, "remote.git")
 }
 
 func writeFile(t *testing.T, path, content string) {
@@ -120,6 +169,7 @@ func readFile(t *testing.T, path string) string {
 }
 
 func TestInitCreatesConfigTemplatesAndPlansRefWithoutCommitting(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	head := gitIn(t, clone, "rev-parse", "HEAD")
 	defaults, err := filepath.Abs(filepath.Join("..", "..", ".beforecode", "templates"))
@@ -171,6 +221,7 @@ func fetchRefspecs(t *testing.T, clone string) []string {
 }
 
 func TestInitAddsTheFetchRefspecOnce(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 
 	for range 2 {
@@ -191,6 +242,7 @@ func TestInitAddsTheFetchRefspecOnce(t *testing.T) {
 }
 
 func TestInitTwiceKeepsEverythingAndSaysSo(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	if out, err := bfcIn(t, clone, "init"); err != nil {
 		t.Fatalf("first bfc init: %v\n%s", err, out)
@@ -235,6 +287,7 @@ func lineHas(out, a, b string) bool {
 }
 
 func TestInitRefusesWhenTheRemoteAlreadyHasPlans(t *testing.T) {
+	t.Parallel()
 	first, bare := newClone(t)
 	if out, err := bfcIn(t, first, "init"); err != nil {
 		t.Fatalf("bfc init: %v\n%s", err, out)
@@ -260,6 +313,7 @@ func TestInitRefusesWhenTheRemoteAlreadyHasPlans(t *testing.T) {
 }
 
 func TestInitFailsWhenTheRemoteCannotBeReached(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	gitIn(t, clone, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
 
@@ -274,6 +328,7 @@ func TestInitFailsWhenTheRemoteCannotBeReached(t *testing.T) {
 }
 
 func TestInitFailsWhenTheRemoteDoesNotExist(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 
 	out, err := bfcIn(t, clone, "init", "--remote", "upstream")
@@ -289,6 +344,7 @@ func TestInitFailsWhenTheRemoteDoesNotExist(t *testing.T) {
 }
 
 func TestInitWithAnotherRemote(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	gitIn(t, clone, "remote", "rename", "origin", "upstream")
 
@@ -306,6 +362,7 @@ func TestInitWithAnotherRemote(t *testing.T) {
 }
 
 func TestInitLocalSkipsRemoteAndRecordsSyncOff(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")
 	gitIn(t, dir, "config", "user.name", "Ada Lovelace")
@@ -335,6 +392,7 @@ func TestInitLocalSkipsRemoteAndRecordsSyncOff(t *testing.T) {
 }
 
 func TestInitOutsideAGitRepositoryFailsClearly(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 
 	out, err := bfcIn(t, dir, "init")
@@ -351,6 +409,7 @@ func TestInitOutsideAGitRepositoryFailsClearly(t *testing.T) {
 }
 
 func TestInitFromASubdirectoryWritesAtTheRepositoryRoot(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	sub := filepath.Join(clone, "src", "deep")
 	if err := os.MkdirAll(sub, 0o755); err != nil {
@@ -367,6 +426,7 @@ func TestInitFromASubdirectoryWritesAtTheRepositoryRoot(t *testing.T) {
 }
 
 func TestInitWithAConfigInPlaceSaysFlagsAreIgnored(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	if out, err := bfcIn(t, clone, "init"); err != nil {
 		t.Fatalf("bfc init: %v\n%s", err, out)
@@ -383,6 +443,7 @@ func TestInitWithAConfigInPlaceSaysFlagsAreIgnored(t *testing.T) {
 }
 
 func TestInitWithAConfigNamingAMissingRemoteSaysHowToFixIt(t *testing.T) {
+	t.Parallel()
 	clone, _ := newClone(t)
 	writeFile(t, filepath.Join(clone, ".beforecode", "config.yaml"), string(config.Render(
 		config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "upstream"})))

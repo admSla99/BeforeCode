@@ -15,14 +15,7 @@ import (
 // newLocalRepo creates a repository set up with bfc init --local.
 func newLocalRepo(t *testing.T) string {
 	t.Helper()
-	dir := t.TempDir()
-	gitIn(t, dir, "init", "-q", "-b", "main")
-	gitIn(t, dir, "config", "user.name", "Ada Lovelace")
-	gitIn(t, dir, "config", "user.email", "ada@example.com")
-	if out, err := bfcIn(t, dir, "init", "--local"); err != nil {
-		t.Fatalf("bfc init --local: %v\n%s", err, out)
-	}
-	return dir
+	return filepath.Join(copyFixture(t, "local", buildLocalRepo), "repo")
 }
 
 // fakeEditor makes git (and so bfc) use a shell snippet as the editor. The
@@ -36,7 +29,7 @@ func fakeEditor(t *testing.T, snippet string) {
 	}
 	// The editor setting is shell text: quote the path and use forward
 	// slashes, as a Windows user would in core.editor.
-	t.Setenv("GIT_EDITOR", `"`+filepath.ToSlash(script)+`"`)
+	setEnv(t, "GIT_EDITOR", `"`+filepath.ToSlash(script)+`"`)
 }
 
 // planDirs lists the plan directories in the plans ref.
@@ -52,6 +45,7 @@ func planDirs(t *testing.T, dir string) []string {
 var shortIDLine = regexp.MustCompile(`^(bfc-[0-9a-z]{4,16})  (.*)$`)
 
 func TestNewWithEditorCommitsTheSavedIntentAndACreatedEvent(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	before := gitIn(t, dir, "rev-parse", plansRef)
 	fakeEditor(t, `printf 'Cards fail at checkout.\n' >> "$1"`)
@@ -107,6 +101,7 @@ func TestNewWithEditorCommitsTheSavedIntentAndACreatedEvent(t *testing.T) {
 }
 
 func TestNewNoEditUsesTheTemplateWithTheTitle(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	fakeEditor(t, `echo "editor must not run" >&2; exit 1`)
 
@@ -126,6 +121,7 @@ func TestNewNoEditUsesTheTemplateWithTheTitle(t *testing.T) {
 }
 
 func TestNewUsesTheRepositoryTemplate(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	writeFile(t, filepath.Join(dir, ".beforecode", "templates", "intent.md"), "---\ntitle: \nlabels: [team-x]\n---\n\n## Our own template\n")
 
@@ -140,12 +136,14 @@ func TestNewUsesTheRepositoryTemplate(t *testing.T) {
 }
 
 func TestNewAbortsWithoutAPlanWhenTheIntentIsUnchangedOrEmpty(t *testing.T) {
+	t.Parallel()
 	for name, snippet := range map[string]string{
 		"unchanged": `true`,
 		"emptied":   `: > "$1"`,
 		"blank":     `printf '\n  \n' > "$1"`,
 	} {
 		t.Run(name, func(t *testing.T) {
+			t.Parallel()
 			dir := newLocalRepo(t)
 			tip := gitIn(t, dir, "rev-parse", plansRef)
 			fakeEditor(t, snippet)
@@ -166,6 +164,7 @@ func TestNewAbortsWithoutAPlanWhenTheIntentIsUnchangedOrEmpty(t *testing.T) {
 }
 
 func TestNewWithATitleRemovedInTheEditorKeepsTheText(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	fakeEditor(t, `printf -- '---\ntitle: \n---\n\nMy long thoughts.\n' > "$1"`)
 
@@ -193,6 +192,7 @@ func TestNewWithATitleRemovedInTheEditorKeepsTheText(t *testing.T) {
 }
 
 func TestNewBeforeInitPointsToInitAndBootstrap(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")
 
@@ -209,6 +209,7 @@ func TestNewBeforeInitPointsToInitAndBootstrap(t *testing.T) {
 }
 
 func TestNewRefusesToWriteAnotherFormatVersion(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	// Rewrite format-version to 2 through plumbing, as a newer bfc would.
 	tree := gitInStdin(t, dir, "100644 blob "+gitInStdin(t, dir, "2\n", "hash-object", "-w", "--stdin")+"\tformat-version\n", "mktree")
@@ -226,6 +227,7 @@ func TestNewRefusesToWriteAnotherFormatVersion(t *testing.T) {
 }
 
 func TestShortIDsOfTwoPlansDiffer(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	var ids []string
 	for _, title := range []string{"One", "Two"} {
@@ -244,6 +246,7 @@ func TestShortIDsOfTwoPlansDiffer(t *testing.T) {
 }
 
 func TestNewWithoutARepositoryTemplateUsesTheBuiltInOne(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	if err := os.RemoveAll(filepath.Join(dir, ".beforecode", "templates")); err != nil {
 		t.Fatal(err)
@@ -260,6 +263,7 @@ func TestNewWithoutARepositoryTemplateUsesTheBuiltInOne(t *testing.T) {
 }
 
 func TestNewAcceptsAnIntentSavedWithCRLFAndStoresLF(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	fakeEditor(t, `printf -- '---\r\ntitle: Payments\r\n---\r\n\r\nCards fail.\r\n' > "$1"`)
 

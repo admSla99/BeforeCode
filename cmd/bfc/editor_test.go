@@ -10,12 +10,14 @@ import (
 )
 
 func TestEditorScriptRunsTheSettingOnTheFileLikeGit(t *testing.T) {
+	t.Parallel()
 	if got := editorScript(`"C:/Program Files/Microsoft VS Code/bin/code" --wait`); got != `"C:/Program Files/Microsoft VS Code/bin/code" --wait "$@"`+"\n" {
 		t.Errorf("editorScript = %q", got)
 	}
 }
 
 func TestEditorScriptHandlesWaitFlagsAndPathsWithSpaces(t *testing.T) {
+	t.Parallel()
 	if runtime.GOOS == "windows" {
 		t.Skip("runs /bin/sh directly; on Windows the editor tests cover sh.exe")
 	}
@@ -51,6 +53,7 @@ func TestEditorScriptHandlesWaitFlagsAndPathsWithSpaces(t *testing.T) {
 }
 
 func TestEditorCommandPassesOnlyPaths(t *testing.T) {
+	t.Parallel()
 	name, args, err := editorCommand("linux", "/usr/bin/git", "/tmp/bfc-plan 1.md.sh", "/tmp/bfc-plan 1.md", nil)
 	if err != nil {
 		t.Fatal(err)
@@ -62,6 +65,7 @@ func TestEditorCommandPassesOnlyPaths(t *testing.T) {
 }
 
 func TestEditorCommandOnWindowsUsesTheShellOfGitForWindows(t *testing.T) {
+	t.Parallel()
 	script := `C:\Users\Jana Nováková\AppData\Local\Temp\bfc-plan-1.md.sh`
 	path := `C:\Users\Jana Nováková\AppData\Local\Temp\bfc-plan-1.md`
 	for gitExe, sh := range map[string]string{
@@ -83,6 +87,7 @@ func TestEditorCommandOnWindowsUsesTheShellOfGitForWindows(t *testing.T) {
 }
 
 func TestEditorCommandOnWindowsWithoutShSaysWhatIsMissing(t *testing.T) {
+	t.Parallel()
 	_, _, err := editorCommand("windows", `C:\git\cmd\git.exe`, `C:\tmp\x.md.sh`, `C:\tmp\x.md`, func(string) bool { return false })
 	if err == nil || !strings.Contains(err.Error(), "sh.exe") {
 		t.Errorf("error = %v, want one naming sh.exe", err)

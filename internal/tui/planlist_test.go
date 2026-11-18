@@ -17,6 +17,11 @@ import (
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
+// waitLimit is how long a test waits for text on the screen. It is generous
+// because the other packages run their git-heavy tests in parallel at the
+// same time, which slows the renderer on a small CI machine (#72).
+const waitLimit = 10 * time.Second
+
 func init() {
 	// Golden files show times in local time, as bfc list does; pin it.
 	time.Local = time.UTC

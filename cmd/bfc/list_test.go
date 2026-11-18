@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -18,8 +19,8 @@ import (
 func clock(t *testing.T, minute int) {
 	t.Helper()
 	ts := time.Date(2026, 11, 16, 9, minute, 0, 0, time.UTC).Format(time.RFC3339)
-	t.Setenv("GIT_COMMITTER_DATE", ts)
-	t.Setenv("GIT_AUTHOR_DATE", ts)
+	setEnv(t, "GIT_COMMITTER_DATE", ts)
+	setEnv(t, "GIT_AUTHOR_DATE", ts)
 }
 
 // newPlan runs bfc new --no-edit and returns the plan's Short ID and ULID.
@@ -41,14 +42,14 @@ func newPlan(t *testing.T, dir, title string) (string, ulid.ULID) {
 	return "", ulid.ULID{}
 }
 
-var eventSeq uint64
+// eventSeq keeps the event IDs of addEvent apart; tests run in parallel.
+var eventSeq atomic.Uint64
 
 // addEvent writes an event for plan straight into the plans ref, as the
 // commands of later issues will.
 func addEvent(t *testing.T, dir string, plan ulid.ULID, e core.Event) {
 	t.Helper()
-	eventSeq++
-	e.ID = ulid.MustNew(ulid.Now()+eventSeq, strings.NewReader(strings.Repeat("\x01", 16)))
+	e.ID = ulid.MustNew(ulid.Now()+eventSeq.Add(1), strings.NewReader(strings.Repeat("\x01", 16)))
 	e.Plan = plan
 	if e.At.IsZero() {
 		e.At = time.Now()
@@ -60,7 +61,7 @@ func addEvent(t *testing.T, dir string, plan ulid.ULID, e core.Event) {
 
 func writeRef(t *testing.T, dir, msg string, files map[string][]byte) {
 	t.Helper()
-	s, err := store.Open(dir)
+	s, err := store.Open(dir, envOf(t)...)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -104,6 +105,7 @@ func threePlans(t *testing.T) (dir string, ids map[string]ulid.ULID, shorts map[
 var listLine = regexp.MustCompile(`^(bfc-\S+)\s+(\S+)\s+(.+?)\s+(\S+@\S+)\s+(\d{4}-\d\d-\d\d \d\d:\d\d)$`)
 
 func TestListShowsOneLinePerPlanNewestActivityFirst(t *testing.T) {
+	t.Parallel()
 	dir, _, shorts := threePlans(t)
 
 	out, err := bfcIn(t, dir, "list")
@@ -136,6 +138,7 @@ func TestListShowsOneLinePerPlanNewestActivityFirst(t *testing.T) {
 }
 
 func TestListFiltersByDerivedState(t *testing.T) {
+	t.Parallel()
 	dir, _, shorts := threePlans(t)
 
 	out, err := bfcIn(t, dir, "list", "--state", "in-review")
@@ -153,6 +156,7 @@ func TestListFiltersByDerivedState(t *testing.T) {
 }
 
 func TestListJSON(t *testing.T) {
+	t.Parallel()
 	dir, ids, shorts := threePlans(t)
 
 	out, err := bfcIn(t, dir, "list", "--json")
@@ -189,6 +193,7 @@ func TestListJSON(t *testing.T) {
 }
 
 func TestListWithNoPlansPrintsNothingAndJSONAnEmptyArray(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 
 	if out, err := bfcIn(t, dir, "list"); err != nil || out != "" {
@@ -200,6 +205,7 @@ func TestListWithNoPlansPrintsNothingAndJSONAnEmptyArray(t *testing.T) {
 }
 
 func TestListKeepsAPlanWithABrokenIntent(t *testing.T) {
+	t.Parallel()
 	dir, ids, shorts := threePlans(t)
 	writeRef(t, dir, "break", map[string][]byte{core.PlanDir(ids["Old draft"]) + "/intent.md": []byte("no front matter\n")})
 
@@ -213,6 +219,7 @@ func TestListKeepsAPlanWithABrokenIntent(t *testing.T) {
 }
 
 func TestListBeforeInitPointsToInit(t *testing.T) {
+	t.Parallel()
 	dir := t.TempDir()
 	gitIn(t, dir, "init", "-q", "-b", "main")
 
@@ -223,6 +230,7 @@ func TestListBeforeInitPointsToInit(t *testing.T) {
 }
 
 func TestShowPrintsHeaderIntentAndPlan(t *testing.T) {
+	t.Parallel()
 	dir, ids, shorts := threePlans(t)
 	prefix := strings.TrimPrefix(shorts["Approved one"], "bfc-")
 
@@ -248,6 +256,7 @@ func TestShowPrintsHeaderIntentAndPlan(t *testing.T) {
 }
 
 func TestShowWithoutPlanMdShowsOnlyTheIntent(t *testing.T) {
+	t.Parallel()
 	dir, _, shorts := threePlans(t)
 
 	out, err := bfcIn(t, dir, "show", shorts["Old draft"])
@@ -263,6 +272,7 @@ func TestShowWithoutPlanMdShowsOnlyTheIntent(t *testing.T) {
 }
 
 func TestShowUnknownOrAmbiguousIDListsCandidates(t *testing.T) {
+	t.Parallel()
 	dir, _, _ := threePlans(t)
 
 	out, err := bfcIn(t, dir, "show", "bfc-zzzzzz")
@@ -297,6 +307,7 @@ func TestShowUnknownOrAmbiguousIDListsCandidates(t *testing.T) {
 }
 
 func TestListAndShowCarryTheIntentLabels(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	writeRef(t, dir, "labels", map[string][]byte{
@@ -314,6 +325,7 @@ func TestListAndShowCarryTheIntentLabels(t *testing.T) {
 }
 
 func TestListShowsAnInvalidPlanWithAComputedShortID(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	id := ulid.MustParse("01JD3K8Q2W5V7X9Y0Z1A2B3C4D")
 	writeRef(t, dir, "no created event", map[string][]byte{

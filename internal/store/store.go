@@ -8,8 +8,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // MinGitVersion is the oldest git release BeforeCode works with. It is set by
@@ -31,13 +33,17 @@ var ErrNotFound = errors.New("store: path not found in " + Ref)
 // deals only in slash-separated paths and bytes.
 type Store struct {
 	dir string
+	env []string
 }
 
 // Open returns a Store for the git repository whose working tree contains
 // dir. It fails if dir is not inside a git working tree, or if the system git
-// is missing or older than MinGitVersion.
-func Open(dir string) (*Store, error) {
-	s := &Store{dir: dir}
+// is missing or older than MinGitVersion. env holds NAME=value variables
+// that every git command of the Store gets on top of the environment of
+// this process, such as GIT_EDITOR or GIT_COMMITTER_DATE; a later entry
+// wins over an earlier one.
+func Open(dir string, env ...string) (*Store, error) {
+	s := &Store{dir: dir, env: slices.Clone(env)}
 	found, ok, err := GitVersion(context.Background())
 	if err != nil {
 		return nil, err
@@ -58,13 +64,42 @@ func Open(dir string) (*Store, error) {
 // GitVersion returns what `git version` prints, such as "git version
 // 2.45.1", and whether that release is at least MinGitVersion. It fails when
 // no git is on PATH.
+// The answer is kept per git binary for the life of the process: Open asks
+// each time, the TUI opens a Store for many actions, the tests for every
+// command, and starting git is slow on Windows.
 func GitVersion(ctx context.Context) (version string, ok bool, err error) {
-	out, err := exec.CommandContext(ctx, "git", "version").Output()
+	path, err := exec.LookPath("git")
 	if err != nil {
 		return "", false, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
 	}
-	version = strings.TrimSpace(string(out))
+	gitVersions.Lock()
+	version, known := gitVersions.byPath[path]
+	gitVersions.Unlock()
+	if !known {
+		out, err := exec.CommandContext(ctx, path, "version").Output()
+		if err != nil {
+			return "", false, fmt.Errorf("store: BeforeCode needs git %s or newer on PATH: %w", MinGitVersion, err)
+		}
+		version = strings.TrimSpace(string(out))
+		gitVersions.Lock()
+		gitVersions.byPath[path] = version
+		gitVersions.Unlock()
+	}
 	return version, atLeast(version, MinGitVersion), nil
+}
+
+// gitVersions holds what `git version` printed, by the path of the git
+// binary.
+var gitVersions = struct {
+	sync.Mutex
+	byPath map[string]string
+}{byPath: map[string]string{}}
+
+// Environ returns the environment the Store runs git with: that of this
+// process and the variables given to Open. Programs that git would start,
+// such as the editor, need the same.
+func (s *Store) Environ() []string {
+	return append(os.Environ(), s.env...)
 }
 
 // Read returns the content of the file at path at the current tip of the
@@ -180,7 +215,7 @@ func (s *Store) writeTree(ctx context.Context, parent string, files map[string][
 		return "", err
 	}
 	defer func() { _ = os.RemoveAll(tmp) }()
-	env := append(os.Environ(), "GIT_INDEX_FILE="+filepath.Join(tmp, "index"))
+	env := []string{"GIT_INDEX_FILE=" + filepath.Join(tmp, "index")}
 
 	if parent != "" {
 		if _, err := s.git(ctx, env, nil, "read-tree", parent); err != nil {
@@ -303,7 +338,7 @@ func (s *Store) tip(ctx context.Context) (string, error) {
 }
 
 // git runs the system git in the repository and returns its standard output.
-// A nil env inherits the environment of this process; stdin may be nil.
+// env holds variables on top of those of Store.Environ; stdin may be nil.
 // Pathspecs are always literal, so a path such as "a*" names only itself.
 func (s *Store) git(ctx context.Context, env []string, stdin []byte, args ...string) ([]byte, error) {
 	stdout, stderr, err := s.run(ctx, env, stdin, args...)
@@ -318,8 +353,8 @@ func (s *Store) git(ctx context.Context, env []string, stdin []byte, args ...str
 func (s *Store) run(ctx context.Context, env []string, stdin []byte, args ...string) (stdout, stderr []byte, err error) {
 	cmd := exec.CommandContext(ctx, "git", append([]string{"--literal-pathspecs"}, args...)...)
 	cmd.Dir = s.dir
-	if env != nil {
-		cmd.Env = env
+	if len(s.env) > 0 || len(env) > 0 {
+		cmd.Env = append(s.Environ(), env...)
 	}
 	if stdin != nil {
 		cmd.Stdin = bytes.NewReader(stdin)

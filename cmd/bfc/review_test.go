@@ -73,6 +73,7 @@ func state(t *testing.T, dir, short string) string {
 
 // AC-1 and AC-2: submit, then another person approves the exact plan.md.
 func TestSubmitThenApprove(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 
 	out := mustBfc(t, dir, "submit", short)
@@ -100,6 +101,7 @@ func TestSubmitThenApprove(t *testing.T) {
 
 // AC-1: submit needs a plan.md that passes the checks.
 func TestSubmitRefusesAMissingOrIncompletePlan(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	short, id := newPlan(t, dir, "Payments")
 	if out, err := bfcIn(t, dir, "submit", short); err == nil || !strings.Contains(out, "no plan.md") {
@@ -118,6 +120,7 @@ func TestSubmitRefusesAMissingOrIncompletePlan(t *testing.T) {
 
 // AC-3
 func TestTheAuthorCannotApproveOrSubmitOthersCannotSubmit(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	as(t, dir, janaP)
 	if out, err := bfcIn(t, dir, "submit", short); err == nil || !strings.Contains(out, "only the plan author") {
@@ -139,6 +142,7 @@ func TestTheAuthorCannotApproveOrSubmitOthersCannotSubmit(t *testing.T) {
 
 // AC-4
 func TestRequestChangesWritesAMessageAndReturnsToDraft(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	as(t, dir, janaP)
@@ -173,6 +177,7 @@ func TestRequestChangesWritesAMessageAndReturnsToDraft(t *testing.T) {
 
 // AC-5: an Approval of an older plan.md does not count.
 func TestAnApprovalOfAnOlderPlanDoesNotCount(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	as(t, dir, janaP)
@@ -190,6 +195,7 @@ func TestAnApprovalOfAnOlderPlanDoesNotCount(t *testing.T) {
 
 // AC-6: commands that do not fit the state name it.
 func TestCommandsInTheWrongStateNameIt(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	as(t, dir, janaP)
 	for _, args := range [][]string{{"approve", short}, {"request-changes", short, "-m", "x"}} {
@@ -212,6 +218,7 @@ func TestCommandsInTheWrongStateNameIt(t *testing.T) {
 
 // AC-7: the policy comes from config.yaml at submit time.
 func TestTheApprovalPolicyComesFromTheConfigAtSubmit(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	requireApprovals(t, dir, "2")
 	out := mustBfc(t, dir, "submit", short)
@@ -238,6 +245,7 @@ func TestTheApprovalPolicyComesFromTheConfigAtSubmit(t *testing.T) {
 }
 
 func TestSubmitWithoutAConfigFileNeedsOneApproval(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	if err := os.Remove(filepath.Join(dir, ".beforecode", "config.yaml")); err != nil {
 		t.Fatal(err)
@@ -251,6 +259,7 @@ func TestSubmitWithoutAConfigFileNeedsOneApproval(t *testing.T) {
 // AC-1 and AC-4: withdrawing ends the round; a new submit needs new
 // Approvals.
 func TestWithdrawReturnsToDraftAndEndsTheRound(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	as(t, dir, janaP)
@@ -281,6 +290,7 @@ func TestWithdrawReturnsToDraftAndEndsTheRound(t *testing.T) {
 }
 
 func TestWithdrawFromInReview(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	if out := mustBfc(t, dir, "withdraw", short); !strings.Contains(out, "draft") {
@@ -290,6 +300,7 @@ func TestWithdrawFromInReview(t *testing.T) {
 
 // AC-2 and AC-3
 func TestWithdrawIsForTheAuthorAndOnlyInReviewOrApproved(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	if out, err := bfcIn(t, dir, "withdraw", short); err == nil || !strings.Contains(out, short+" is draft") {
 		t.Errorf("withdraw a draft: %v\n%s", err, out)
@@ -308,6 +319,7 @@ func TestWithdrawIsForTheAuthorAndOnlyInReviewOrApproved(t *testing.T) {
 // AC-5: an Approval written concurrently, after the withdrawal in ULID
 // order, is skipped.
 func TestAConcurrentApprovalAfterWithdrawIsSkipped(t *testing.T) {
+	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	mustBfc(t, dir, "submit", short)
 	mustBfc(t, dir, "withdraw", short)
@@ -324,6 +336,7 @@ func TestAConcurrentApprovalAfterWithdrawIsSkipped(t *testing.T) {
 
 // Each review command names itself in the commit message on the plans ref.
 func TestReviewCommitsAreNamedAfterTheCommand(t *testing.T) {
+	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
 	subject := func() string { return gitIn(t, dir, "log", "-1", "--format=%s", plansRef) }
 	steps := []struct {

@@ -87,7 +87,7 @@ func waitFor(t *testing.T, tm *teatest.TestModel, want string) {
 		t.Fatal("waitFor: start the model with newTestModel")
 	}
 	s := v.(*vscreen)
-	deadline := time.Now().Add(3 * time.Second)
+	deadline := time.Now().Add(waitLimit)
 	for first := true; ; first = false {
 		out, err := io.ReadAll(tm.Output())
 		if err != nil {
@@ -101,7 +101,7 @@ func waitFor(t *testing.T, tm *teatest.TestModel, want string) {
 			}
 		}
 		if time.Now().After(deadline) {
-			t.Fatalf("waitFor: %q not on the screen after 3s. Screen:\n%s", want, s)
+			t.Fatalf("waitFor: %q not on the screen after %s. Screen:\n%s", want, waitLimit, s)
 		}
 		time.Sleep(20 * time.Millisecond)
 	}
