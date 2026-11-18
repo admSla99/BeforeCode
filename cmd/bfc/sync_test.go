@@ -11,24 +11,12 @@ import (
 // that pulled it, and the bare remote.
 func twoClones(t *testing.T) (ana, ben, bare string) {
 	t.Helper()
-	ana, bare = newClone(t)
-	if out, err := bfcIn(t, ana, "init"); err != nil {
-		t.Fatalf("bfc init: %v\n%s", err, out)
-	}
-	if out, err := bfcIn(t, ana, "push"); err != nil {
-		t.Fatalf("bfc push: %v\n%s", err, out)
-	}
-	ben = filepath.Join(t.TempDir(), "ben")
-	gitIn(t, ".", "clone", "-q", bare, ben)
-	gitIn(t, ben, "config", "user.name", "Ben Bitdiddle")
-	gitIn(t, ben, "config", "user.email", "ben@example.com")
-	if out, err := bfcIn(t, ben, "pull"); err != nil || !strings.Contains(out, "took the plans of origin") {
-		t.Fatalf("bfc pull: %v\n%s", err, out)
-	}
-	return ana, ben, bare
+	dir := copyFixture(t, "two-clones", buildTwoClones)
+	return filepath.Join(dir, "work"), filepath.Join(dir, "ben"), filepath.Join(dir, "remote.git")
 }
 
 func TestPushAndPullShareAPlan(t *testing.T) {
+	t.Parallel()
 	ana, ben, bare := twoClones(t)
 	if got, want := gitIn(t, bare, "rev-parse", plansRef), gitIn(t, ben, "rev-parse", plansRef); got != want {
 		t.Fatalf("ben has %s, remote %s", want, got)
@@ -59,6 +47,7 @@ func TestPushAndPullShareAPlan(t *testing.T) {
 }
 
 func TestPushAfterSomeoneElsePushedMergesAndRetries(t *testing.T) {
+	t.Parallel()
 	ana, ben, _ := twoClones(t)
 	for dir, title := range map[string]string{ana: "Ana's plan", ben: "Ben's plan"} {
 		if out, err := bfcIn(t, dir, "new", "--no-edit", title); err != nil {
@@ -100,6 +89,7 @@ func mustBfc(t *testing.T, dir string, args ...string) string {
 }
 
 func TestPullConflictListsBothVersionsAndKeepResolvesIt(t *testing.T) {
+	t.Parallel()
 	ana, ben, _ := twoClones(t)
 	mustBfc(t, ana, "new", "--no-edit", "Shared plan")
 	mustBfc(t, ana, "push")
@@ -143,6 +133,7 @@ func TestPullConflictListsBothVersionsAndKeepResolvesIt(t *testing.T) {
 }
 
 func TestSyncUsesTheRemoteFromTheConfig(t *testing.T) {
+	t.Parallel()
 	ana, bare := newClone(t)
 	gitIn(t, ana, "remote", "rename", "origin", "upstream")
 	mustBfc(t, ana, "init", "--remote", "upstream")
@@ -156,6 +147,7 @@ func TestSyncUsesTheRemoteFromTheConfig(t *testing.T) {
 }
 
 func TestSyncInLocalModeRefusesUnlessARemoteIsNamed(t *testing.T) {
+	t.Parallel()
 	dir := newLocalRepo(t)
 	out, err := bfcIn(t, dir, "push")
 	if err == nil || !strings.Contains(out, "local mode") {
@@ -167,6 +159,7 @@ func TestSyncInLocalModeRefusesUnlessARemoteIsNamed(t *testing.T) {
 }
 
 func TestPushReportsGitsOwnMessageWhenTheRemoteCannotBeReached(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	mustBfc(t, ana, "init")
 	gitIn(t, ana, "remote", "set-url", "origin", filepath.Join(t.TempDir(), "gone.git"))
@@ -179,6 +172,7 @@ func TestPushReportsGitsOwnMessageWhenTheRemoteCannotBeReached(t *testing.T) {
 }
 
 func TestPushBeforeInitPointsToInit(t *testing.T) {
+	t.Parallel()
 	ana, _ := newClone(t)
 	out, err := bfcIn(t, ana, "push")
 	if err == nil || !strings.Contains(out, "bfc init") {

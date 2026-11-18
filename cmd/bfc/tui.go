@@ -53,20 +53,18 @@ func runTUI(cmd *cobra.Command) error {
 		cmd.SetErr(stderr)
 		_, _ = io.Copy(stderr, &warnings)
 	}()
-	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{}, tuiOptions())
+	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{cmd: cmd}, tuiOptions(cmd))
 	_, err := tea.NewProgram(app, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
 	return err
 }
 
 // tuiOptions reads the sync interval and local mode from the config file.
 // Without a repository or a readable config file, the defaults apply.
-func tuiOptions() tui.AppOptions {
+func tuiOptions(cmd *cobra.Command) tui.AppOptions {
 	opts := tui.AppOptions{Interval: config.DefaultSyncInterval}
-	if wd, err := os.Getwd(); err == nil {
-		if s, err := store.Open(wd); err == nil {
-			if set, err := syncSettings(s); err == nil {
-				opts.Interval, opts.Local = set.interval, set.local
-			}
+	if s, err := openStore(cmd); err == nil {
+		if set, err := syncSettings(s); err == nil {
+			opts.Interval, opts.Local = set.interval, set.local
 		}
 	}
 	return opts
@@ -109,7 +107,7 @@ func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
 // while the screen is suspended. A failure carries the last line bfc new
 // printed to stderr.
 func (p *tuiPlans) NewPlan(title string) tea.Cmd {
-	return runSelf([]string{"new", title}, func(err error) tea.Msg { return tui.PlanCreatedMsg{Err: err} })
+	return p.runSelf([]string{"new", title}, func(err error) tea.Msg { return tui.PlanCreatedMsg{Err: err} })
 }
 
 // Edit runs bfc edit on the document, which opens the editor while the
@@ -122,18 +120,14 @@ func (p *tuiPlans) Edit(shortID string, doc tui.Doc) tea.Cmd {
 		args = append(args, "--intent")
 	}
 	before := p.tip()
-	return runSelf(args, func(err error) tea.Msg {
+	return p.runSelf(args, func(err error) tea.Msg {
 		return tui.PlanEditedMsg{Err: err, Changed: err == nil && p.tip() != before}
 	})
 }
 
 // tip is the commit of the Plans ref, or "" when it cannot be read.
 func (p *tuiPlans) tip() string {
-	wd, err := os.Getwd()
-	if err != nil {
-		return ""
-	}
-	s, err := store.Open(wd)
+	s, err := openStore(p.cmd)
 	if err != nil {
 		return ""
 	}
@@ -143,13 +137,18 @@ func (p *tuiPlans) tip() string {
 
 // runSelf runs this bfc with args while the screen is suspended. A failure
 // carries the last line the command printed to stderr.
-func runSelf(args []string, done func(error) tea.Msg) tea.Cmd {
+// It runs in the place of the TUI's command.
+func (p *tuiPlans) runSelf(args []string, done func(error) tea.Msg) tea.Cmd {
 	self, err := os.Executable()
 	if err != nil {
 		return func() tea.Msg { return done(err) }
 	}
 	var stderr bytes.Buffer
 	c := exec.Command(self, args...)
+	if pl := placeOf(p.cmd); pl.dir != "" || len(pl.env) > 0 {
+		c.Dir = pl.dir
+		c.Env = append(os.Environ(), pl.env...)
+	}
 	c.Stderr = io.MultiWriter(os.Stderr, &stderr)
 	return tea.ExecProcess(c, func(err error) tea.Msg {
 		if err != nil {
@@ -217,18 +216,16 @@ func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewActio
 
 // tuiSyncer is the Syncer of the TUI: bfc sync without printing, on the
 // remote of the config file.
-type tuiSyncer struct{}
+type tuiSyncer struct {
+	cmd *cobra.Command
+}
 
 // Sync pulls, then pushes, and reports how it went.
-func (tuiSyncer) Sync(ctx context.Context) tui.SyncResult {
+func (y *tuiSyncer) Sync(ctx context.Context) tui.SyncResult {
 	offline := func(err error) tui.SyncResult {
 		return tui.SyncResult{Outcome: tui.SyncOffline, Message: firstLine(err.Error())}
 	}
-	wd, err := os.Getwd()
-	if err != nil {
-		return offline(err)
-	}
-	s, err := store.Open(wd)
+	s, err := openStore(y.cmd)
 	if err != nil {
 		return offline(err)
 	}

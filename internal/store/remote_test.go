@@ -9,6 +9,7 @@ import (
 )
 
 func TestRemoteTipAsksTheRemoteWithoutFetching(t *testing.T) {
+	t.Parallel()
 	_, anaDir, benDir := team(t)
 	a, b := open(t, anaDir), open(t, benDir)
 	ctx := context.Background()
@@ -34,6 +35,7 @@ func TestRemoteTipAsksTheRemoteWithoutFetching(t *testing.T) {
 }
 
 func TestHasFetchRefspecFollowsAddFetchRefspec(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	ctx := context.Background()
 	git(t, s.Root(), "remote", "add", "origin", "https://example.invalid/repo.git")
@@ -50,6 +52,7 @@ func TestHasFetchRefspecFollowsAddFetchRefspec(t *testing.T) {
 }
 
 func TestGitVersionMeetsTheMinimum(t *testing.T) {
+	t.Parallel()
 	version, ok, err := store.GitVersion(context.Background())
 	if err != nil || !ok || version == "" {
 		t.Errorf("GitVersion = %q, %v, %v; the test machine has git %s or newer", version, ok, err, store.MinGitVersion)

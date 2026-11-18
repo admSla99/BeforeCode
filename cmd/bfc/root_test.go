@@ -20,6 +20,7 @@ func run(t *testing.T, version string, args ...string) string {
 }
 
 func TestVersionPrintsInjectedVersion(t *testing.T) {
+	t.Parallel()
 	got := run(t, "v1.2.3", "version")
 	if got != "bfc v1.2.3\n" {
 		t.Errorf("got %q, want %q", got, "bfc v1.2.3\n")
@@ -27,12 +28,14 @@ func TestVersionPrintsInjectedVersion(t *testing.T) {
 }
 
 func TestVersionDefaultsToDev(t *testing.T) {
+	t.Parallel()
 	if version != "dev" {
 		t.Errorf("default version is %q, want %q", version, "dev")
 	}
 }
 
 func TestUsageListsCommands(t *testing.T) {
+	t.Parallel()
 	for _, args := range [][]string{nil, {"--help"}} {
 		got := run(t, "dev", args...)
 		for _, want := range []string{"Usage:", "Available Commands:", "version"} {

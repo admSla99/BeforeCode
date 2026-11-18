@@ -17,6 +17,11 @@ import (
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
+// waitLimit is how long a test waits for text on the screen. It is generous
+// because the other packages run their git-heavy tests in parallel at the
+// same time, which slows the renderer on a small CI machine (#72).
+const waitLimit = 10 * time.Second
+
 func init() {
 	// Golden files show times in local time, as bfc list does; pin it.
 	time.Local = time.UTC
@@ -105,13 +110,13 @@ func runUntil(t *testing.T, plans Plans, w, h int, want, then string, keys ...st
 	t.Helper()
 	tm := teatest.NewTestModel(t, NewPlanList(plans), teatest.WithInitialTermSize(w, h))
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), want) },
-		teatest.WithDuration(3*time.Second))
+		teatest.WithDuration(waitLimit))
 	for _, k := range keys {
 		tm.Send(press(k))
 	}
 	if then != "" {
 		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), then) },
-			teatest.WithDuration(3*time.Second))
+			teatest.WithDuration(waitLimit))
 	}
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
@@ -251,7 +256,7 @@ func TestPlanListScrollsToTheSelection(t *testing.T) {
 
 func TestPlanListAdaptsToResize(t *testing.T) {
 	tm := teatest.NewTestModel(t, NewPlanList(team()), teatest.WithInitialTermSize(80, 24))
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") })
+	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
 	tm.Send(tea.WindowSizeMsg{Width: 40, Height: 10})
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
@@ -287,7 +292,7 @@ func TestPlanListQuits(t *testing.T) {
 	for _, k := range []string{"q", "ctrl+c"} {
 		t.Run(k, func(t *testing.T) {
 			tm := teatest.NewTestModel(t, NewPlanList(team()))
-			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") })
+			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
 			tm.Send(press(k))
 			tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 		})
@@ -299,7 +304,7 @@ func TestPlanListCtrlCQuitsWhileTyping(t *testing.T) {
 	for _, start := range []string{"/", "n"} {
 		t.Run(start, func(t *testing.T) {
 			tm := teatest.NewTestModel(t, NewPlanList(team()))
-			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") })
+			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
 			tm.Send(press(start))
 			tm.Send(press("x"))
 			tm.Send(press("ctrl+c"))

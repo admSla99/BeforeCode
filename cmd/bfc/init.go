@@ -32,11 +32,7 @@ running init again is safe. If the remote already has plans, use bfc bootstrap.`
 			if local && cmd.Flags().Changed("remote") {
 				return errors.New("--local and --remote cannot be used together")
 			}
-			wd, err := os.Getwd()
-			if err != nil {
-				return err
-			}
-			s, err := store.Open(wd)
+			s, err := openStore(cmd)
 			if err != nil {
 				return err
 			}

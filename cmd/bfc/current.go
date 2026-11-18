@@ -79,11 +79,7 @@ still wins over it (bfc start). --clear removes it.`,
 
 // clearUsedPlan removes the plan set with bfc use. It needs no plans ref.
 func clearUsedPlan(cmd *cobra.Command) error {
-	wd, err := os.Getwd()
-	if err != nil {
-		return err
-	}
-	s, err := store.Open(wd)
+	s, err := openStore(cmd)
 	if err != nil {
 		return err
 	}

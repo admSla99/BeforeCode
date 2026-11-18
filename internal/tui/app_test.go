@@ -149,7 +149,7 @@ func startApp(t *testing.T, f *fakeTeam) *teatest.TestModel {
 func waitFor(t *testing.T, tm *teatest.TestModel, want string) {
 	t.Helper()
 	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), want) },
-		teatest.WithDuration(3*time.Second))
+		teatest.WithDuration(waitLimit))
 }
 
 func send(tm *teatest.TestModel, keys ...string) {

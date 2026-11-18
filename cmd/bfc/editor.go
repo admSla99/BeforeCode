@@ -48,6 +48,9 @@ func editText(cmd *cobra.Command, s *store.Store, pattern string, text []byte) (
 		return nil, "", fmt.Errorf("%w; your text is in %s", err, path)
 	}
 	run := exec.CommandContext(cmd.Context(), name, args...)
+	// Like git, run the editor at the top of the working tree, with the
+	// environment git gets.
+	run.Dir, run.Env = s.Root(), s.Environ()
 	run.Stdin, run.Stdout, run.Stderr = os.Stdin, os.Stdout, os.Stderr
 	if err := run.Run(); err != nil {
 		return nil, "", fmt.Errorf("editor %q failed: %w; your text is in %s", editor, err, path)

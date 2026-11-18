@@ -10,6 +10,7 @@ import (
 )
 
 func TestListIsTheSameAfterTheIndexIsDeleted(t *testing.T) {
+	t.Parallel()
 	dir, _, _ := threePlans(t)
 	db := filepath.Join(dir, ".git", "beforecode", "index.db")
 
@@ -42,6 +43,7 @@ func TestListIsTheSameAfterTheIndexIsDeleted(t *testing.T) {
 }
 
 func TestSearchPrintsMatchingPlansWithASnippet(t *testing.T) {
+	t.Parallel()
 	dir, ids, shorts := threePlans(t)
 	writeRef(t, dir, "plan", map[string][]byte{
 		core.PlanDir(ids["Old draft"]) + "/plan.md": []byte("## Approach\n\nRetry the webhook\nthree times.\n"),
@@ -64,6 +66,7 @@ func TestSearchPrintsMatchingPlansWithASnippet(t *testing.T) {
 }
 
 func TestSearchWithoutMatchesSaysSo(t *testing.T) {
+	t.Parallel()
 	dir, _, _ := threePlans(t)
 	out, err := bfcIn(t, dir, "search", "nothing", "here")
 	if err != nil || strings.TrimSpace(out) != `no plans match "nothing here"` {

@@ -4,7 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -77,11 +76,7 @@ const (
 // (ADR 0002 section 2).
 func openPlans(cmd *cobra.Command, mode access) (*store.Store, error) {
 	ctx := cmd.Context()
-	wd, err := os.Getwd()
-	if err != nil {
-		return nil, err
-	}
-	s, err := store.Open(wd)
+	s, err := openStore(cmd)
 	if err != nil {
 		return nil, err
 	}

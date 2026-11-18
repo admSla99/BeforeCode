@@ -11,16 +11,18 @@ import (
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
-// at sets the commit time of the next writes.
-func at(t *testing.T, minute int) time.Time {
+// at sets the commit time of the next writes through s. It opens s again
+// with the dates as its environment rather than calling t.Setenv, so that
+// the test can run in parallel.
+func at(t *testing.T, s *store.Store, minute int) time.Time {
 	t.Helper()
 	ts := time.Date(2026, 11, 16, 9, minute, 0, 0, time.UTC)
-	t.Setenv("GIT_COMMITTER_DATE", ts.Format(time.RFC3339))
-	t.Setenv("GIT_AUTHOR_DATE", ts.Format(time.RFC3339))
+	*s = *open(t, s.Root(), "GIT_COMMITTER_DATE="+ts.Format(time.RFC3339), "GIT_AUTHOR_DATE="+ts.Format(time.RFC3339))
 	return ts
 }
 
 func TestEntriesAndReadAtSeeOneCommitWhileTheRefMoves(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := open(t, newRepo(t))
 	first, err := s.Write(ctx, "one", map[string][]byte{"plans/a/intent.md": []byte("v1\n"), "format-version": []byte("1\n")})
@@ -62,6 +64,7 @@ func TestEntriesAndReadAtSeeOneCommitWhileTheRefMoves(t *testing.T) {
 }
 
 func TestTipOfAMissingRef(t *testing.T) {
+	t.Parallel()
 	s := open(t, newRepo(t))
 	if _, err := s.Tip(context.Background()); !errors.Is(err, store.ErrNotInitialised) {
 		t.Errorf("Tip = %v, want ErrNotInitialised", err)
@@ -69,13 +72,14 @@ func TestTipOfAMissingRef(t *testing.T) {
 }
 
 func TestLastChangedSinceACommitSeesOnlyNewerCommits(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := open(t, newRepo(t))
-	t1 := at(t, 1)
+	t1 := at(t, s, 1)
 	write(t, s, "a", map[string]string{"plans/a/intent.md": "a"})
 	write(t, s, "b", map[string]string{"plans/b/intent.md": "b"})
 	mid, _ := s.Tip(ctx)
-	t3 := at(t, 3)
+	t3 := at(t, s, 3)
 	write(t, s, "e", map[string]string{"plans/b/events/x.yaml": "e"})
 	tip, _ := s.Tip(ctx)
 
@@ -102,6 +106,7 @@ func TestLastChangedSinceACommitSeesOnlyNewerCommits(t *testing.T) {
 }
 
 func TestCommonDirIsTheAbsoluteGitDirectory(t *testing.T) {
+	t.Parallel()
 	dir := newRepo(t)
 	got, err := open(t, dir).CommonDir(context.Background())
 	if err != nil {
@@ -114,6 +119,7 @@ func TestCommonDirIsTheAbsoluteGitDirectory(t *testing.T) {
 }
 
 func TestBlobsReadsManyFilesInOneGo(t *testing.T) {
+	t.Parallel()
 	ctx := context.Background()
 	s := open(t, newRepo(t))
 	if _, err := s.Write(ctx, "files", map[string][]byte{"a": []byte("first\n"), "b": {}, "c": []byte("line\nwith\x00nul")}); err != nil {
