@@ -108,15 +108,13 @@ func run(t *testing.T, plans Plans, w, h int, want string, keys ...string) strin
 // then, for results that arrive asynchronously.
 func runUntil(t *testing.T, plans Plans, w, h int, want, then string, keys ...string) string {
 	t.Helper()
-	tm := teatest.NewTestModel(t, NewPlanList(plans), teatest.WithInitialTermSize(w, h))
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), want) },
-		teatest.WithDuration(waitLimit))
+	tm := newTestModel(t, NewPlanList(plans), w, h)
+	waitFor(t, tm, want)
 	for _, k := range keys {
 		tm.Send(press(k))
 	}
 	if then != "" {
-		teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), then) },
-			teatest.WithDuration(waitLimit))
+		waitFor(t, tm, then)
 	}
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
@@ -216,7 +214,7 @@ func TestPlanListLoadError(t *testing.T) {
 // AC-3: n asks for a title, creates the plan and shows it.
 func TestPlanListNewPlan(t *testing.T) {
 	plans := team()
-	golden(t, runUntil(t, plans, 80, 30, "IN-REVIEW", "Cache", "n", "C", "a", "c", "h", "e", "enter"))
+	golden(t, runUntil(t, plans, 80, 30, "IN-REVIEW", "bfc-n3w1", "n", "C", "a", "c", "h", "e", "enter"))
 	if len(plans.created) != 1 || plans.created[0] != "Cache" {
 		t.Errorf("NewPlan called with %q", plans.created)
 	}
@@ -255,8 +253,8 @@ func TestPlanListScrollsToTheSelection(t *testing.T) {
 }
 
 func TestPlanListAdaptsToResize(t *testing.T) {
-	tm := teatest.NewTestModel(t, NewPlanList(team()), teatest.WithInitialTermSize(80, 24))
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
+	tm := newTestModel(t, NewPlanList(team()), 80, 24)
+	waitFor(t, tm, "IN-REVIEW")
 	tm.Send(tea.WindowSizeMsg{Width: 40, Height: 10})
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
@@ -291,8 +289,8 @@ func TestPlanListFitsIn80x24(t *testing.T) {
 func TestPlanListQuits(t *testing.T) {
 	for _, k := range []string{"q", "ctrl+c"} {
 		t.Run(k, func(t *testing.T) {
-			tm := teatest.NewTestModel(t, NewPlanList(team()))
-			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
+			tm := newTestModel(t, NewPlanList(team()), 0, 0)
+			waitFor(t, tm, "IN-REVIEW")
 			tm.Send(press(k))
 			tm.WaitFinished(t, teatest.WithFinalTimeout(3*time.Second))
 		})
@@ -303,8 +301,8 @@ func TestPlanListQuits(t *testing.T) {
 func TestPlanListCtrlCQuitsWhileTyping(t *testing.T) {
 	for _, start := range []string{"/", "n"} {
 		t.Run(start, func(t *testing.T) {
-			tm := teatest.NewTestModel(t, NewPlanList(team()))
-			teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), "IN-REVIEW") }, teatest.WithDuration(waitLimit))
+			tm := newTestModel(t, NewPlanList(team()), 0, 0)
+			waitFor(t, tm, "IN-REVIEW")
 			tm.Send(press(start))
 			tm.Send(press("x"))
 			tm.Send(press("ctrl+c"))

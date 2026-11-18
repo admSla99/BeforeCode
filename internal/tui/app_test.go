@@ -141,15 +141,9 @@ func startApp(t *testing.T, f *fakeTeam) *teatest.TestModel {
 	t.Helper()
 	app := NewApp(f, f, AppOptions{Interval: time.Hour})
 	app.now = func() time.Time { return t0 }
-	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	tm := newTestModel(t, app, 80, 24)
 	waitFor(t, tm, "IN-REVIEW")
 	return tm
-}
-
-func waitFor(t *testing.T, tm *teatest.TestModel, want string) {
-	t.Helper()
-	teatest.WaitFor(t, tm.Output(), func(b []byte) bool { return strings.Contains(string(b), want) },
-		teatest.WithDuration(waitLimit))
 }
 
 func send(tm *teatest.TestModel, keys ...string) {
@@ -266,7 +260,8 @@ func TestAppRequestChangesAsksForTheReason(t *testing.T) {
 	tm := startAppWith(t, f, AppOptions{Interval: time.Hour, Local: true})
 	send(tm, "r", "x", "esc", "r", " ", "enter", "r")
 	send(tm, strings.Split("Split AC-1", "")...)
-	waitFor(t, tm, "Reason:")
+	// The first r already showed the prompt; wait for the typed reason.
+	waitFor(t, tm, "Reason: Split AC-1")
 	golden(t, screenAfter(t, tm, "enter", "request-changes: done"))
 	if got := f.count(&f.reviews); len(got) != 1 || got[0] != "request-changes bfc-5v7x Split AC-1" {
 		t.Errorf("reviews = %q", got)
@@ -325,7 +320,7 @@ func startAppWith(t *testing.T, f *fakeTeam, opts AppOptions) *teatest.TestModel
 	t.Helper()
 	app := NewApp(f, f, opts)
 	app.now = func() time.Time { return t0 }
-	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	tm := newTestModel(t, app, 80, 24)
 	waitFor(t, tm, "IN-REVIEW")
 	send(tm, "enter")
 	waitFor(t, tm, "Affected areas")
@@ -408,10 +403,12 @@ func TestAppStaysUsableDuringASlowSync(t *testing.T) {
 	f.syncFn = func() SyncResult { <-release; return SyncResult{Outcome: SyncOK} }
 	app := NewApp(f, f, AppOptions{Interval: time.Hour})
 	app.now = func() time.Time { return t0 }
-	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	tm := newTestModel(t, app, 80, 24)
 	defer close(release)
 	waitFor(t, tm, "IN-REVIEW")
 	send(tm, "enter")
+	// The list already shows the sync status, so wait for the detail first.
+	waitFor(t, tm, "Affected areas")
 	waitFor(t, tm, "⟳ syncing")
 	send(tm, "tab")
 	waitFor(t, tm, "Problem")
@@ -471,7 +468,7 @@ func TestAppListShowsTheSyncStatus(t *testing.T) {
 	}
 	app := NewApp(f, f, AppOptions{Interval: time.Hour})
 	app.now = func() time.Time { return t0 }
-	tm := teatest.NewTestModel(t, app, teatest.WithInitialTermSize(80, 24))
+	tm := newTestModel(t, app, 80, 24)
 	waitFor(t, tm, "Could not resolve")
 	golden(t, screen(t, tm))
 }
