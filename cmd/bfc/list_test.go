@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"regexp"
 	"strings"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -41,14 +42,14 @@ func newPlan(t *testing.T, dir, title string) (string, ulid.ULID) {
 	return "", ulid.ULID{}
 }
 
-var eventSeq uint64
+// eventSeq keeps the event IDs of addEvent apart; tests run in parallel.
+var eventSeq atomic.Uint64
 
 // addEvent writes an event for plan straight into the plans ref, as the
 // commands of later issues will.
 func addEvent(t *testing.T, dir string, plan ulid.ULID, e core.Event) {
 	t.Helper()
-	eventSeq++
-	e.ID = ulid.MustNew(ulid.Now()+eventSeq, strings.NewReader(strings.Repeat("\x01", 16)))
+	e.ID = ulid.MustNew(ulid.Now()+eventSeq.Add(1), strings.NewReader(strings.Repeat("\x01", 16)))
 	e.Plan = plan
 	if e.At.IsZero() {
 		e.At = time.Now()
