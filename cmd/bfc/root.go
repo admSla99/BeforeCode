@@ -23,7 +23,7 @@ func newRootCmd(version string) *cobra.Command {
 			return runTUI(cmd)
 		},
 	}
-	root.AddCommand(newVersionCmd(version), newInitCmd(), newNewCmd(), newListCmd(), newShowCmd(), newEditCmd(),
+	root.AddCommand(newVersionCmd(version), newInitCmd(), newNewCmd(), newListCmd(), newShowCmd(), newStartCmd(), newUseCmd(), newEditCmd(),
 		newSubmitCmd(), newApproveCmd(), newRequestChangesCmd(), newWithdrawCmd(),
 		newSearchCmd(), newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newDoctorCmd(), newCloseCmd(), newTUICmd())
 	return root

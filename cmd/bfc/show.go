@@ -17,18 +17,24 @@ import (
 
 func newShowCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "show <id>",
+		Use:   "show [id]",
 		Short: "Print a plan: header, intent.md and plan.md",
 		Long: `Print a plan: a header with its IDs, state, author and approvals, then
 intent.md and, if it exists, plan.md. The ID is a Short ID (bfc-5v7x), a
-prefix of at least four characters, or the full ULID.`,
-		Args: cobra.ExactArgs(1),
+prefix of at least four characters, or the full ULID. Without an ID it prints
+the Current plan (bfc start, bfc use).`,
+		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openPlans(cmd, forReading)
 			if err != nil {
 				return err
 			}
-			v, err := resolvePlan(cmd.Context(), s, args[0])
+			var v index.Plan
+			if len(args) == 0 {
+				v, err = currentPlan(cmd.Context(), s)
+			} else {
+				v, err = resolvePlan(cmd.Context(), s, args[0])
+			}
 			if err != nil {
 				return err
 			}
@@ -71,13 +77,17 @@ func resolvePlan(ctx context.Context, s *store.Store, query string) (index.Plan,
 // ambiguousError lists the candidates with their Short IDs, ULIDs and
 // titles. The ULID always tells them apart.
 func ambiguousError(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) error {
+	return fmt.Errorf("%q matches several plans; give a longer ID or the ULID:%s", amb.Query, candidates(amb, byID))
+}
+
+// candidates lists the plans of amb, one indented line each.
+func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "%q matches several plans; give a longer ID or the ULID:", amb.Query)
 	for _, c := range amb.Candidates {
 		v := byID[c.ID]
 		fmt.Fprintf(&b, "\n  %s  %s  %s", v.ShortID, c.ID, v.Title)
 	}
-	return errors.New(b.String())
+	return b.String()
 }
 
 func printPlan(w io.Writer, v index.Plan) error {

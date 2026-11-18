@@ -28,3 +28,9 @@ The **Current plan** is the plan that the work in a clone belongs to. `bfc prime
 - Branches made by `bfc start` look like `bfc-a1b2-payments-via-stripe`. Renaming a branch keeps the binding as long as the Short ID stays in the name.
 - Every worktree has its own HEAD, so worktrees (phase 3) each get their own Current plan without extra work.
 - Two plans created offline can share a Short ID (ADR 0002 section 8). Such a Short ID in a branch name is ambiguous and reported like an unknown one; a branch named with a longer prefix settles it.
+
+## Notes from the implementation (#56)
+
+- Only the **first** Short ID in the branch name counts, so a title that itself contains something like `bfc-xxxx` in the slug does not compete with it. It is resolved like any plan ID (`core.ResolveID`), which is how "a longer prefix settles it".
+- `.git/beforecode/current` lives in the worktree's own git directory (`git rev-parse --absolute-git-dir`), not the common one, so in phase 3 every worktree also has its own `bfc use`, as it has its own HEAD.
+- `bfc start` reuses the local branch whose first Short ID is the plan's; with several, it lists them and switches to none.
