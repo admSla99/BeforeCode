@@ -4,9 +4,9 @@ Date: 2026-11-18. Status: accepted. Settled with the maintainer in the phase 2 g
 
 ## Decision
 
-`bfc setup <harness>` writes the project files a harness reads. For Claude Code (`bfc setup claude`) these are `.claude/settings.json` (the `SessionStart` and `PreToolUse` hooks, `permissions.allow` for the commands agents use and `permissions.deny` for the Gates) and `.claude/commands/` (the slash commands `/bfc-grill` and `/bfc-plan`).
+`bfc setup <harness>` writes the project files a harness reads. For Claude Code (`bfc setup claude`) these are `.claude/settings.json` (the `PreToolUse` hook, `permissions.allow` for the commands agents use and `permissions.deny` for the Gates) and `.claude/skills/beforecode/SKILL.md` (the `beforecode` skill, which points to `bfc prime`; ADR 0008). There is no `SessionStart` hook and no `.claude/commands/` (#55, decision 9).
 
-These files are committed to normal branches and changed through pull requests, like `.beforecode/config.yaml`. `bfc setup` merges into an existing `.claude/settings.json` and keeps every other key, hook and permission; running it twice changes nothing. It never commits and never touches the Plans ref; it tells the user to commit `.claude/` through a pull request.
+These files are committed to normal branches and changed through pull requests, like `.beforecode/config.yaml`. `bfc setup` merges into an existing `.claude/settings.json` and keeps every other key, hook and permission; running it twice changes nothing. Other files under `.claude/skills/` are left alone. It never commits and never touches the Plans ref; it tells the user to commit `.claude/` through a pull request.
 
 **Why on branches.** A hook that only applies to some teammates is no control. Committed project settings reach everyone who runs Claude Code in the repository, and a change to them is reviewed like a change to the approval policy.
 

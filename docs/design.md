@@ -1,6 +1,6 @@
 # BeforeCode design
 
-Last updated: 2026-11-18. Decisions marked **confirmed** were made by the maintainer and are not open for redesign.
+Last updated: 2026-11-19. Decisions marked **confirmed** were made by the maintainer and are not open for redesign.
 
 BeforeCode (`bfc`) is an open source TUI where a team writes, challenges ("grills"), approves and shares plans for AI coding agents. Agents implement only against an approved plan. It packages an AI-native software development lifecycle into one tool that works with nothing but Git.
 
@@ -44,7 +44,7 @@ Plannotator (plan review UI with annotations fed back to the agent), GitHub Spec
 | License | Apache-2.0 |
 | Command | `bfc` |
 | Storage | Hidden git ref `refs/beforecode/plans`, Beads-style, without Dolt |
-| Normal branches | Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (for Claude Code `.claude/settings.json` and `.claude/commands/`), changed through pull requests (ADR 0010) |
+| Normal branches | Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (for Claude Code `.claude/settings.json` and `.claude/skills/beforecode/SKILL.md`), changed through pull requests (ADR 0010) |
 | Hosting | GitHub only. The hidden ref is verified on real GitHub (ADR 0001) |
 | Scope | One repository. No plans spanning repositories |
 | Plan format | Two documents: a short `intent.md` and a `plan.md` for agents with acceptance criteria |
@@ -164,12 +164,12 @@ Editing `plan.md` writes no event. Approvals name the `plan_blob` they approve (
 Agents use the same `bfc` commands as people, with `--json` where they read (ADR 0008). The flow in phase 2:
 
 1. `bfc start <id>` creates or switches to the branch `<Short ID>-<slug>`, for example `bfc-a1b2-payments-via-stripe`; the Short ID in the branch name makes the plan the **Current plan** (ADR 0009). The slug is the title in lower-case ASCII letters and digits, diacritics removed, words joined by `-`, at most 48 characters. Everyone who works on a plan works on one branch: `bfc start` first fetches the branches of the sync remote, then takes the local branch that carries the Short ID (such as `feat/bfc-a1b2`), else the plan's branch of the remote, which it checks out tracking it, else it creates a new one and says how to push it. It says when the local branch is behind its upstream. It never pushes; without the network it warns and uses what the clone knows. Several matching branches are listed and none is chosen. `bfc use <id>` sets the Current plan without a branch, in `beforecode/current` of the worktree's own git directory (`.git/beforecode/current` in a plain clone); `bfc use --clear` removes it. The first Short ID in the branch name counts and is resolved like any plan ID, so a longer prefix settles an ambiguous one.
-2. A Claude Code session starts with **Prime**: a `SessionStart` hook runs `bfc prime`, which prints how to work with `bfc` and the Current plan.
+2. The user does not run the CLI; the agent does, and people use the TUI, where the Gates are. Claude Code gets its instructions from **Prime**: the `beforecode` skill, which Claude Code loads whenever the user talks about plans, intents, grilling, what to work on or what waits on them, only tells it to run `bfc prime` and follow it. There is no `SessionStart` hook, so unrelated sessions do not get the plan in their context (ADR 0008).
 
    `bfc prime [id]` prints Markdown for the agent, at most 8 kB (issue #60): the instructions (the commands an agent may use, that the user works in the TUI, that Gates are for people, that edits need an approved plan, how to record a deviation with `bfc ask --ref plan.md#AC-n`); **Waiting on you** for the git author of the clone (plans in review they may approve now, with "open `bfc` and press `a`", and open Questions addressed to them); then the Current plan or the given one, with its state, Approvals, open Questions and `plan.md` (or `intent.md` while there is none) in a fenced block. Each list stops after ten items with a note on where to see the rest, and a `plan.md` that does not fit is cut at a line with a note to run `bfc show <id>`. A plan with an open Question is not listed for review, because it cannot be approved. Without a plan it lists the approved plans and says how to start one. `bfc prime` reads only the local plans ref and always exits 0: a missing plans ref, an unknown ID or a branch that names a missing plan is printed as a note. `bfc prime <topic> [id]` prints the instructions for one task; topics come with later issues (`grill`, `plan`), and with two arguments an unknown topic is an error that lists the known ones.
-3. The `PreToolUse` hook (`bfc hook pre-tool-use`) blocks `Edit`, `Write`, `MultiEdit` and `NotebookEdit` unless the Current plan is `approved`. Files under `.beforecode/` and `.claude/` are exempt; Bash is not blocked. `claude.enforce: false` turns it off (ADR 0011).
+3. The `PreToolUse` hook (`bfc hook pre-tool-use`) blocks `Edit`, `Write`, `MultiEdit` and `NotebookEdit` unless the Current plan is `approved`, and its block message tells the agent to run `bfc prime`. Files under `.beforecode/` and `.claude/` are exempt; Bash is not blocked. `claude.enforce: false` turns it off (ADR 0011).
 4. The **Gates** (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside an agent, detected through `CLAUDECODE`, and `bfc setup claude` denies them in `.claude/settings.json`. This guards against mistakes, not against an agent that unsets the variable (ADR 0011).
-5. `bfc setup claude` writes the hooks, the permissions and the slash commands `/bfc-grill` and `/bfc-plan` into `.claude/`, which is committed through a pull request (ADR 0010).
+5. `bfc setup claude` writes the `PreToolUse` hook and the permissions into `.claude/settings.json` and the `beforecode` skill into `.claude/skills/beforecode/SKILL.md`, which are committed through a pull request (ADR 0010). The skill's text ships in the binary and is rewritten on every run, so it matches the installed `bfc` (issue #63). There are no slash commands.
 
 **The Grill is stored as Messages** (ADR 0002 section 7), with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, which the agent records word for word, has no `agent` and is a direct reply from the plan author, so it answers the Question. `bfc ask` and `bfc reply` write them.
 
@@ -224,8 +224,8 @@ The index is `.git/beforecode/index.db`. It records the plans ref commit it was 
     intent.md
     plan.md
 .claude/                      # written by bfc setup claude (ADR 0010)
-  settings.json               # SessionStart and PreToolUse hooks, permissions
-  commands/                   # /bfc-grill, /bfc-plan
+  settings.json               # PreToolUse hook, permissions
+  skills/beforecode/SKILL.md  # points the agent to bfc prime
 
 # In the hidden ref refs/beforecode/plans (managed only by bfc)
 format-version
@@ -285,7 +285,7 @@ See `docs/adr/0001-plans-in-a-hidden-git-ref.md` for what was verified and the c
 | Index | SQLite (`modernc.org/sqlite`, no CGO) with FTS5 | Full-text search and Inbox without a C toolchain |
 | Agents | Claude Code headless (`claude -p --output-format stream-json`) as a subprocess | Uses the user's own subscription and settings; the same pattern fits other harnesses |
 | Agent interface | The `bfc` CLI with `--json`; `bfc prime` for instructions | One interface for people, scripts and agents; any harness with a shell can use it. No MCP server and no daemon (ADR 0008) |
-| Claude Code integration | Hooks, permissions and slash commands written by `bfc setup claude` into `.claude/` | A `SessionStart` hook runs `bfc prime`; a `PreToolUse` hook blocks code edits without an approved plan (ADR 0011) |
+| Claude Code integration | The `beforecode` skill, a hook and permissions written by `bfc setup claude` into `.claude/` | The skill loads when the user talks about plans and points to `bfc prime`; a `PreToolUse` hook blocks code edits without an approved plan (ADR 0008, 0011) |
 | Tests | `teatest` for the TUI, golden files, integration tests on temporary git repositories | Two "team members" can be simulated without a network |
 | Release | GoReleaser, Homebrew tap, `go install` | Binaries for all platforms |
 
@@ -330,9 +330,9 @@ Everything inside the `bfc` box runs locally for each team member; team members 
 ### Main flows
 
 1. **New plan**: the developer creates a plan in the TUI; the core writes `intent.md` and a `created` event to the plans ref and syncs.
-2. **Grill**: in the TUI the core loads a Skill and starts Claude Code headless through the agent adapter; in Claude Code the developer runs `/bfc-grill`. Either way each Question and answer is stored as a Message with `bfc ask` and `bfc reply`. `/bfc-plan` then writes `plan.md` through `bfc edit --stdin`.
+2. **Grill**: in the TUI the core loads a Skill and starts Claude Code headless through the agent adapter; in Claude Code the developer asks for a grill and the agent follows `bfc prime grill <id>`. Either way each Question and answer is stored as a Message with `bfc ask` and `bfc reply`. The agent then writes `plan.md` through `bfc edit --stdin`, following `bfc prime plan <id>`.
 3. **Review**: after sync a colleague sees the plan, comments, asks questions, and approves. The approval is an event carrying their name. Gates are taken by people only.
-4. **Build**: the developer runs `bfc start <id>` and Claude Code in that branch. The session starts with `bfc prime`; the agent reads the plan with `bfc show --json`, and a hook blocks edits unless the Current plan is approved. In phase 3 the Build screen starts agents on claimed tasks in worktrees, and agents write handoffs with a `bfc` command.
+4. **Build**: the developer runs `bfc start <id>` and Claude Code in that branch. The agent runs `bfc prime` when the user talks about the plan and reads it with `bfc show --json`, and a hook blocks edits unless the Current plan is approved. In phase 3 the Build screen starts agents on claimed tasks in worktrees, and agents write handoffs with a `bfc` command.
 5. **Check**: GitHub Actions compares the pull request with the plan and reports findings to the pull request and the plan author's Inbox.
 
 ### Agent adapter interface
@@ -370,7 +370,7 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 and 1 
 | --- | --- | --- |
 | **0. Foundations and GitHub verification** | Go module, package layout, CI, license, contribution docs, skills in the repo. Spike: hidden ref on real GitHub (push, fetch, concurrent write, read and write from Actions). ADR for data format v1 | CI is green and the spike confirms the hidden ref works on GitHub |
 | **1. Plans in the hidden ref, no AI (MVP)** | `bfc init`, `bootstrap`, `new`, `list`, `show`, `edit`, `submit`, `approve`, `push`, `pull`, `doctor`. `intent.md` and `plan.md`, state from events, short IDs, SQLite index, TUI list and detail | Two people on two machines create, edit and approve a plan through GitHub without conflicts |
-| **2. Claude Code integration** | Decisions in ADR 0008 to 0011. The Current plan (`bfc start`, `bfc use`), Gates for people, `bfc ask` and `bfc reply`, the agent adapter for Claude Code headless, `bfc prime` and `bfc show --json`, `bfc hook pre-tool-use`, `bfc setup claude`, skills in the binary with `/bfc-grill`, `bfc edit --stdin` with `/bfc-plan`, the TUI Grill screen | A developer goes from an Intent through a Grill in the TUI to an approved plan, and Claude Code set up with `bfc setup claude` implements it while the hook blocks edits without an approved plan |
+| **2. Claude Code integration** | Decisions in ADR 0008 to 0011. The Current plan (`bfc start`, `bfc use`), Gates for people, `bfc ask` and `bfc reply`, the agent adapter for Claude Code headless, `bfc prime` and `bfc show --json`, `bfc hook pre-tool-use`, `bfc setup claude`, the `beforecode` skill, skills in the binary with `bfc prime grill`, `bfc edit --stdin` with `bfc prime plan`, the TUI Grill screen | A developer goes from an Intent through a Grill in the TUI to an approved plan, and Claude Code set up with `bfc setup claude` implements it while the hook blocks edits without an approved plan |
 | **3. Team collaboration and plan check** | Questions with addressees, threads on sections, AI in Threads, Inbox, configurable approval. Tasks, `bfc ready`, `bfc claim`, handoffs, `bfc ask --wait`. The Build screen and worktrees. GitHub Actions workflow with Claude Code for the plan check | A pull request outside the plan gets the label and the plan author sees the finding in the Inbox |
 | **4. Harness independence** | Adapters for Codex, OpenCode, Gemini CLI and a generic adapter over ACP. Export of rules to `AGENTS.md` | The same plan is implemented by at least one other harness without changing the plan |
 | **5. Notifications and learning from the loop** | Email notifications. Archive of finished plans, metrics, proposed skill changes from recurring findings | A reviewer gets an email and a plan retro proposes a skill change |
