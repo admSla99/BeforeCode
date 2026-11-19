@@ -165,7 +165,7 @@ sync:
 	}
 	fmt.Fprintf(&b, `
 claude:
-  # The command that starts Claude Code, a name on PATH or a path.
+  # The command that starts Claude Code: a name on PATH or an absolute path.
   command: %s
   # false: the PreToolUse hook allows edits without an approved plan.
   enforce: %t

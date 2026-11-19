@@ -24,3 +24,19 @@ recording machine:
 The recording environment emits `stream_event` lines (partial messages) and
 other line types such as `rate_limit_event`; the adapter ignores the types it
 does not use.
+
+What the recording showed about the command line of Claude Code 2.1.328:
+
+- `-p` (`--print`) is a boolean flag; the prompt is a positional argument.
+  `--allowedTools` takes several values, so the adapter ends the options
+  with `--` and puts the prompt after it. This was checked with the real
+  binary: `claude -p --output-format stream-json --verbose --allowedTools
+  Read -- "--help: reply with exactly ok"` answered `ok`.
+- `--output-format stream-json` needs `--verbose` with `-p`.
+- Each line is one JSON object with a `type`. The adapter reads
+  `assistant` (`message.content` blocks of type `text` and `tool_use`) and
+  `result` (`result`, `is_error`, `errors`, `session_id`). Every line
+  carries `session_id`; `--resume` with the session of the previous result
+  continues it.
+- A failed `--resume` prints a `result` line with `is_error: true` and the
+  message in `errors`, writes the same message to standard error and exits 1.

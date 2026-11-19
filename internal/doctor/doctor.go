@@ -210,6 +210,10 @@ func pass(format string, args ...any) Result {
 	return Result{Status: Pass, Detail: fmt.Sprintf(format, args...)}
 }
 
+func warn(format string, args ...any) Result {
+	return Result{Status: Warn, Detail: fmt.Sprintf(format, args...)}
+}
+
 func fail(fix, format string, args ...any) Result {
 	return Result{Status: Fail, Detail: fmt.Sprintf(format, args...), Fix: fix}
 }
@@ -273,8 +277,7 @@ func checkClaude(_ context.Context, e *env) Result {
 	command := e.cfg.Command()
 	path, err := exec.LookPath(command)
 	if err != nil {
-		return Result{Status: Warn, Detail: fmt.Sprintf(
-			"%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)}
+		return warn("%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)
 	}
 	return pass("%s is %s", command, path)
 }

@@ -47,12 +47,13 @@ func (Agent) Capabilities() agent.Caps {
 
 // Run implements agent.Agent. It starts
 //
-//	<command> -p <prompt> --output-format stream-json --verbose [--resume <session>] [--allowedTools <tool>...]
+//	<command> -p --output-format stream-json --verbose [--resume <session>] [--allowedTools <tool>...] -- <prompt>
 //
-// in t.Dir and sends one Event for each assistant text, tool call and
-// result. A result that reports an error, a line that is not JSON, a
-// non-zero exit and a cancelled ctx each become an Error Event. Read the
-// channel until it closes.
+// in t.Dir and sends one event for each assistant text, tool call and
+// result. A result that reports an error, a line that is not JSON and a
+// non-zero exit each become an error event; so does a cancelled ctx that
+// stopped the process. After cancelling, a caller may stop reading: Run
+// then drops the remaining events and its goroutines end.
 func (a Agent) Run(ctx context.Context, t agent.Task) (<-chan agent.Event, error) {
 	cmd := exec.CommandContext(ctx, a.opts.Command, args(t)...)
 	cmd.Dir = t.Dir
@@ -62,8 +63,8 @@ func (a Agent) Run(ctx context.Context, t agent.Task) (<-chan agent.Event, error
 	cmd.WaitDelay = waitDelay
 	pr, pw := io.Pipe()
 	cmd.Stdout = pw
-	var stderr bytes.Buffer
-	cmd.Stderr = &stderr
+	stderr := &headWriter{max: maxStderr}
+	cmd.Stderr = stderr
 	if err := cmd.Start(); err != nil {
 		return nil, err
 	}
@@ -77,14 +78,23 @@ func (a Agent) Run(ctx context.Context, t agent.Task) (<-chan agent.Event, error
 	ch := make(chan agent.Event)
 	go func() {
 		defer close(ch)
+		// send delivers e unless the caller cancelled and stopped reading.
+		send := func(e agent.Event) {
+			select {
+			case ch <- e:
+			case <-ctx.Done():
+			}
+		}
 		failed := false
 		r := bufio.NewReader(pr)
 		for {
+			// Keep reading after a cancel, so that the process's output
+			// never blocks.
 			data, readErr := r.ReadBytes('\n')
 			if data = bytes.TrimSpace(data); len(data) > 0 {
 				for _, e := range parse(data) {
 					failed = failed || e.Kind == agent.Error
-					ch <- e
+					send(e)
 				}
 			}
 			if readErr != nil {
@@ -92,15 +102,45 @@ func (a Agent) Run(ctx context.Context, t agent.Task) (<-chan agent.Event, error
 			}
 		}
 		err := <-waited
+		var last agent.Event
 		switch {
-		case ctx.Err() != nil:
-			ch <- errorEvent(fmt.Errorf("claude was stopped: %w", ctx.Err()), "")
+		case err != nil && ctx.Err() != nil:
+			last = errorEvent(fmt.Errorf("claude was stopped: %w", ctx.Err()), "")
 		case err != nil && !failed:
-			ch <- errorEvent(exitError(err, stderr.String()), "")
+			last = errorEvent(exitError(err, stderr.String()), "")
+		default:
+			return
+		}
+		// The context may be done already: wait a little for a caller
+		// that still reads, but not for one that left.
+		timer := time.NewTimer(waitDelay)
+		defer timer.Stop()
+		select {
+		case ch <- last:
+		case <-timer.C:
 		}
 	}()
 	return ch, nil
 }
+
+// maxStderr is how much of the standard error of claude Run keeps for an
+// error event.
+const maxStderr = 4096
+
+// headWriter keeps the first max bytes written to it.
+type headWriter struct {
+	max int
+	buf bytes.Buffer
+}
+
+func (w *headWriter) Write(p []byte) (int, error) {
+	if room := w.max - w.buf.Len(); room > 0 {
+		w.buf.Write(p[:min(len(p), room)])
+	}
+	return len(p), nil
+}
+
+func (w *headWriter) String() string { return w.buf.String() }
 
 // waitDelay is how long Run waits for the output to close after the
 // process was stopped or exited.
@@ -127,7 +167,7 @@ func errorEvent(err error, session string) agent.Event {
 
 // args returns the arguments of claude for t.
 func args(t agent.Task) []string {
-	a := []string{"-p", t.Prompt, "--output-format", "stream-json", "--verbose"}
+	a := []string{"-p", "--output-format", "stream-json", "--verbose"}
 	if t.Session != "" {
 		a = append(a, "--resume", t.Session)
 	}
@@ -135,7 +175,8 @@ func args(t agent.Task) []string {
 		a = append(a, "--allowedTools")
 		a = append(a, t.AllowedTools...)
 	}
-	return a
+	// After --, a prompt that starts with - is not read as a flag.
+	return append(a, "--", t.Prompt)
 }
 
 // line is the part of a stream-json line that bfc reads.

@@ -7,6 +7,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"strings"
 	"testing"
 	"time"
 
@@ -45,7 +46,7 @@ func fixture(t *testing.T, name string) string {
 }
 
 // collect runs a and returns every Event until the channel closes.
-func collect(t *testing.T, ctx context.Context, a agent.Agent, task agent.Task) []agent.Event {
+func collect(ctx context.Context, t *testing.T, a agent.Agent, task agent.Task) []agent.Event {
 	t.Helper()
 	events, err := a.Run(ctx, task)
 	if err != nil {
@@ -69,7 +70,7 @@ func collect(t *testing.T, ctx context.Context, a agent.Agent, task agent.Task) 
 func TestARecordedTurnBecomesTextAndAResultWithTheSession(t *testing.T) {
 	t.Parallel()
 	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + fixture(t, "hello.jsonl")}})
-	got := collect(t, t.Context(), a, agent.Task{Prompt: "Reply with exactly: hi", Dir: t.TempDir()})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "Reply with exactly: hi", Dir: t.TempDir()})
 	const session = "af62e7a3-81bf-4feb-8823-550215fc2f29"
 	want := []agent.Event{
 		{Kind: agent.Text, Text: "hi", Session: session},
@@ -100,7 +101,7 @@ func TestAResumedTurnPassesTheSessionToolsAndDirectoryAndReportsTheToolUse(t *te
 		"FAKECLAUDE_FIXTURE=" + fixture(t, "tool.jsonl"),
 		"FAKECLAUDE_ARGS=" + record,
 	}})
-	got := collect(t, t.Context(), a, agent.Task{
+	got := collect(t.Context(), t, a, agent.Task{
 		Prompt:       "Read notes.txt with the Read tool and tell me its first word.",
 		Session:      session,
 		AllowedTools: []string{"Read", "Bash(bfc show:*)"},
@@ -122,10 +123,10 @@ func TestAResumedTurnPassesTheSessionToolsAndDirectoryAndReportsTheToolUse(t *te
 	}
 	wantDir, _ := filepath.EvalSymlinks(dir)
 	want := "dir=" + wantDir + "\n" +
-		"-p\nRead notes.txt with the Read tool and tell me its first word.\n" +
-		"--output-format\nstream-json\n--verbose\n" +
+		"-p\n--output-format\nstream-json\n--verbose\n" +
 		"--resume\n" + session + "\n" +
-		"--allowedTools\nRead\nBash(bfc show:*)\n"
+		"--allowedTools\nRead\nBash(bfc show:*)\n" +
+		"--\nRead notes.txt with the Read tool and tell me its first word.\n"
 	if gotArgs := string(data); gotArgs != want {
 		t.Errorf("claude was started with\n%s\nwant\n%s", gotArgs, want)
 	}
@@ -142,7 +143,7 @@ func TestAFailedRunEndsWithOneErrorNamingTheCause(t *testing.T) {
 		"FAKECLAUDE_STDERR=" + string(stderr),
 		"FAKECLAUDE_EXIT=1",
 	}})
-	got := collect(t, t.Context(), a, agent.Task{Prompt: "hi", Session: "00000000-0000-4000-8000-000000000000", Dir: t.TempDir()})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Session: "00000000-0000-4000-8000-000000000000", Dir: t.TempDir()})
 	assertEvents(t, got, []agent.Event{{
 		Kind:    agent.Error,
 		Text:    "No conversation found with session ID: 00000000-0000-4000-8000-000000000000",
@@ -159,7 +160,7 @@ func TestAProcessThatExitsNonZeroWithoutAResultBecomesAnErrorWithItsStderr(t *te
 		"FAKECLAUDE_STDERR=Invalid API key · Please run /login\n",
 		"FAKECLAUDE_EXIT=1",
 	}})
-	got := collect(t, t.Context(), a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
 	assertEvents(t, got, []agent.Event{{Kind: agent.Error, Text: "claude exited with status 1: Invalid API key · Please run /login"}})
 }
 
@@ -170,7 +171,7 @@ func TestALineThatIsNotJSONBecomesAnError(t *testing.T) {
 		t.Fatal(err)
 	}
 	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + bad}})
-	got := collect(t, t.Context(), a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
 	assertEvents(t, got, []agent.Event{{Kind: agent.Error, Text: `claude printed a line that is not JSON: "Welcome to Claude Code"`}})
 }
 
@@ -204,5 +205,34 @@ func TestACommandThatDoesNotExistFailsToStart(t *testing.T) {
 	a := claude.New(claude.Options{Command: filepath.Join(t.TempDir(), "no-claude")})
 	if _, err := a.Run(t.Context(), agent.Task{Prompt: "hi", Dir: t.TempDir()}); err == nil {
 		t.Error("Run succeeded")
+	}
+}
+
+func TestAPromptThatLooksLikeAFlagIsPassedAsThePrompt(t *testing.T) {
+	t.Parallel()
+	record := filepath.Join(t.TempDir(), "args")
+	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_ARGS=" + record}})
+	collect(t.Context(), t, a, agent.Task{Prompt: "--help", Dir: t.TempDir()})
+	data, err := os.ReadFile(record)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if !strings.HasSuffix(string(data), "\n--\n--help\n") {
+		t.Errorf("the prompt does not follow --:\n%s", data)
+	}
+}
+
+func TestALongStderrIsCutInTheError(t *testing.T) {
+	t.Parallel()
+	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{
+		"FAKECLAUDE_STDERR=" + strings.Repeat("x", 100_000),
+		"FAKECLAUDE_EXIT=3",
+	}})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
+	if len(got) != 1 || got[0].Kind != agent.Error {
+		t.Fatalf("got %+v, want one Error", got)
+	}
+	if !strings.HasPrefix(got[0].Text, "claude exited with status 3: xxx") || len(got[0].Text) > 5000 {
+		t.Errorf("error text of %d bytes starts %.60q", len(got[0].Text), got[0].Text)
 	}
 }

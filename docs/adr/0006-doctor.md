@@ -24,8 +24,9 @@ Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #18.
 | plans | a plan has no valid `created` event (an invalid plan) | no repair; `bfc new` | |
 | skipped events | (warning) events that state derivation skips | | |
 | short IDs | (warning) two plans with the same stored Short ID | | |
+| claude | (warning) `claude.command` from the config (default `claude`) is not found on `PATH`; added in #59 | install Claude Code, or set `claude.command` | |
 
-**Severity.** Skipped events and duplicate Short IDs are warnings. ADR 0002 produces both on purpose under concurrent work: an `approved` after a `changes-requested` is skipped, and two plans created offline can share a Short ID. Neither is wrong, so neither changes the exit code.
+**Severity.** Skipped events and duplicate Short IDs are warnings. ADR 0002 produces both on purpose under concurrent work: an `approved` after a `changes-requested` is skipped, and two plans created offline can share a Short ID. Neither is wrong, so neither changes the exit code. A missing Claude Code is a warning too: `bfc` works without it, and only the TUI Grill and the hook need it.
 
 **The index passes while it is only behind.** A missing index, or one built from an older plans ref commit, is normal after a pull: the next read builds or updates it without a message (ADR 0005). Only a database that cannot be read fails. The check opens the database read-only (`mode=ro`), checks the schema version and runs `PRAGMA quick_check`. Running `bfc doctor` without `--fix` never changes the index.
 

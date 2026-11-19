@@ -347,7 +347,7 @@ type Agent interface {
 }
 ```
 
-A Task is one turn: the prompt, an optional session to resume, the allowed tools and the working directory. An Event is text, a tool use, the result (which carries the session id for the next turn) or an error; a failed or cancelled run ends with an error Event, never a panic or a hang. The Claude Code adapter (`internal/agent/claude`, #59) runs `<claude.command> -p <prompt> --output-format stream-json --verbose [--resume <session>] [--allowedTools …]` and reads the `assistant` and `result` lines; its tests replay output recorded from a real Claude Code 2.1.328 through a fake binary.
+Here `Task` and `Event` are the adapter's own types, not the Tasks of `plan.md` or the Events of the Plans ref: an `agent.Task` is one turn of the harness (the prompt, an optional harness session to resume, the allowed tools and the working directory), and an `agent.Event` is one item of its output: text, a tool use, the result (which carries the session id for the next turn) or an error. A failed or cancelled run ends with an error, never a panic or a hang. The Claude Code adapter (`internal/agent/claude`, #59) runs `<claude.command> -p --output-format stream-json --verbose [--resume <session>] [--allowedTools …] -- <prompt>` and reads the `assistant` and `result` lines; its tests replay output recorded from a real Claude Code 2.1.328 through a fake binary.
 
 ### Package layout
 

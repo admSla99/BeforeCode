@@ -159,6 +159,7 @@ func TestRenderWritesTheCurrentVersion(t *testing.T) {
 }
 
 func TestParseReadsVersionThreeWithAClaudeSection(t *testing.T) {
+	t.Parallel()
 	got, err := config.Parse([]byte("version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: /opt/bin/claude-2\n  enforce: false\n"))
 	if err != nil {
 		t.Fatal(err)
@@ -169,6 +170,7 @@ func TestParseReadsVersionThreeWithAClaudeSection(t *testing.T) {
 }
 
 func TestTheClaudeSectionDefaultsToClaudeAndEnforce(t *testing.T) {
+	t.Parallel()
 	for _, src := range []string{
 		"version: 1\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
 		"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
