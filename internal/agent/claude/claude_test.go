@@ -121,15 +121,33 @@ func TestAResumedTurnPassesTheSessionToolsAndDirectoryAndReportsTheToolUse(t *te
 	if err != nil {
 		t.Fatal(err)
 	}
-	wantDir, _ := filepath.EvalSymlinks(dir)
-	want := "dir=" + wantDir + "\n" +
-		"-p\n--output-format\nstream-json\n--verbose\n" +
+	// The process may name the same directory differently: through a
+	// symbolic link (macOS) or by its 8.3 short name (Windows).
+	firstLine, gotArgs, _ := strings.Cut(string(data), "\n")
+	if !sameDir(t, strings.TrimPrefix(firstLine, "dir="), dir) {
+		t.Errorf("claude ran in %s, want %s", firstLine, dir)
+	}
+	want := "-p\n--output-format\nstream-json\n--verbose\n" +
 		"--resume\n" + session + "\n" +
 		"--allowedTools\nRead\nBash(bfc show:*)\n" +
 		"--\nRead notes.txt with the Read tool and tell me its first word.\n"
-	if gotArgs := string(data); gotArgs != want {
+	if gotArgs != want {
 		t.Errorf("claude was started with\n%s\nwant\n%s", gotArgs, want)
 	}
+}
+
+// sameDir reports whether the paths a and b name the same directory.
+func sameDir(t *testing.T, a, b string) bool {
+	t.Helper()
+	fa, err := os.Stat(a)
+	if err != nil {
+		t.Fatal(err)
+	}
+	fb, err := os.Stat(b)
+	if err != nil {
+		t.Fatal(err)
+	}
+	return os.SameFile(fa, fb)
 }
 
 func TestAFailedRunEndsWithOneErrorNamingTheCause(t *testing.T) {
