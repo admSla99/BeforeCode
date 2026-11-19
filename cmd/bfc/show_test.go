@@ -8,8 +8,8 @@ import (
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
-// shownJSON is the shape of bfc show --json, documented in docs/design.md.
-type shownJSON struct {
+// showOutput is the shape of bfc show --json, documented in docs/design.md.
+type showOutput struct {
 	ID                 string      `json:"id"`
 	ShortID            string      `json:"short_id"`
 	State              string      `json:"state"`
@@ -31,10 +31,10 @@ type shownJSON struct {
 	} `json:"open_questions"`
 }
 
-func showAsJSON(t *testing.T, dir string, args ...string) shownJSON {
+func showAsJSON(t *testing.T, dir string, args ...string) showOutput {
 	t.Helper()
 	out := mustBfc(t, dir, append([]string{"show", "--json"}, args...)...)
-	var got shownJSON
+	var got showOutput
 	if err := json.Unmarshal([]byte(out), &got); err != nil {
 		t.Fatalf("not JSON: %v\n%s", err, out)
 	}

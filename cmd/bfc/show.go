@@ -68,7 +68,7 @@ type showJSON struct {
 
 func printPlanJSON(cmd *cobra.Command, v index.Plan, open []core.Message) error {
 	out := showJSON{
-		planJSON:           listJSON(v),
+		planJSON:           toPlanJSON(v),
 		Approvers:          append([]string{}, v.Status.Approvers...),
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),

@@ -75,7 +75,7 @@ func TestPrimeWithACurrentPlan(t *testing.T) {
 		Plan:     paymentsPlan(core.StateApproved), Current: true,
 		Open:      []core.Message{question},
 		Reviews:   []planRef{{ShortID: "bfc-9k2m", Title: "Refunds"}},
-		Questions: []waitingQuestion{{ShortID: "bfc-5v7x", Q: question}},
+		Questions: []waitingQuestion{{ShortID: "bfc-5v7x", Message: question}},
 	}))
 }
 
@@ -201,5 +201,25 @@ func TestPrimeCommandRefusesAnUnknownTopic(t *testing.T) {
 	out, err := bfcIn(t, dir, "prime", "grilling", "bfc-zzzz")
 	if err == nil || !strings.Contains(out, `unknown topic "grilling"`) || !strings.Contains(out, "known topics: none yet") {
 		t.Errorf("err = %v\n%s", err, out)
+	}
+}
+
+// AC-5: each list stops after primeListLimit items and says where the rest
+// are, so that many waiting Questions cannot break the cap.
+func TestPrimeCapsTheLists(t *testing.T) {
+	t.Parallel()
+	var qs []waitingQuestion
+	for range 200 {
+		qs = append(qs, waitingQuestion{ShortID: "bfc-5v7x", Message: question})
+	}
+	out := renderPrimeString(t, primeView{Identity: adaP, Questions: qs})
+	if len(out) > primeLimit {
+		t.Errorf("output is %d bytes, more than %d", len(out), primeLimit)
+	}
+	if got := strings.Count(out, "- Question "); got != primeListLimit {
+		t.Errorf("%d Questions listed, want %d", got, primeListLimit)
+	}
+	if !strings.Contains(out, "- … and 190 more: `bfc show <id> --json`") {
+		t.Errorf("no note about the rest:\n%s", out)
 	}
 }

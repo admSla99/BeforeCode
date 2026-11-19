@@ -84,6 +84,11 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 	default:
 		v.Plan = &p
 	}
+	if v.Plan != nil {
+		if msgs, err := readMessages(ctx, s, v.Plan.ID); err == nil {
+			v.Open = core.OpenQuestions(msgs)
+		}
+	}
 	for _, pv := range views {
 		if pv.Status.State == core.StateClosed || pv.Status.State == core.StateInvalid {
 			continue
@@ -93,10 +98,9 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 			continue
 		}
 		open := core.OpenQuestions(msgs)
-		if v.Plan != nil && pv.ID == v.Plan.ID {
-			v.Open = open
-		}
-		if pv.Status.State == core.StateInReview && core.CheckApprove(pv.Status, v.Identity) == nil && len(open) == 0 {
+		// The same rules as the TUI's approve key.
+		if pv.Status.State == core.StateInReview && core.CheckApprove(pv.Status, v.Identity) == nil &&
+			core.CheckOpenQuestions(pv.Status, open) == nil {
 			v.Reviews = append(v.Reviews, planRef{pv.ShortID, pv.Title})
 		}
 		for _, q := range open {
@@ -135,7 +139,23 @@ const primeInstructions = "# BeforeCode\n\n" +
 // primeLimit caps the output of bfc prime; a longer plan.md is cut.
 const primeLimit = 8 << 10
 
-// primeView is what bfc prime prints, gathered by runPrime.
+// primeListLimit caps each list of bfc prime, so that the lists alone stay
+// well within primeLimit.
+const primeListLimit = 10
+
+// writeList writes the lines of the first primeListLimit items, then how
+// many more there are and where to see them.
+func writeList[T any](b *strings.Builder, items []T, line func(T) string, more string) {
+	for i, it := range items {
+		if i == primeListLimit {
+			fmt.Fprintf(b, "- … and %d more: %s\n", len(items)-i, more)
+			return
+		}
+		b.WriteString(line(it) + "\n")
+	}
+}
+
+// primeView is what bfc prime prints, gathered by gatherPrime.
 type primeView struct {
 	// Setup says how to set BeforeCode up when the clone has no plans ref;
 	// then nothing else is known.
@@ -158,13 +178,14 @@ type primeView struct {
 
 type planRef struct{ ShortID, Title string }
 
+// waitingQuestion is an open Question and the Short ID of its plan.
 type waitingQuestion struct {
 	ShortID string
-	Q       core.Message
+	Message core.Message
 }
 
-// renderPrime prints v as Markdown for an agent, at most primeLimit bytes
-// unless the parts other than plan.md are longer.
+// renderPrime prints v as Markdown for an agent, at most primeLimit bytes:
+// lists stop after primeListLimit items, and plan.md is cut to fit.
 func renderPrime(w io.Writer, v primeView) error {
 	var head strings.Builder
 	head.WriteString(primeInstructions)
@@ -207,12 +228,12 @@ func writeWaiting(b *strings.Builder, v primeView) {
 		b.WriteString("Nothing waits on you.\n")
 		return
 	}
-	for _, r := range v.Reviews {
-		fmt.Fprintf(b, "- Review %s %s: tell the user to open `bfc`, select it and press `a` to approve.\n", r.ShortID, r.Title)
-	}
-	for _, q := range v.Questions {
-		fmt.Fprintf(b, "- Question %s in %s from %s%s: %s\n", q.Q.ID, q.ShortID, q.Q.Author.Email, refSuffix(q.Q.Ref), firstLine(q.Q.Body))
-	}
+	writeList(b, v.Reviews, func(r planRef) string {
+		return fmt.Sprintf("- Review %s %s: tell the user to open `bfc`, select it and press `a` to approve.", r.ShortID, r.Title)
+	}, "`bfc list --state in-review --json`")
+	writeList(b, v.Questions, func(q waitingQuestion) string {
+		return fmt.Sprintf("- Question %s in %s from %s%s: %s", q.Message.ID, q.ShortID, q.Message.Author.Email, refSuffix(q.Message.Ref), firstLine(q.Message.Body))
+	}, "`bfc show <id> --json` lists the open Questions of a plan")
 	if len(v.Questions) > 0 {
 		b.WriteString("\nAsk the user and record the answer with `bfc reply <ULID> --verbatim -m <their words>`.\n")
 	}
@@ -229,9 +250,9 @@ func writeNoPlan(b *strings.Builder, v primeView) {
 		b.WriteString("No plan is approved yet.\n")
 	} else {
 		b.WriteString("Approved plans:\n\n")
-		for _, p := range v.Approved {
-			fmt.Fprintf(b, "- %s %s\n", p.ShortID, p.Title)
-		}
+		writeList(b, v.Approved, func(p planRef) string {
+			return fmt.Sprintf("- %s %s", p.ShortID, p.Title)
+		}, "`bfc list --state approved --json`")
 	}
 	b.WriteString("\nTo work on a plan, the user asks you to run `bfc start <id>`, which switches to its branch.\n")
 }
@@ -254,9 +275,9 @@ func writePlanHeader(b *strings.Builder, v primeView, doc string) {
 	}
 	if len(v.Open) > 0 {
 		b.WriteString("\n### Open Questions\n\n")
-		for _, q := range v.Open {
-			fmt.Fprintf(b, "- %s to %s%s: %s\n", q.ID, strings.Join(q.To, ", "), refSuffix(q.Ref), firstLine(q.Body))
-		}
+		writeList(b, v.Open, func(q core.Message) string {
+			return fmt.Sprintf("- %s to %s%s: %s", q.ID, strings.Join(q.To, ", "), refSuffix(q.Ref), firstLine(q.Body))
+		}, fmt.Sprintf("`bfc show %s --json`", p.ShortID))
 	}
 	fmt.Fprintf(b, "\n### %s\n\n", doc)
 }
