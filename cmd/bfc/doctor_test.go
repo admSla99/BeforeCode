@@ -2,6 +2,7 @@ package main
 
 import (
 	"os"
+	"os/exec"
 	"path/filepath"
 	"runtime"
 	"slices"
@@ -585,4 +586,39 @@ func TestDoctorReportsWhetherClaudeCodeIsFound(t *testing.T) {
 	}
 	withCommand(found)
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude", found)
+}
+
+// Issue #61, AC-7: bfc doctor warns when .claude/settings.json runs
+// bfc hook pre-tool-use but bfc is not on PATH: Claude Code then cannot run
+// the hook and edits go unchecked.
+func TestDoctorWarnsWhenTheHookIsInstalledButBfcIsNotOnPath(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	setEnv(t, "PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
+
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "skip", "claude hook", ".claude/settings.json")
+
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), `{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": "bfc hook pre-tool-use"}]}
+    ]
+  }
+}`)
+	// mustBfc: a warning does not make bfc doctor fail.
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", ".claude/settings.json", "bfc hook pre-tool-use", "bfc is not on PATH")
+
+	exe := filepath.Join(bin, "bfc")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude hook", exe)
 }
