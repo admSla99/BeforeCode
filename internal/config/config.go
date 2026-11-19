@@ -1,5 +1,5 @@
 // Package config reads and writes .beforecode/config.yaml as specified in
-// docs/adr/0003-config-file-v1.md (versions 1 and 2). It works on bytes only.
+// docs/adr/0003-config-file-v1.md (versions 1 to 3). It works on bytes only.
 package config
 
 import (
@@ -17,7 +17,11 @@ const Path = ".beforecode/config.yaml"
 
 // Version is the config version this binary writes. It also reads every
 // older version.
-const Version = 2
+const Version = 3
+
+// DefaultClaudeCommand is the command that starts Claude Code when
+// claude.command is not set.
+const DefaultClaudeCommand = "claude"
 
 // DefaultSyncInterval is the time between background syncs in the TUI when
 // sync.interval is not set.
@@ -42,7 +46,26 @@ type Config struct {
 	// SyncInterval is sync.interval: the time between background syncs in
 	// the TUI. Zero means not set; use Interval.
 	SyncInterval time.Duration
+	// ClaudeCommand is claude.command: the command that starts Claude Code.
+	// Empty means not set; use Command.
+	ClaudeCommand string
+	// EnforceOff is claude.enforce: false. The PreToolUse hook then allows
+	// edits without an approved plan (ADR 0011).
+	EnforceOff bool
 }
+
+// Command returns the command that starts Claude Code: ClaudeCommand, or
+// DefaultClaudeCommand when it is not set.
+func (c Config) Command() string {
+	if c.ClaudeCommand == "" {
+		return DefaultClaudeCommand
+	}
+	return c.ClaudeCommand
+}
+
+// Enforce reports whether the PreToolUse hook blocks edits without an
+// approved plan: claude.enforce, true unless it is set to false.
+func (c Config) Enforce() bool { return !c.EnforceOff }
 
 // Interval returns the time between background syncs: SyncInterval, or
 // DefaultSyncInterval when it is not set.
@@ -64,6 +87,10 @@ type file struct {
 		Remote   *string `yaml:"remote"`
 		Interval *int    `yaml:"interval"`
 	} `yaml:"sync"`
+	Claude *struct {
+		Command *string `yaml:"command"`
+		Enforce *bool   `yaml:"enforce"`
+	} `yaml:"claude"`
 }
 
 // Parse reads and validates a config file. Unknown keys are errors.
@@ -95,6 +122,10 @@ func Parse(data []byte) (Config, error) {
 		return Config{}, fmt.Errorf("%s: sync.interval must be absent when sync.enabled is false", Path)
 	case f.Sync.Interval != nil && (*f.Sync.Interval < minSyncInterval || *f.Sync.Interval > maxSyncInterval):
 		return Config{}, fmt.Errorf("%s: sync.interval must be between %d and %d seconds", Path, minSyncInterval, maxSyncInterval)
+	case f.Claude != nil && *f.Version < 3:
+		return Config{}, fmt.Errorf("%s: the claude section needs version 3", Path)
+	case f.Claude != nil && f.Claude.Command != nil && *f.Claude.Command == "":
+		return Config{}, fmt.Errorf("%s: claude.command must not be empty", Path)
 	}
 	c := Config{RequiredApprovals: *f.Approval.RequiredApprovals, SyncEnabled: *f.Sync.Enabled}
 	if f.Sync.Remote != nil {
@@ -102,6 +133,12 @@ func Parse(data []byte) (Config, error) {
 	}
 	if f.Sync.Interval != nil {
 		c.SyncInterval = time.Duration(*f.Sync.Interval) * time.Second
+	}
+	if f.Claude != nil {
+		if f.Claude.Command != nil {
+			c.ClaudeCommand = *f.Claude.Command
+		}
+		c.EnforceOff = f.Claude.Enforce != nil && !*f.Claude.Enforce
 	}
 	return c, nil
 }
@@ -126,6 +163,13 @@ sync:
 			fmt.Fprintf(&b, "  # Seconds between background syncs while the TUI is open (5 to 3600).\n  interval: %d\n", int(c.SyncInterval/time.Second))
 		}
 	}
+	fmt.Fprintf(&b, `
+claude:
+  # The command that starts Claude Code: a name on PATH or an absolute path.
+  command: %s
+  # false: the PreToolUse hook allows edits without an approved plan.
+  enforce: %t
+`, quote(c.Command()), c.Enforce())
 	return b.Bytes()
 }
 

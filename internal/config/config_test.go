@@ -32,7 +32,7 @@ func TestParseRejectsInvalidFilesNamingTheProblem(t *testing.T) {
 			"approvers",
 		},
 		"newer version": {
-			"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
+			"version: 4\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
 			"update bfc",
 		},
 		"missing version": {
@@ -75,6 +75,22 @@ func TestParseRejectsInvalidFilesNamingTheProblem(t *testing.T) {
 			"version: 2\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n  interval: 30\n",
 			"sync.interval",
 		},
+		"claude in version 2": {
+			"version: 2\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: claude\n",
+			"version 3",
+		},
+		"empty claude.command": {
+			"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: \"\"\n",
+			"claude.command",
+		},
+		"claude.enforce not a boolean": {
+			"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  enforce: maybe\n",
+			"config",
+		},
+		"unknown claude key": {
+			"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  model: opus\n",
+			"model",
+		},
 		"not yaml": {"version: [", "config"},
 		"empty":    {"", "version"},
 	}
@@ -92,9 +108,10 @@ func TestParseRejectsInvalidFilesNamingTheProblem(t *testing.T) {
 
 func TestRenderedFileParsesBackAndExplainsItself(t *testing.T) {
 	for _, c := range []config.Config{
-		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin"},
-		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: 45 * time.Second},
-		{RequiredApprovals: 3, SyncEnabled: false},
+		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", ClaudeCommand: "claude"},
+		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: 45 * time.Second, ClaudeCommand: "claude"},
+		{RequiredApprovals: 3, SyncEnabled: false, ClaudeCommand: "claude"},
+		{RequiredApprovals: 1, SyncEnabled: false, ClaudeCommand: "/opt/claude code/bin/claude", EnforceOff: true},
 	} {
 		data := config.Render(c)
 		got, err := config.Parse(data)
@@ -134,7 +151,37 @@ func TestTheSyncIntervalDefaultsTo15Seconds(t *testing.T) {
 
 func TestRenderWritesTheCurrentVersion(t *testing.T) {
 	data := string(config.Render(config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: 15 * time.Second}))
-	if !strings.Contains(data, "version: 2\n") || !strings.Contains(data, "interval: 15\n") {
-		t.Errorf("rendered file:\n%s", data)
+	for _, want := range []string{"version: 3\n", "interval: 15\n", "claude:\n", "  command: claude\n", "  enforce: true\n"} {
+		if !strings.Contains(data, want) {
+			t.Errorf("rendered file has no %q:\n%s", want, data)
+		}
+	}
+}
+
+func TestParseReadsVersionThreeWithAClaudeSection(t *testing.T) {
+	t.Parallel()
+	got, err := config.Parse([]byte("version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: /opt/bin/claude-2\n  enforce: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.Command() != "/opt/bin/claude-2" || got.Enforce() {
+		t.Errorf("Command() = %q, Enforce() = %t; want /opt/bin/claude-2, false", got.Command(), got.Enforce())
+	}
+}
+
+func TestTheClaudeSectionDefaultsToClaudeAndEnforce(t *testing.T) {
+	t.Parallel()
+	for _, src := range []string{
+		"version: 1\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
+		"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
+		"version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: claude\n",
+	} {
+		got, err := config.Parse([]byte(src))
+		if err != nil {
+			t.Fatal(err)
+		}
+		if got.Command() != "claude" || !got.Enforce() {
+			t.Errorf("Command() = %q, Enforce() = %t; want claude, true\n%s", got.Command(), got.Enforce(), src)
+		}
 	}
 }
