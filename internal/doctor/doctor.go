@@ -277,7 +277,7 @@ func checkClaude(_ context.Context, e *env) Result {
 		return skip("needs a valid " + config.Path)
 	}
 	command := e.cfg.Command()
-	path, err := exec.LookPath(command)
+	path, err := lookPath(command, e.vars)
 	if err != nil {
 		return warn("%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)
 	}
@@ -319,15 +319,20 @@ func checkClaudeHook(_ context.Context, e *env) Result {
 	}
 	for _, m := range settings.Hooks.PreToolUse {
 		for _, h := range m.Hooks {
-			bin, args, _ := strings.Cut(strings.TrimSpace(h.Command), " ")
-			if strings.TrimSpace(args) != hookCommand || strings.TrimSuffix(filepath.Base(bin), ".exe") != "bfc" {
+			bin, ok := strings.CutSuffix(strings.TrimSpace(h.Command), " "+hookCommand)
+			bin = strings.Trim(strings.TrimSpace(bin), `"'`)
+			if !ok || strings.TrimSuffix(filepath.Base(filepath.FromSlash(bin)), ".exe") != "bfc" {
 				continue
 			}
 			path, err := lookPath(bin, e.vars)
-			if err != nil {
-				return warn("%s runs %s, but %s is not on PATH, so Claude Code cannot run the hook and edits go unchecked; install bfc on PATH", claudeSettings, h.Command, bin)
+			switch {
+			case err == nil:
+				return pass("%s runs %s with %s", claudeSettings, h.Command, path)
+			case bin == "bfc":
+				return warn("%s runs %s, but bfc is not on PATH, so Claude Code cannot run the hook and edits go unchecked; install bfc on PATH", claudeSettings, h.Command)
+			default:
+				return warn("%s runs %s, but %s is not found, so Claude Code cannot run the hook and edits go unchecked", claudeSettings, h.Command, bin)
 			}
-			return pass("%s runs %s with %s", claudeSettings, h.Command, path)
 		}
 	}
 	return skip(claudeSettings + " does not run bfc " + hookCommand)

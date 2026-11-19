@@ -75,32 +75,42 @@ const (
 // reader of a newer version warns and reads on a best-effort basis
 // (ADR 0002 section 2).
 func openPlans(cmd *cobra.Command, mode access) (*store.Store, error) {
-	ctx := cmd.Context()
 	s, err := openStore(cmd)
 	if err != nil {
 		return nil, err
 	}
-	data, err := s.Read(ctx, "format-version")
-	switch {
-	case errors.Is(err, store.ErrNotInitialised):
+	err = checkPlansRef(cmd, s, mode)
+	if errors.Is(err, store.ErrNotInitialised) {
 		return nil, notInitialised(cmd, s)
-	case errors.Is(err, store.ErrNotFound):
-		return nil, fmt.Errorf("the plans ref %s has no format-version file; run bfc doctor", store.Ref)
-	case err != nil:
+	}
+	if err != nil {
 		return nil, err
+	}
+	return s, nil
+}
+
+// checkPlansRef is the check of openPlans on an open store, without asking
+// the remote: a missing plans ref is store.ErrNotInitialised.
+func checkPlansRef(cmd *cobra.Command, s *store.Store, mode access) error {
+	data, err := s.Read(cmd.Context(), "format-version")
+	switch {
+	case errors.Is(err, store.ErrNotFound):
+		return fmt.Errorf("the plans ref %s has no format-version file; run bfc doctor", store.Ref)
+	case err != nil:
+		return err
 	}
 	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
 	switch {
 	case err != nil:
-		return nil, fmt.Errorf("the plans ref has an unreadable format-version %q", data)
+		return fmt.Errorf("the plans ref has an unreadable format-version %q", data)
 	case v < core.FormatVersion && mode == forReading:
 		// An older format reads the same way; only writing needs a migration.
 	case v > core.FormatVersion && mode == forReading:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the plans ref has format-version %d, newer than this bfc (%d); update bfc\n", v, core.FormatVersion)
 	case v > core.FormatVersion:
-		return nil, fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
+		return fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
 	case v != core.FormatVersion:
-		return nil, fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; it needs a migration", v, core.FormatVersion)
+		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; it needs a migration", v, core.FormatVersion)
 	}
-	return s, nil
+	return nil
 }

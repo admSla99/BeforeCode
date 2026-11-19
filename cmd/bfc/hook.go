@@ -30,18 +30,21 @@ func newHookCmd() *cobra.Command {
 	return hook
 }
 
-// editTools are the Claude Code tools that change files. Every other tool,
-// Bash included, is allowed (ADR 0011).
-var editTools = map[string]bool{"Edit": true, "Write": true, "MultiEdit": true, "NotebookEdit": true}
+// editTools are the Claude Code tools that change files, each with the
+// field of its input that names the file. Every other tool, Bash included,
+// is allowed (ADR 0011).
+var editTools = map[string]string{
+	"Edit":         "file_path",
+	"Write":        "file_path",
+	"MultiEdit":    "file_path",
+	"NotebookEdit": "notebook_path",
+}
 
 // preToolUse is the part of the Claude Code PreToolUse input the hook reads.
 type preToolUse struct {
-	Cwd       string `json:"cwd"`
-	ToolName  string `json:"tool_name"`
-	ToolInput struct {
-		FilePath     string `json:"file_path"`
-		NotebookPath string `json:"notebook_path"`
-	} `json:"tool_input"`
+	Cwd       string         `json:"cwd"`
+	ToolName  string         `json:"tool_name"`
+	ToolInput map[string]any `json:"tool_input"`
 }
 
 // exemptDirs are the directories of the repository root whose files are
@@ -53,18 +56,22 @@ func runPreToolUse(cmd *cobra.Command, _ []string) error {
 	if err := json.NewDecoder(cmd.InOrStdin()).Decode(&in); err != nil {
 		return deny(cmd, fmt.Sprintf("bfc hook pre-tool-use cannot read the PreToolUse input: %v", err))
 	}
-	if !editTools[in.ToolName] {
+	field, ok := editTools[in.ToolName]
+	if !ok {
 		return nil
 	}
 	s, err := openStore(cmd)
 	if err != nil {
 		return denyBroken(cmd, err)
 	}
-	path := in.ToolInput.FilePath
-	if in.ToolName == "NotebookEdit" {
-		path = in.ToolInput.NotebookPath
+	cwd := in.Cwd
+	if cwd == "" {
+		if cwd, err = workDir(cmd); err != nil {
+			return denyBroken(cmd, err)
+		}
 	}
-	if !needsPlan(cmd, s.Root(), in.Cwd, path) {
+	path, _ := in.ToolInput[field].(string)
+	if !needsPlan(s.Root(), cwd, path) {
 		return nil
 	}
 	switch cfg, _, err := readConfig(s); {
@@ -73,21 +80,22 @@ func runPreToolUse(cmd *cobra.Command, _ []string) error {
 	case !cfg.Enforce():
 		return nil
 	}
-	// openPlans would ask the remote about a missing plans ref; the hook
-	// reads only this clone.
-	if _, err := s.Tip(cmd.Context()); errors.Is(err, store.ErrNotInitialised) {
-		return deny(cmd, "BeforeCode is not set up in this clone: run bfc bootstrap to join a project that uses it, or bfc init in a new one; bfc doctor shows the setup")
-	} else if err != nil {
-		return denyBroken(cmd, err)
-	}
-	if s, err = openPlans(cmd, forReading); err != nil {
+	// Not openPlans: it asks the remote about a missing plans ref, and the
+	// hook reads only this clone.
+	switch err := checkPlansRef(cmd, s, forReading); {
+	case errors.Is(err, store.ErrNotInitialised):
+		return denyBroken(cmd, errNotInitialised)
+	case err != nil:
 		return denyBroken(cmd, err)
 	}
 	p, err := currentPlan(cmd.Context(), s)
-	if err != nil {
-		return deny(cmd, err.Error()+"; bfc prime says more")
-	}
-	if p.Status.State != core.StateApproved {
+	var planErr currentPlanError
+	switch {
+	case errors.As(err, &planErr):
+		return deny(cmd, planErr.Error()+"; bfc prime says more")
+	case err != nil:
+		return denyBroken(cmd, err)
+	case p.Status.State != core.StateApproved:
 		return deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved plan: get it approved (run bfc pull if it was approved elsewhere), or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
 	}
 	return nil
@@ -115,15 +123,12 @@ func deny(cmd *cobra.Command, reason string) error {
 
 // needsPlan reports whether editing path needs an approved plan: it is in
 // the repository at root and not under one of exemptDirs. A relative path
-// is relative to cwd, the session's directory, else to the command's.
-func needsPlan(cmd *cobra.Command, root, cwd, path string) bool {
+// is relative to cwd, the session's directory.
+func needsPlan(root, cwd, path string) bool {
 	if path == "" {
 		return true
 	}
 	if !filepath.IsAbs(path) {
-		if cwd == "" {
-			cwd, _ = workDir(cmd)
-		}
 		path = filepath.Join(cwd, path)
 	}
 	rel, err := filepath.Rel(realPath(root), realPath(path))

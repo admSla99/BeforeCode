@@ -18,8 +18,14 @@ import (
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
+// currentPlanError is a Current plan that cannot be used, with what to do
+// about it, as opposed to a failure to read the repository.
+type currentPlanError string
+
+func (e currentPlanError) Error() string { return string(e) }
+
 // errNoCurrentPlan says how to get a Current plan.
-var errNoCurrentPlan = errors.New("there is no Current plan: run bfc start <id> to work on a plan in its own branch, or bfc use <id> to set it without changing the branch")
+const errNoCurrentPlan = currentPlanError("there is no Current plan: run bfc start <id> to work on a plan in its own branch, or bfc use <id> to set it without changing the branch")
 
 func newUseCmd() *cobra.Command {
 	var clear bool
@@ -118,14 +124,15 @@ func usedPlan(ctx context.Context, s *store.Store) (ulid.ULID, error) {
 	}
 	id, err := ulid.ParseStrict(strings.TrimSpace(string(data)))
 	if err != nil {
-		return ulid.ULID{}, fmt.Errorf("%s does not hold a plan ULID; run bfc use <id> or bfc use --clear", path)
+		return ulid.ULID{}, currentPlanError(fmt.Sprintf("%s does not hold a plan ULID; run bfc use <id> or bfc use --clear", path))
 	}
 	return id, nil
 }
 
 // currentPlan returns the Current plan (ADR 0009), with its documents. It
-// returns errNoCurrentPlan when there is none, and says what to do when the
-// branch or bfc use names a plan that does not exist.
+// returns errNoCurrentPlan when there is none, and a currentPlanError that
+// says what to do when the branch or bfc use names a plan that does not
+// exist.
 func currentPlan(ctx context.Context, s *store.Store) (index.Plan, error) {
 	branch, err := s.Branch(ctx)
 	if err != nil {
@@ -149,11 +156,11 @@ func currentPlan(ctx context.Context, s *store.Store) (index.Plan, error) {
 		// it is told apart first.
 		switch {
 		case errors.As(err, &amb) && errors.As(err, &be):
-			return fmt.Errorf("the branch %s names %s, which matches several plans; rename the branch with a longer ID:%s", be.Branch, be.ShortID, candidates(amb, byID))
+			return currentPlanError(fmt.Sprintf("the branch %s names %s, which matches several plans; rename the branch with a longer ID:%s", be.Branch, be.ShortID, candidates(amb, byID)))
 		case errors.As(err, &be):
-			return fmt.Errorf("the branch %s names %s, but this clone has no such plan: run bfc pull if someone else created it; otherwise the branch name is wrong (bfc list shows the plans)", be.Branch, be.ShortID)
+			return currentPlanError(fmt.Sprintf("the branch %s names %s, but this clone has no such plan: run bfc pull if someone else created it; otherwise the branch name is wrong (bfc list shows the plans)", be.Branch, be.ShortID))
 		case errors.Is(err, core.ErrUnknownID):
-			return fmt.Errorf("the plan %s set with bfc use does not exist here; run bfc pull, or bfc use --clear", used)
+			return currentPlanError(fmt.Sprintf("the plan %s set with bfc use does not exist here; run bfc pull, or bfc use --clear", used))
 		case err != nil:
 			return err
 		case cur.Source == core.NoCurrent:

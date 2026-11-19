@@ -41,5 +41,6 @@ Why: an agent runs `bfc` under the developer's git identity. Without this check 
 ## Consequences
 
 - When Claims arrive in phase 3, the hook must also allow edits while the Current plan is `in-progress`.
+- Because `.beforecode/` and `.claude/` are exempt, an agent could also turn the hook off (`claude.enforce: false`) or remove it from `.claude/settings.json`. Like the Gate check, the hook guards against mistakes, not against a hostile agent; such a change is a diff on a normal branch that review sees.
 - An agent can still change files through Bash without an approved plan. That is a known gap, closed at pull request time by the Plan check, not by the hook.
 - A new harness in phase 4 needs its own detection variable and, if it has hooks, its own hook command.

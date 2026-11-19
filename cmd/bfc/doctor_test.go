@@ -1,6 +1,7 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -621,4 +622,11 @@ func TestDoctorWarnsWhenTheHookIsInstalledButBfcIsNotOnPath(t *testing.T) {
 		t.Fatal(err)
 	}
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude hook", exe)
+
+	// A quoted path, with a space, as on Windows.
+	spaced := filepath.Join(t.TempDir(), "Program Files", filepath.Base(exe))
+	command, _ := json.Marshal(`"` + spaced + `" hook pre-tool-use`)
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"),
+		`{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": `+string(command)+`}]}]}}`)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", spaced, "is not found")
 }
