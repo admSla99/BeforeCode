@@ -304,15 +304,22 @@ func buildManyPlans(dir string) error {
 	if err != nil {
 		return err
 	}
-	files := map[string][]byte{core.PlanDir(ids[0]) + "/plan.md": []byte(validPlan)}
-	for i := range 499 {
-		id := ulid.Make()
-		created := core.Event{ID: id, Type: core.Created, Plan: id, Author: adaP, At: time.Now(), ShortID: "bfc-" + strings.ToLower(id.String()[10:16])}
-		files[core.PlanDir(id)+"/intent.md"] = fmt.Appendf(nil, "---\ntitle: Plan %d\n---\n", i)
-		files[core.PlanDir(id)+"/events/"+id.String()+".yaml"] = core.EncodeEvent(created)
-	}
-	if _, err := s.Write(context.Background(), "many plans", files); err != nil {
+	if _, err := s.Write(context.Background(), "plan", map[string][]byte{core.PlanDir(ids[0]) + "/plan.md": []byte(validPlan)}); err != nil {
 		return err
+	}
+	// In writes of 50 plans: one write passes all its paths to one git
+	// command, and Windows limits the length of a command line.
+	for batch := range 10 {
+		files := map[string][]byte{}
+		for i := batch * 50; i < min(batch*50+50, 499); i++ {
+			id := ulid.Make()
+			created := core.Event{ID: id, Type: core.Created, Plan: id, Author: adaP, At: time.Now(), ShortID: "bfc-" + strings.ToLower(id.String()[10:16])}
+			files[core.PlanDir(id)+"/intent.md"] = fmt.Appendf(nil, "---\ntitle: Plan %d\n---\n", i)
+			files[core.PlanDir(id)+"/events/"+id.String()+".yaml"] = core.EncodeEvent(created)
+		}
+		if _, err := s.Write(context.Background(), "many plans", files); err != nil {
+			return err
+		}
 	}
 	if err := bfcSteps([]string{repo, "submit", short}); err != nil {
 		return err
@@ -353,9 +360,9 @@ func TestHookAnswersWithin200msWith500Plans(t *testing.T) {
 	}
 	slices.Sort(times)
 	t.Logf("hook with 500 plans: %v", times)
-	if runtime.GOOS == "windows" {
-		// Each of the hook's ten git starts is slow there; the time is logged,
-		// not held to the limit.
+	if raceEnabled {
+		// The race detector makes the Go part of bfc several times slower;
+		// the limit is for the binary people run.
 		return
 	}
 	if median := times[len(times)/2]; median > 200*time.Millisecond {
