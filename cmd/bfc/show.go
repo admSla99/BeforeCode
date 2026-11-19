@@ -2,6 +2,7 @@ package main
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -16,13 +17,15 @@ import (
 )
 
 func newShowCmd() *cobra.Command {
-	return &cobra.Command{
+	var asJSON bool
+	cmd := &cobra.Command{
 		Use:   "show [id]",
 		Short: "Print a plan: header, intent.md and plan.md",
 		Long: `Print a plan: a header with its IDs, state, author and approvals, then
 intent.md and, if it exists, plan.md. The ID is a Short ID (bfc-5v7x), a
 prefix of at least four characters, or the full ULID. Without an ID it prints
-the Current plan (bfc start, bfc use).`,
+the Current plan (bfc start, bfc use). --json prints one JSON object for
+scripts and agents, with the acceptance criteria IDs and the open Questions.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openPlans(cmd, forReading)
@@ -42,9 +45,45 @@ the Current plan (bfc start, bfc use).`,
 			if err != nil {
 				return err
 			}
+			if asJSON {
+				return printPlanJSON(cmd, v, core.OpenQuestions(msgs))
+			}
 			return printPlan(cmd.OutOrStdout(), v, core.OpenQuestions(msgs))
 		},
 	}
+	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
+	return cmd
+}
+
+// showJSON is the --json shape of bfc show, documented in docs/design.md:
+// the shape of bfc list --json and the plan's contents.
+type showJSON struct {
+	planJSON
+	Approvers          []string      `json:"approvers"`
+	Intent             string        `json:"intent"`
+	Plan               *string       `json:"plan"`
+	AcceptanceCriteria []string      `json:"acceptance_criteria"`
+	OpenQuestions      []messageJSON `json:"open_questions"`
+}
+
+func printPlanJSON(cmd *cobra.Command, v index.Plan, open []core.Message) error {
+	out := showJSON{
+		planJSON:           listJSON(v),
+		Approvers:          append([]string{}, v.Status.Approvers...),
+		Intent:             string(v.Intent),
+		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
+		OpenQuestions:      make([]messageJSON, 0, len(open)),
+	}
+	if v.Plan != nil {
+		plan := string(v.Plan)
+		out.Plan = &plan
+	}
+	for _, q := range open {
+		out.OpenQuestions = append(out.OpenQuestions, toMessageJSON(v, q))
+	}
+	enc := json.NewEncoder(cmd.OutOrStdout())
+	enc.SetIndent("", "  ")
+	return enc.Encode(out)
 }
 
 // resolvePlan returns the plan the query names (see core.ResolveID), with

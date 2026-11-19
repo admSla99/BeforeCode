@@ -130,6 +130,29 @@ All of these read from the index (section 4), which brings itself up to date wit
 
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then the open Questions (one line each: ULID, addressees, `ref` if any, the first line of the text), then `intent.md` and, if present, `plan.md` as plain text. Without an ID it prints the Current plan, and says how to set one (`bfc start`, `bfc use`) when there is none.
 
+`bfc show <id> --json` prints one object for scripts and agents: the fields of `bfc list --json`, then the plan's contents (issue #60):
+
+```json
+{
+  "id": "01JD3K8Q2W5V7X9Y0Z1A2B3C4D",
+  "short_id": "bfc-5v7x",
+  "state": "in-review",
+  "title": "Payments via Stripe",
+  "labels": ["payments"],
+  "author": {"name": "Jana Nováková", "email": "jana@example.com"},
+  "last_activity": "2026-11-16T21:30:00Z",
+  "approvals": 1,
+  "required_approvals": 2,
+  "approvers": ["peter@example.com"],
+  "intent": "---\ntitle: Payments via Stripe\n...",
+  "plan": "## Context\n...",
+  "acceptance_criteria": ["AC-1", "AC-2"],
+  "open_questions": [{"id": "01JD3K8Q2W5V7X9Y0Z1A2B3C4E", "plan": "01JD3K8Q2W5V7X9Y0Z1A2B3C4D", "short_id": "bfc-5v7x", "author": {"name": "Peter Horváth", "email": "peter@example.com"}, "at": "2026-11-16T21:42:00Z", "to": ["jana@example.com"], "ref": "plan.md#AC-2", "body": "Does it retry?"}]
+}
+```
+
+`intent` and `plan` are the documents as stored, front matter included; `plan` is `null` while there is no `plan.md`. `acceptance_criteria` lists the IDs of the well-formed criteria in the order of `plan.md`. `open_questions` are Messages in the shape of `bfc ask --json`. The lists are `[]` when empty, never `null`.
+
 ### Editing plans
 
 `bfc edit <id>` opens `plan.md` (from the template when missing), `--intent` opens `intent.md`. The file is edited in a temporary file outside the repository, in the editor git itself would use (`git var GIT_EDITOR`: `GIT_EDITOR`, `core.editor`, `VISUAL`, `EDITOR`, then `vi`), started through a POSIX shell like git does so that `code --wait` and quoted paths work; on Windows that shell is the `sh.exe` of Git for Windows. An unchanged file makes no commit; an emptied one, or an `intent.md` without a title, is refused and the text kept. If the document changed in the plans ref while the editor was open, nothing is committed and the user's text stays in the temporary file, whose path is printed.
@@ -142,6 +165,8 @@ Agents use the same `bfc` commands as people, with `--json` where they read (ADR
 
 1. `bfc start <id>` creates or switches to the branch `<Short ID>-<slug>`, for example `bfc-a1b2-payments-via-stripe`; the Short ID in the branch name makes the plan the **Current plan** (ADR 0009). The slug is the title in lower-case ASCII letters and digits, diacritics removed, words joined by `-`, at most 48 characters. Everyone who works on a plan works on one branch: `bfc start` first fetches the branches of the sync remote, then takes the local branch that carries the Short ID (such as `feat/bfc-a1b2`), else the plan's branch of the remote, which it checks out tracking it, else it creates a new one and says how to push it. It says when the local branch is behind its upstream. It never pushes; without the network it warns and uses what the clone knows. Several matching branches are listed and none is chosen. `bfc use <id>` sets the Current plan without a branch, in `beforecode/current` of the worktree's own git directory (`.git/beforecode/current` in a plain clone); `bfc use --clear` removes it. The first Short ID in the branch name counts and is resolved like any plan ID, so a longer prefix settles an ambiguous one.
 2. A Claude Code session starts with **Prime**: a `SessionStart` hook runs `bfc prime`, which prints how to work with `bfc` and the Current plan.
+
+   `bfc prime [id]` prints Markdown for the agent, at most 8 kB (issue #60): the instructions (the commands an agent may use, that the user works in the TUI, that Gates are for people, that edits need an approved plan, how to record a deviation with `bfc ask --ref plan.md#AC-n`); **Waiting on you** for the git author of the clone (plans in review they may approve now, with "open `bfc` and press `a`", and open Questions addressed to them); then the Current plan or the given one, with its state, Approvals, open Questions and `plan.md` (or `intent.md` while there is none) in a fenced block. A `plan.md` that does not fit is cut at a line with a note to run `bfc show <id>`. Without a plan it lists the approved plans and says how to start one. `bfc prime` reads only the local plans ref and always exits 0: a missing plans ref, an unknown ID or a branch that names a missing plan is printed as a note. `bfc prime <topic> [id]` prints the instructions for one task; topics come with later issues (`grill`, `plan`), and with two arguments an unknown topic is an error that lists the known ones.
 3. The `PreToolUse` hook (`bfc hook pre-tool-use`) blocks `Edit`, `Write`, `MultiEdit` and `NotebookEdit` unless the Current plan is `approved`. Files under `.beforecode/` and `.claude/` are exempt; Bash is not blocked. `claude.enforce: false` turns it off (ADR 0011).
 4. The **Gates** (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside an agent, detected through `CLAUDECODE`, and `bfc setup claude` denies them in `.claude/settings.json`. This guards against mistakes, not against an agent that unsets the variable (ADR 0011).
 5. `bfc setup claude` writes the hooks, the permissions and the slash commands `/bfc-grill` and `/bfc-plan` into `.claude/`, which is committed through a pull request (ADR 0010).

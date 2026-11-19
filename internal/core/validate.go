@@ -34,7 +34,20 @@ var (
 // criterion, each a top-level item "- AC-<n>: <text>" with a unique ID.
 // HTML comments and fenced code blocks are ignored.
 func ValidatePlan(plan []byte) []Problem {
-	var problems []Problem
+	problems, _ := scanPlan(plan)
+	return problems
+}
+
+// AcceptanceCriteria returns the IDs of the acceptance criteria of plan.md
+// (AC-1, AC-2, …) in the order they appear, each once. List items that are
+// not of the form "- AC-<n>: <text>" are left out.
+func AcceptanceCriteria(plan []byte) []string {
+	_, ids := scanPlan(plan)
+	return ids
+}
+
+// scanPlan returns the problems of plan.md and its criterion IDs.
+func scanPlan(plan []byte) (problems []Problem, ids []string) {
 	sections := map[string]bool{}
 	inCriteria, inComment, inFence := false, false, false
 	seen := map[string]int{} // criterion ID → line
@@ -71,6 +84,7 @@ func ValidatePlan(plan []byte) []Problem {
 			problems = append(problems, Problem{n, fmt.Sprintf("%s is used more than once (first on line %d)", id, first)})
 		} else {
 			seen[id] = n
+			ids = append(ids, id)
 		}
 		if strings.TrimSpace(m[2]) == "" {
 			problems = append(problems, Problem{n, id + " has no text"})
@@ -84,5 +98,5 @@ func ValidatePlan(plan []byte) []Problem {
 	if sections["acceptance criteria"] && len(seen) == 0 {
 		problems = append(problems, Problem{0, "no acceptance criteria; add \"- AC-1: <text>\""})
 	}
-	return problems
+	return problems, ids
 }

@@ -87,16 +87,21 @@ type planJSON struct {
 func printJSON(cmd *cobra.Command, views []index.Plan) error {
 	out := make([]planJSON, 0, len(views))
 	for _, v := range views {
-		out = append(out, planJSON{
-			ID: v.ID.String(), ShortID: v.ShortID, State: v.Status.State,
-			Title: v.Title, Labels: v.Labels, Author: v.Status.Author,
-			LastActivity: v.LastActivity.UTC().Format(time.RFC3339),
-			Approvals:    len(v.Status.Approvers), RequiredApprovals: v.Status.RequiredApprovals,
-		})
+		out = append(out, listJSON(v))
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
 	return enc.Encode(out)
+}
+
+// listJSON is the plan in the shape of bfc list --json.
+func listJSON(v index.Plan) planJSON {
+	return planJSON{
+		ID: v.ID.String(), ShortID: v.ShortID, State: v.Status.State,
+		Title: v.Title, Labels: v.Labels, Author: v.Status.Author,
+		LastActivity: v.LastActivity.UTC().Format(time.RFC3339),
+		Approvals:    len(v.Status.Approvers), RequiredApprovals: v.Status.RequiredApprovals,
+	}
 }
 
 func joinStates(states []core.State) string {
