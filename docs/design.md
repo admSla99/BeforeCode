@@ -126,7 +126,7 @@ A plan can be closed from any state; `closed` is final. The exact file formats a
 
 All of these read from the index (section 4), which brings itself up to date with the plans ref first.
 
-`bfc doctor` checks the setup, one line per check: `ok`, `warn`, `FAIL` or `skip`. The checks are git version, inside a repository, `config.yaml` valid, local plans ref present, fetch refspec, remote reachable and has the plans ref, every object of the plans ref present, local plans ref not behind or diverged, `format-version` supported, index readable, every event file valid, every plan with a valid `created` event, skipped events and duplicate Short IDs. A failure prints the command that fixes it, and the exit code is 1 when any check fails; skipped events and duplicate Short IDs are warnings, because concurrent work produces them by design. `bfc doctor --fix` adds the refspec, fetches missing objects again from the remote, pulls when the plans ref is behind or diverged, adds a missing `format-version` in a new commit, and rebuilds an unreadable index; it never pushes and never rewrites the ref. Broken event files and invalid plans are only reported. Details in `docs/adr/0006-doctor.md` and `docs/adr/0007-doctor-repairs-the-plans-ref.md`.
+`bfc doctor` checks the setup, one line per check: `ok`, `warn`, `FAIL` or `skip`. The checks are git version, inside a repository, `config.yaml` valid, local plans ref present, fetch refspec, remote reachable and has the plans ref, every object of the plans ref present, local plans ref not behind or diverged, `format-version` supported, index readable, every event file valid, every plan with a valid `created` event, skipped events, duplicate Short IDs and whether `claude.command` is found. A failure prints the command that fixes it, and the exit code is 1 when any check fails; skipped events and duplicate Short IDs are warnings, because concurrent work produces them by design, and a missing Claude Code is a warning, because `bfc` works without it. `bfc doctor --fix` adds the refspec, fetches missing objects again from the remote, pulls when the plans ref is behind or diverged, adds a missing `format-version` in a new commit, and rebuilds an unreadable index; it never pushes and never rewrites the ref. Broken event files and invalid plans are only reported. Details in `docs/adr/0006-doctor.md` and `docs/adr/0007-doctor-repairs-the-plans-ref.md`.
 
 `bfc show <id>` prints a header (Short ID and title, ULID, state, author, approvals, last activity, labels), then the open Questions (one line each: ULID, addressees, `ref` if any, the first line of the text), then `intent.md` and, if present, `plan.md` as plain text. Without an ID it prints the Current plan, and says how to set one (`bfc start`, `bfc use`) when there is none.
 
@@ -214,7 +214,7 @@ The index is `.git/beforecode/index.db`. It records the plans ref commit it was 
 ```
 # On normal branches (changed through pull requests)
 .beforecode/
-  config.yaml                 # approval policy, sync (ADR 0003); claude.command, claude.enforce in version 3 (#59)
+  config.yaml                 # approval policy, sync (ADR 0003); claude.command, claude.enforce in version 3 (ADR 0003)
   skills/                     # defaults embedded in bfc; the repository's copy wins
     grill-intent/SKILL.md       # phase 2
     grill-architecture/SKILL.md
@@ -346,6 +346,8 @@ type Agent interface {
     Run(ctx context.Context, t Task) (<-chan Event, error) // stream of messages, questions and the result
 }
 ```
+
+A Task is one turn: the prompt, an optional session to resume, the allowed tools and the working directory. An Event is text, a tool use, the result (which carries the session id for the next turn) or an error; a failed or cancelled run ends with an error Event, never a panic or a hang. The Claude Code adapter (`internal/agent/claude`, #59) runs `<claude.command> -p <prompt> --output-format stream-json --verbose [--resume <session>] [--allowedTools …]` and reads the `assistant` and `result` lines; its tests replay output recorded from a real Claude Code 2.1.328 through a fake binary.
 
 ### Package layout
 

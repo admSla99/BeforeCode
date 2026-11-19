@@ -3,6 +3,7 @@ package main
 import (
 	"os"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -558,4 +559,30 @@ func TestDoctorHasNoRepairForMissingObjectsInLocalMode(t *testing.T) {
 	if strings.Contains(out, "bfc doctor --fix") {
 		t.Errorf("a failure without a repair offers --fix:\n%s", out)
 	}
+}
+
+// Issue #59, AC-6: bfc doctor says whether claude.command is found. Claude
+// Code is optional, so a missing one is a warning that does not fail the run.
+func TestDoctorReportsWhetherClaudeCodeIsFound(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	cfg := filepath.Join(repo, ".beforecode", "config.yaml")
+	withCommand := func(command string) {
+		writeFile(t, cfg, "version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: '"+command+"'\n")
+	}
+
+	missing := filepath.Join(t.TempDir(), "no-claude")
+	withCommand(missing)
+	out := mustBfc(t, repo, "doctor")
+	wantDoctor(t, out, "warn", "claude", missing, "not found", "claude.command")
+
+	found := filepath.Join(t.TempDir(), "my-claude")
+	if runtime.GOOS == "windows" {
+		found += ".exe"
+	}
+	if err := os.WriteFile(found, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	withCommand(found)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude", found)
 }

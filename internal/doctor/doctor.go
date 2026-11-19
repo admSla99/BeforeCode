@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"time"
@@ -77,6 +78,7 @@ var checks = []check{
 	{name: "plans", run: checkPlans},
 	{name: "skipped events", run: checkSkippedEvents},
 	{name: "short IDs", run: checkShortIDs},
+	{name: "claude", run: checkClaude},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -260,6 +262,21 @@ func checkConfig(_ context.Context, e *env) Result {
 	}
 	e.remote = e.cfg.Remote
 	return pass("%s is valid; syncs with %s", config.Path, e.remote)
+}
+
+// checkClaude looks for the command that starts Claude Code. bfc works
+// without it, so a missing one is only a warning.
+func checkClaude(_ context.Context, e *env) Result {
+	if e.cfgErr != nil {
+		return skip("needs a valid " + config.Path)
+	}
+	command := e.cfg.Command()
+	path, err := exec.LookPath(command)
+	if err != nil {
+		return Result{Status: Warn, Detail: fmt.Sprintf(
+			"%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)}
+	}
+	return pass("%s is %s", command, path)
 }
 
 func checkPlansRef(ctx context.Context, e *env) Result {

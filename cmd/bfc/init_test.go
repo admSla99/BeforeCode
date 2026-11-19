@@ -191,7 +191,7 @@ func TestInitCreatesConfigTemplatesAndPlansRefWithoutCommitting(t *testing.T) {
 	if err != nil {
 		t.Fatalf("config.yaml: %v", err)
 	}
-	if want := (config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: config.DefaultSyncInterval}); cfg != want {
+	if want := (config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: config.DefaultSyncInterval, ClaudeCommand: "claude"}); cfg != want {
 		t.Errorf("config = %+v, want %+v", cfg, want)
 	}
 	for _, name := range []string{"intent.md", "plan.md"} {
@@ -382,7 +382,7 @@ func TestInitLocalSkipsRemoteAndRecordsSyncOff(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if want := (config.Config{RequiredApprovals: 1}); cfg != want {
+	if want := (config.Config{RequiredApprovals: 1, ClaudeCommand: "claude"}); cfg != want {
 		t.Errorf("config = %+v, want %+v", cfg, want)
 	}
 	if got := gitIn(t, dir, "show", plansRef+":format-version"); got != "1" {
