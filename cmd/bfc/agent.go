@@ -1,26 +1,71 @@
 package main
 
 import (
+	"fmt"
 	"os"
+	"slices"
 	"strings"
 
 	"github.com/spf13/cobra"
+
+	"github.com/admSla99/BeforeCode/internal/core"
 )
 
-// agentEnv is the variable Claude Code sets for the commands it runs
-// (ADR 0011). It tells bfc that an agent, not a person, runs it. This guards
-// against mistakes, not against an agent that unsets it.
+// This file is the one place that knows which harnesses mark bfc as run by
+// an agent and which commands are the Gates (ADR 0011). core only gets a
+// plain "inside an agent" flag. The check guards against mistakes, not
+// against an agent that unsets the variable.
+
+// agentEnv is the variable Claude Code sets for the commands it runs.
 const agentEnv = "CLAUDECODE"
 
 // claudeCode is the agent field of what bfc writes inside Claude Code.
 const claudeCode = "claude-code"
 
+// harnesses are the variables that tell bfc an agent, not a person, runs
+// it, each with the harness it names. A new harness adds its variable here.
+var harnesses = []struct{ env, name string }{
+	{agentEnv, claudeCode},
+}
+
+// gateCommands are the Gates: the commands that are for people and refuse
+// to run inside an agent.
+var gateCommands = []string{"submit", "approve", "request-changes", "withdraw", "close"}
+
 // insideAgent returns the harness bfc runs in, or "" when a person runs it.
 func insideAgent(cmd *cobra.Command) string {
-	if v, _ := lookupEnv(cmd, agentEnv); v != "" {
-		return claudeCode
+	for _, h := range harnesses {
+		if v, _ := lookupEnv(cmd, h.env); v != "" {
+			return h.name
+		}
 	}
 	return ""
+}
+
+// checkPerson refuses a Gate inside an agent.
+func checkPerson(cmd *cobra.Command) error {
+	return core.CheckPerson(insideAgent(cmd) != "")
+}
+
+// guardGates makes each Gate among the subcommands of root refuse to run
+// inside an agent, before it does anything. The check is the Gate's own
+// PreRunE, so a PersistentPreRunE added later cannot replace it.
+func guardGates(root *cobra.Command) {
+	for _, c := range root.Commands() {
+		if !slices.Contains(gateCommands, c.Name()) {
+			continue
+		}
+		next := c.PreRunE
+		c.PreRunE = func(cmd *cobra.Command, args []string) error {
+			if err := checkPerson(cmd); err != nil {
+				return fmt.Errorf("bfc %s: %w", cmd.Name(), err)
+			}
+			if next != nil {
+				return next(cmd, args)
+			}
+			return nil
+		}
+	}
 }
 
 // lookupEnv returns the variable as the command sees it: from the variables
