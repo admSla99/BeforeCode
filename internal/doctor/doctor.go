@@ -8,6 +8,7 @@ package doctor
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -79,6 +80,7 @@ var checks = []check{
 	{name: "skipped events", run: checkSkippedEvents},
 	{name: "short IDs", run: checkShortIDs},
 	{name: "claude", run: checkClaude},
+	{name: "claude hook", run: checkClaudeHook},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -275,11 +277,88 @@ func checkClaude(_ context.Context, e *env) Result {
 		return skip("needs a valid " + config.Path)
 	}
 	command := e.cfg.Command()
-	path, err := exec.LookPath(command)
+	path, err := lookPath(command, e.vars)
 	if err != nil {
 		return warn("%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)
 	}
 	return pass("%s is %s", command, path)
+}
+
+// claudeSettings is the Claude Code settings file of the repository, which
+// bfc setup claude writes (ADR 0010).
+const claudeSettings = ".claude/settings.json"
+
+// hookCommand is what Claude Code runs before a tool call.
+const hookCommand = "hook pre-tool-use"
+
+// checkClaudeHook warns when the repository's Claude Code settings run
+// bfc hook pre-tool-use with a bfc that cannot be found: Claude Code then
+// reports the hook as failed and lets the edit through.
+func checkClaudeHook(_ context.Context, e *env) Result {
+	if e.s == nil {
+		return skip("needs a git repository")
+	}
+	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claudeSettings)))
+	if errors.Is(err, os.ErrNotExist) {
+		return skip("no " + claudeSettings)
+	}
+	if err != nil {
+		return warn("cannot read %s: %v", claudeSettings, err)
+	}
+	var settings struct {
+		Hooks struct {
+			PreToolUse []struct {
+				Hooks []struct {
+					Command string `json:"command"`
+				} `json:"hooks"`
+			} `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return warn("%s is not valid JSON: %v", claudeSettings, err)
+	}
+	for _, m := range settings.Hooks.PreToolUse {
+		for _, h := range m.Hooks {
+			bin, ok := strings.CutSuffix(strings.TrimSpace(h.Command), " "+hookCommand)
+			bin = strings.Trim(strings.TrimSpace(bin), `"'`)
+			if !ok || strings.TrimSuffix(filepath.Base(filepath.FromSlash(bin)), ".exe") != "bfc" {
+				continue
+			}
+			path, err := lookPath(bin, e.vars)
+			switch {
+			case err == nil:
+				return pass("%s runs %s with %s", claudeSettings, h.Command, path)
+			case bin == "bfc":
+				return warn("%s runs %s, but bfc is not on PATH, so Claude Code cannot run the hook and edits go unchecked; install bfc on PATH", claudeSettings, h.Command)
+			default:
+				return warn("%s runs %s, but %s is not found, so Claude Code cannot run the hook and edits go unchecked", claudeSettings, h.Command, bin)
+			}
+		}
+	}
+	return skip(claudeSettings + " does not run bfc " + hookCommand)
+}
+
+// lookPath finds a command like exec.LookPath, on the PATH of vars when they
+// set one, else on the PATH of the process.
+func lookPath(name string, vars []string) (string, error) {
+	path, ok := "", false
+	for _, v := range vars {
+		if p, found := strings.CutPrefix(v, "PATH="); found {
+			path, ok = p, true
+		}
+	}
+	if !ok || strings.ContainsAny(name, `/\`) {
+		return exec.LookPath(name)
+	}
+	for _, dir := range filepath.SplitList(path) {
+		if dir == "" {
+			continue
+		}
+		if p, err := exec.LookPath(filepath.Join(dir, name)); err == nil {
+			return p, nil
+		}
+	}
+	return "", exec.ErrNotFound
 }
 
 func checkPlansRef(ctx context.Context, e *env) Result {

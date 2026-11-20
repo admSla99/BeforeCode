@@ -23,7 +23,8 @@ Why: an agent runs `bfc` under the developer's git identity. Without this check 
 `bfc hook pre-tool-use` reads the Claude Code PreToolUse JSON on stdin.
 
 - `Edit`, `Write`, `MultiEdit` and `NotebookEdit` are allowed only when the Current plan (ADR 0009) is `approved`. Otherwise the call is blocked with a reason that says what to do: `bfc start <id>`, or get the plan approved (after a `bfc pull` if it was approved elsewhere).
-- Files under `.beforecode/` and `.claude/` are always allowed, compared after making the path relative to the repository root.
+- Files under `.beforecode/` and `.claude/` are always allowed, compared after making the path relative to the repository root. Files outside the repository are allowed too: the hook guards this repository's code, not the user's other files (issue #61).
+- It answers in Claude Code's PreToolUse JSON on stdout, exit code 0: a block is `permissionDecision: "deny"` with the reason, which Claude Code shows the agent. An allowed call gets no output, so Claude Code's own permission rules still apply; the hook never answers `allow`, which would skip them.
 - Every other tool is allowed. **Bash is not blocked.**
 - **On an internal error** (not a git repository, no Plans ref, damaged ref) it blocks, with the exact fix: `bfc bootstrap` or `bfc doctor`.
 - It reads only the local Plans ref and the Index, never the network.
@@ -40,5 +41,6 @@ Why: an agent runs `bfc` under the developer's git identity. Without this check 
 ## Consequences
 
 - When Claims arrive in phase 3, the hook must also allow edits while the Current plan is `in-progress`.
+- Because `.beforecode/` and `.claude/` are exempt, an agent could also turn the hook off (`claude.enforce: false`) or remove it from `.claude/settings.json`. Like the Gate check, the hook guards against mistakes, not against a hostile agent; such a change is a diff on a normal branch that review sees.
 - An agent can still change files through Bash without an approved plan. That is a known gap, closed at pull request time by the Plan check, not by the hook.
 - A new harness in phase 4 needs its own detection variable and, if it has hooks, its own hook command.
