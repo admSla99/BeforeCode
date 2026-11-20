@@ -6,7 +6,7 @@ Use the template.
 
 - State: draft
 - Author: Ada Lovelace <ada@example.com>
-- Store plan.md: `bfc edit bfc-5v7x --stdin`, with the document on stdin
+- Check plan.md with `bfc edit bfc-5v7x --stdin --check`, then store it once with `bfc edit bfc-5v7x --stdin`, the document on stdin
 - Ask what is missing: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`, then `bfc reply <id> --verbatim -m "<their words>"`
 
 ### plan.md template

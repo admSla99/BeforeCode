@@ -23,8 +23,8 @@ func runPrimePlan(cmd *cobra.Command, args []string) error {
 	}
 	v := gatherTopic(cmd, args, planSkill)
 	v.Template, _ = beforecode.Templates.ReadFile(planTemplate) // tested to exist
-	if s, err := openStore(cmd); err == nil {
-		if tpl, err := readTemplate(s.Root(), planTemplate); err == nil {
+	if v.root != "" {
+		if tpl, err := readTemplate(v.root, planTemplate); err == nil {
 			v.Template = tpl
 		}
 	}
@@ -42,9 +42,9 @@ func renderPlanTopic(w io.Writer, v topicView) error {
 	fmt.Fprintf(&b, "- Author: %s <%s>\n", orDash(p.Status.Author.Name), orDash(p.Status.Author.Email))
 	written := p.Plan != nil && !sameText(p.Plan, v.Template)
 	if written {
-		fmt.Fprintf(&b, "- plan.md is already written; it is shown below. Ask the user before you change it; once they agree, store your version with `bfc edit %s --stdin --force`.\n", p.ShortID)
+		fmt.Fprintf(&b, "- plan.md is already written; it is shown below. Ask the author before you change it; once they agree, store your version with `bfc edit %s --stdin --force`.\n", p.ShortID)
 	}
-	fmt.Fprintf(&b, "- Store plan.md: `bfc edit %s --stdin`, with the document on stdin\n", p.ShortID)
+	fmt.Fprintf(&b, "- Check plan.md with `bfc edit %s --stdin --check`, then store it once with `bfc edit %s --stdin`, the document on stdin\n", p.ShortID, p.ShortID)
 	fmt.Fprintf(&b, "- Ask what is missing: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`, then `bfc reply <id> --verbatim -m \"<their words>\"`\n", p.ShortID, authorAddress(p))
 	writeFenced(&b, "plan.md template", v.Template)
 	writeFenced(&b, "intent.md", p.Intent)

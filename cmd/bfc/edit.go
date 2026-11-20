@@ -18,9 +18,9 @@ import (
 const planTemplate = ".beforecode/templates/plan.md"
 
 func newEditCmd() *cobra.Command {
-	var intent, stdin, force bool
+	var intent, stdin, force, check bool
 	cmd := &cobra.Command{
-		Use:   "edit <id> [--intent] [--stdin [--force]]",
+		Use:   "edit <id> [--intent] [--stdin [--check | --force]]",
 		Short: "Edit plan.md (or intent.md) of a plan in your editor, or write it from stdin",
 		Long: `Open plan.md of a plan in the editor git uses (GIT_EDITOR, core.editor,
 VISUAL, EDITOR), or intent.md with --intent. A missing plan.md starts from the
@@ -34,28 +34,39 @@ in-review. Problems in plan.md are reported as warnings.
 
 With --stdin the document is read from stdin instead, for agents and
 scripts; the same rules apply. It replaces a plan.md only while that is
-still the template, unless --force is given.`,
+still the template, unless --force is given. --check prints the problems of
+the document on stdin and commits nothing.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			if force && !stdin {
-				return errors.New("--force only applies with --stdin")
+			switch {
+			case (force || check) && !stdin:
+				return errors.New("--force and --check only apply with --stdin")
+			case force && check:
+				return errors.New("--check commits nothing, so --force does not apply")
+			case force && intent:
+				return errors.New("--force replaces a written plan.md; intent.md needs none")
 			}
 			doc := "plan.md"
 			if intent {
 				doc = "intent.md"
 			}
-			return runEdit(cmd, args[0], doc, stdin, force)
+			return runEdit(cmd, args[0], doc, editSource{stdin: stdin, force: force, check: check})
 		},
 	}
 	cmd.Flags().BoolVar(&intent, "intent", false, "edit intent.md instead of plan.md")
 	cmd.Flags().BoolVar(&stdin, "stdin", false, "read the document from stdin instead of opening an editor")
 	cmd.Flags().BoolVar(&force, "force", false, "with --stdin: replace a plan.md that is no longer the template")
+	cmd.Flags().BoolVar(&check, "check", false, "with --stdin: print the problems of the document and commit nothing")
 	return cmd
 }
 
-// runEdit writes doc of the plan query from the editor, or from stdin with
-// fromStdin. From stdin a written plan.md is replaced only with force.
-func runEdit(cmd *cobra.Command, query, doc string, fromStdin, force bool) error {
+// editSource says where bfc edit takes the document from: the editor, or
+// stdin. From stdin a written plan.md is replaced only with force, and
+// check only reports the document's problems.
+type editSource struct{ stdin, force, check bool }
+
+// runEdit writes doc of the plan query from src.
+func runEdit(cmd *cobra.Command, query, doc string, src editSource) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	s, err := openPlans(cmd, forWriting)
@@ -90,26 +101,32 @@ func runEdit(cmd *cobra.Command, query, doc string, fromStdin, force bool) error
 		}
 		if text == nil {
 			text = tpl
-		} else if fromStdin && !force && !sameText(text, tpl) {
+		} else if src.stdin && !src.force && !src.check && !sameText(text, tpl) {
 			return fmt.Errorf("plan.md of %s is already written, not the template; nothing committed\nRead it with bfc show %s, and replace it with --force only if that is what the user wants", v.ShortID, v.ShortID)
 		}
 	}
 
 	var edited []byte
 	var kept string // where the editor's text is kept; stdin keeps none
-	if fromStdin {
+	if src.stdin {
 		if edited, err = io.ReadAll(cmd.InOrStdin()); err != nil {
-			return err
+			return fmt.Errorf("cannot read %s from stdin: %w; nothing committed", doc, err)
 		}
 	} else if edited, kept, err = editText(cmd, s, "*-"+doc, text); err != nil {
 		return err
 	}
 	// Stored files use LF (ADR 0002); editors on Windows may save CRLF.
 	edited = bytes.ReplaceAll(edited, []byte("\r\n"), []byte("\n"))
+	if src.check {
+		return checkDoc(cmd, doc, edited)
+	}
 	if bytes.Equal(edited, text) {
 		removeKept(kept)
-		_, err := fmt.Fprintf(out, "no changes to %s of %s\n", doc, v.ShortID)
-		return err
+		if _, err := fmt.Fprintf(out, "no changes to %s of %s\n", doc, v.ShortID); err != nil {
+			return err
+		}
+		warnPlan(cmd, doc, edited)
+		return nil
 	}
 	keep := func(err error) error { return textKept(err, "nothing committed", kept) }
 	if len(bytes.TrimSpace(edited)) == 0 {
@@ -143,10 +160,40 @@ func runEdit(cmd *cobra.Command, query, doc string, fromStdin, force bool) error
 	if v.Status.State == core.StateApproved {
 		_, _ = fmt.Fprintf(out, "%s is back in-review: its approvals were for the previous version of plan.md\n", v.ShortID)
 	}
-	for _, p := range core.ValidatePlan(edited) {
+	warnPlan(cmd, doc, edited)
+	return nil
+}
+
+// warnPlan prints the problems of a plan.md (ADR 0002 section 6) as
+// warnings, and reports whether there were any.
+func warnPlan(cmd *cobra.Command, doc string, text []byte) bool {
+	if doc != "plan.md" {
+		return false
+	}
+	problems := core.ValidatePlan(text)
+	for _, p := range problems {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: plan.md %s\n", p)
 	}
-	return nil
+	return len(problems) > 0
+}
+
+// checkDoc is bfc edit --stdin --check: it reports the problems of the
+// document and commits nothing. Problems that bfc edit refuses are errors,
+// the rest warnings.
+func checkDoc(cmd *cobra.Command, doc string, text []byte) error {
+	if len(bytes.TrimSpace(text)) == 0 {
+		return fmt.Errorf("%s is empty; nothing committed", doc)
+	}
+	if doc == "intent.md" {
+		if _, err := core.ParseIntent(text); err != nil {
+			return fmt.Errorf("%w; nothing committed", err)
+		}
+	}
+	if warnPlan(cmd, doc, text) {
+		return nil
+	}
+	_, err := fmt.Fprintf(cmd.OutOrStdout(), "%s has no problems; nothing committed\n", doc)
+	return err
 }
 
 // sameText reports whether a and b are the same document, apart from line

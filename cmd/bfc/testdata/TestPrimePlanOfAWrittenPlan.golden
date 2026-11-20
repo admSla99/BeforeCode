@@ -6,8 +6,8 @@ Use the template.
 
 - State: in-review
 - Author: Ada Lovelace <ada@example.com>
-- plan.md is already written; it is shown below. Ask the user before you change it; once they agree, store your version with `bfc edit bfc-5v7x --stdin --force`.
-- Store plan.md: `bfc edit bfc-5v7x --stdin`, with the document on stdin
+- plan.md is already written; it is shown below. Ask the author before you change it; once they agree, store your version with `bfc edit bfc-5v7x --stdin --force`.
+- Check plan.md with `bfc edit bfc-5v7x --stdin --check`, then store it once with `bfc edit bfc-5v7x --stdin`, the document on stdin
 - Ask what is missing: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`, then `bfc reply <id> --verbatim -m "<their words>"`
 
 ### plan.md template

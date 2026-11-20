@@ -18,20 +18,25 @@ You turn a plan's Intent and the answers from its Grill into `plan.md`: the docu
    - **Out of scope**: from the Intent and the Grill, stated plainly.
    - **Tasks**: units of work, in order.
    - **Acceptance criteria**: one item each, `- AC-1: <text>`, `- AC-2: <text>`, … Each is a single observable result that a test or a person can check: an input and the expected outcome, a number, a state. Together they cover the Intent's "how we know it worked" and every decision from the Grill that changes behaviour.
-4. **Store it** with `bfc edit <id> --stdin`, the document on stdin:
+4. **Check it** with `bfc edit <id> --stdin --check`, the document on stdin:
 
    ```
-   bfc edit <id> --stdin <<'PLAN'
+   bfc edit <id> --stdin --check <<'PLAN'
    ## Context
    …
    PLAN
    ```
 
-   It saves the document and prints a `warning:` line for each problem it finds. Fix each warning and store the corrected document with `bfc edit <id> --stdin --force`: `--force` replaces the plan.md you stored in this step. Done when it prints `saved plan.md` with no warnings, or `no changes`.
-5. **Hand over.** Tell the user `plan.md` is ready, list the acceptance criteria, and name any open Questions. The user reviews it and submits it in the `bfc` TUI.
+   It commits nothing and prints a `warning:` line for each problem. Fix each one and check again. Done when it prints `plan.md has no problems`.
+5. **Store it once** with the same command without `--check`: `bfc edit <id> --stdin`. Done when it prints `saved plan.md`.
+6. **Hand over.** Tell the author `plan.md` is ready, list the acceptance criteria, and name any open Questions. The author reviews it and submits it in the `bfc` TUI.
 
 ## When plan.md is already written
 
-`bfc edit --stdin` replaces only the template. When `plan.md` already had content before you started, `bfc prime plan` shows it. Ask the user whether to revise it; once they agree, build on that text rather than starting over, and store your version with `bfc edit <id> --stdin --force`.
+`bfc edit --stdin` stores `plan.md` only while it is still the template. When `plan.md` already has content, `bfc prime plan` shows it, and changing it is the author's call:
 
-Submitting, approving and the other Gates are for the user in the `bfc` TUI.
+1. Ask the author whether to revise it, and wait for a yes. If the plan is approved, say that a new version makes its Approvals stale and returns it to review.
+2. Build on that text. Keep every existing ID: `AC-3` stays `AC-3`, a removed criterion leaves a gap, and a new one takes the next unused number.
+3. Check the revision with `--check` as above, then store it with `bfc edit <id> --stdin --force`.
+
+Submitting, approving and the other Gates are for the author in the `bfc` TUI.

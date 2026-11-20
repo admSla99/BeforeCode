@@ -160,3 +160,43 @@ func mustStdin(t *testing.T, dir, stdin string, args ...string) string {
 	}
 	return out
 }
+
+// AC-1, AC-3: --check prints the problems of the document on stdin and
+// commits nothing, so an agent fixes the warnings before it stores plan.md
+// once, without --force.
+func TestEditStdinCheckCommitsNothing(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	short, _ := newPlan(t, dir, "Payments")
+	before := planCommits(t, dir)
+
+	out := mustStdin(t, dir, "## Context\n\nOnly context.\n", "edit", short, "--stdin", "--check")
+	if !strings.Contains(out, "warning: plan.md") || strings.Contains(out, "saved") || planCommits(t, dir) != before {
+		t.Errorf("want warnings and no commit:\n%s", out)
+	}
+	out = mustStdin(t, dir, validPlan, "edit", short, "--stdin", "--check")
+	if !strings.Contains(out, "plan.md has no problems") || planCommits(t, dir) != before {
+		t.Errorf("want a clean check and no commit:\n%s", out)
+	}
+	// Stored once after the check, without --force.
+	mustStdin(t, dir, validPlan, "edit", short, "--stdin")
+	if out, err := bfcStdin(t, dir, "", "edit", short, "--stdin", "--check"); err == nil || !strings.Contains(out, "plan.md is empty") {
+		t.Errorf("an empty document fails the check, got %v:\n%s", err, out)
+	}
+}
+
+// --force replaces only plan.md; --check only checks.
+func TestEditStdinFlagCombinations(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	short, _ := newPlan(t, dir, "Payments")
+	for _, args := range [][]string{
+		{"edit", short, "--stdin", "--intent", "--force"},
+		{"edit", short, "--check"},
+		{"edit", short, "--stdin", "--check", "--force"},
+	} {
+		if out, err := bfcStdin(t, dir, validPlan, args...); err == nil {
+			t.Errorf("bfc %v must be refused:\n%s", args, out)
+		}
+	}
+}

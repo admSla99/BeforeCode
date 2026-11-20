@@ -31,6 +31,7 @@ type topicView struct {
 	// Unread says why the Messages cannot be read.
 	Unread string
 	Note   string
+	root   string // the repository's root, "" outside one
 }
 
 // runPrimeGrill is bfc prime grill [id]: the grill-intent skill, then the
@@ -50,7 +51,8 @@ func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
 	ctx := cmd.Context()
 	v := topicView{Skill: builtInSkill(skill)}
 	if root, err := openStore(cmd); err == nil {
-		if data, err := readDefault(root.Root(), skill, beforecode.Skills); err == nil {
+		v.root = root.Root()
+		if data, err := readDefault(v.root, skill, beforecode.Skills); err == nil {
 			v.Skill = data
 		}
 	}

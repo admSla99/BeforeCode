@@ -70,7 +70,7 @@ func TestPrimePlanCommand(t *testing.T) {
 	for _, want := range []string{
 		strings.TrimSpace(builtIn),
 		"## Plan: " + short + " Payments",
-		"bfc edit " + short + " --stdin",
+		"bfc edit " + short + " --stdin --check",
 		"## Acceptance criteria",
 		"title: Payments",
 		"Which cards fail?",
