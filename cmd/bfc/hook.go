@@ -71,11 +71,11 @@ func runPreToolUse(cmd *cobra.Command, _ []string) error {
 	}
 	path, _ := in.ToolInput[field].(string)
 
-	// The fast path: two git starts tell whether the hook already found the
-	// Current plan approved with this plans ref, branch and bfc use. Any
-	// failure leaves the decision to the full check. The key is read before
-	// the full check, so that a change during it makes the next edit check
-	// again.
+	// The fast path: one git start (two on a branch without commits) tells
+	// whether the hook already found the Current plan approved with this
+	// plans ref, branch and bfc use. Any failure leaves the decision to the
+	// full check. The key is read before the full check, so that a change
+	// during it makes the next edit check again.
 	loc, err := store.Locate(cmd.Context(), wd, extraEnv(cmd)...)
 	key := ""
 	if err == nil {
