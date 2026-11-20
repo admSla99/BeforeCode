@@ -11,7 +11,7 @@ import (
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
-func renderGrillString(t *testing.T, v grillView) string {
+func renderGrillString(t *testing.T, v topicView) string {
 	t.Helper()
 	var b bytes.Buffer
 	if err := renderGrill(&b, v); err != nil {
@@ -41,13 +41,13 @@ func TestPrimeGrillOfAPlanWithAnsweredAndOpenQuestions(t *testing.T) {
 		To: []string{"ada@example.com"}, Ref: "intent.md", Body: "How do we know it worked?",
 	}
 	chat := core.Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C5D"), Author: benP, At: primeAt, Body: "Nice idea."}
-	golden(t, renderGrillString(t, grillView{Skill: testGrillSkill, Plan: p, Current: true, Messages: []core.Message{asked, answer, open, chat}}))
+	golden(t, renderGrillString(t, topicView{Skill: testGrillSkill, Plan: p, Current: true, Messages: []core.Message{asked, answer, open, chat}}))
 }
 
 // AC-4: without a plan, the skill and how to name one.
 func TestPrimeGrillWithoutAPlan(t *testing.T) {
 	t.Parallel()
-	golden(t, renderGrillString(t, grillView{Skill: testGrillSkill, Note: "There is no Current plan."}))
+	golden(t, renderGrillString(t, topicView{Skill: testGrillSkill, Note: "There is no Current plan."}))
 }
 
 // AC-3, AC-4: bfc prime grill runs on a real plan: the Current plan without

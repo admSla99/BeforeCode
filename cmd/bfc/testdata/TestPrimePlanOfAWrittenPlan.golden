@@ -1,0 +1,65 @@
+# Write plan.md
+
+Use the template.
+
+## Plan: bfc-5v7x Payments via Stripe
+
+- State: in-review
+- Author: Ada Lovelace <ada@example.com>
+- plan.md is already written; it is shown below. Ask the user before you change it; once they agree, store your version with `bfc edit bfc-5v7x --stdin --force`.
+- Store plan.md: `bfc edit bfc-5v7x --stdin`, with the document on stdin
+- Ask what is missing: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`, then `bfc reply <id> --verbatim -m "<their words>"`
+
+### plan.md template
+
+```markdown
+## Context
+
+## Acceptance criteria
+
+- AC-1:
+```
+
+### intent.md
+
+```markdown
+---
+title: Payments via Stripe
+---
+
+## Problem
+
+Cards fail.
+```
+
+### The Grill so far
+
+No Questions yet.
+
+### plan.md as written
+
+```markdown
+## Context
+
+Cards fail.
+
+## Approach
+
+Stripe.
+
+## Affected areas
+
+payments/
+
+## Out of scope
+
+Refunds.
+
+## Tasks
+
+- Add the client.
+
+## Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+```

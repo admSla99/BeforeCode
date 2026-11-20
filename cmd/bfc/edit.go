@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 
 	"github.com/spf13/cobra"
@@ -17,10 +18,10 @@ import (
 const planTemplate = ".beforecode/templates/plan.md"
 
 func newEditCmd() *cobra.Command {
-	var intent bool
+	var intent, stdin, force bool
 	cmd := &cobra.Command{
-		Use:   "edit <id>",
-		Short: "Edit plan.md (or intent.md) of a plan in your editor",
+		Use:   "edit <id> [--intent] [--stdin [--force]]",
+		Short: "Edit plan.md (or intent.md) of a plan in your editor, or write it from stdin",
 		Long: `Open plan.md of a plan in the editor git uses (GIT_EDITOR, core.editor,
 VISUAL, EDITOR), or intent.md with --intent. A missing plan.md starts from the
 template. The file is edited in a temporary location; a changed file is
@@ -29,21 +30,32 @@ committed to the plans ref, an unchanged one is not.
 If the document changed in the plans ref while the editor was open, nothing
 is committed and your text is kept in a file whose path is printed.
 Editing plan.md makes earlier Approvals stale, so an approved plan returns to
-in-review. Problems in plan.md are reported as warnings.`,
+in-review. Problems in plan.md are reported as warnings.
+
+With --stdin the document is read from stdin instead, for agents and
+scripts; the same rules apply. It replaces a plan.md only while that is
+still the template, unless --force is given.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
+			if force && !stdin {
+				return errors.New("--force only applies with --stdin")
+			}
 			doc := "plan.md"
 			if intent {
 				doc = "intent.md"
 			}
-			return runEdit(cmd, args[0], doc)
+			return runEdit(cmd, args[0], doc, stdin, force)
 		},
 	}
 	cmd.Flags().BoolVar(&intent, "intent", false, "edit intent.md instead of plan.md")
+	cmd.Flags().BoolVar(&stdin, "stdin", false, "read the document from stdin instead of opening an editor")
+	cmd.Flags().BoolVar(&force, "force", false, "with --stdin: replace a plan.md that is no longer the template")
 	return cmd
 }
 
-func runEdit(cmd *cobra.Command, query, doc string) error {
+// runEdit writes doc of the plan query from the editor, or from stdin with
+// fromStdin. From stdin a written plan.md is replaced only with force.
+func runEdit(cmd *cobra.Command, query, doc string, fromStdin, force bool) error {
 	ctx := cmd.Context()
 	out := cmd.OutOrStdout()
 	s, err := openPlans(cmd, forWriting)
@@ -68,23 +80,34 @@ func runEdit(cmd *cobra.Command, query, doc string) error {
 	if doc == "intent.md" {
 		text = v.Intent
 	}
-	if text == nil {
-		if doc == "intent.md" {
-			return fmt.Errorf("%s has no intent.md; run bfc doctor", v.ShortID)
-		}
-		if text, err = readTemplate(s.Root(), planTemplate); err != nil {
+	if text == nil && doc == "intent.md" {
+		return fmt.Errorf("%s has no intent.md; run bfc doctor", v.ShortID)
+	}
+	if doc == "plan.md" {
+		tpl, err := readTemplate(s.Root(), planTemplate)
+		if err != nil {
 			return err
+		}
+		if text == nil {
+			text = tpl
+		} else if fromStdin && !force && !sameText(text, tpl) {
+			return fmt.Errorf("plan.md of %s is already written, not the template; nothing committed\nRead it with bfc show %s, and replace it with --force only if that is what the user wants", v.ShortID, v.ShortID)
 		}
 	}
 
-	edited, kept, err := editText(cmd, s, "*-"+doc, text)
-	if err != nil {
+	var edited []byte
+	var kept string // where the editor's text is kept; stdin keeps none
+	if fromStdin {
+		if edited, err = io.ReadAll(cmd.InOrStdin()); err != nil {
+			return err
+		}
+	} else if edited, kept, err = editText(cmd, s, "*-"+doc, text); err != nil {
 		return err
 	}
 	// Stored files use LF (ADR 0002); editors on Windows may save CRLF.
 	edited = bytes.ReplaceAll(edited, []byte("\r\n"), []byte("\n"))
 	if bytes.Equal(edited, text) {
-		_ = os.Remove(kept)
+		removeKept(kept)
 		_, err := fmt.Fprintf(out, "no changes to %s of %s\n", doc, v.ShortID)
 		return err
 	}
@@ -109,7 +132,7 @@ func runEdit(cmd *cobra.Command, query, doc string) error {
 	if _, err := s.Write(ctx, "bfc edit "+v.ShortID+": "+doc, map[string][]byte{path: edited}); err != nil {
 		return keep(err)
 	}
-	_ = os.Remove(kept)
+	removeKept(kept)
 	if _, err := fmt.Fprintf(out, "saved %s of %s\n", doc, v.ShortID); err != nil {
 		return err
 	}
@@ -124,4 +147,18 @@ func runEdit(cmd *cobra.Command, query, doc string) error {
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: plan.md %s\n", p)
 	}
 	return nil
+}
+
+// sameText reports whether a and b are the same document, apart from line
+// endings and surrounding blank space.
+func sameText(a, b []byte) bool {
+	norm := func(d []byte) []byte { return bytes.TrimSpace(bytes.ReplaceAll(d, []byte("\r\n"), []byte("\n"))) }
+	return bytes.Equal(norm(a), norm(b))
+}
+
+// removeKept removes the file the editor's text was kept in, if any.
+func removeKept(kept string) {
+	if kept != "" {
+		_ = os.Remove(kept)
+	}
 }

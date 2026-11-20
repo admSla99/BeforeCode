@@ -17,9 +17,12 @@ import (
 // grillSkill is the skill bfc prime grill hands the agent.
 const grillSkill = beforecode.SkillsDir + "/grill-intent/SKILL.md"
 
-// grillView is what bfc prime grill prints, gathered by gatherGrill.
-type grillView struct {
-	Skill []byte // the repository's grill-intent, else the built-in one
+// topicView is what a topic of bfc prime prints, gathered by gatherTopic:
+// a skill, then one plan with its Messages.
+type topicView struct {
+	Skill []byte // the repository's copy of the skill, else the built-in one
+	// Template is the plan.md template, for the plan topic.
+	Template []byte
 	// Plan is the Current plan (Current) or the one given; nil when there
 	// is none, and Note says why.
 	Plan     *index.Plan
@@ -37,15 +40,18 @@ func runPrimeGrill(cmd *cobra.Command, args []string) error {
 	if len(args) > 1 {
 		return errors.New("bfc prime grill takes at most one plan ID")
 	}
-	return renderGrill(cmd.OutOrStdout(), gatherGrill(cmd, args))
+	return renderGrill(cmd.OutOrStdout(), gatherTopic(cmd, args, grillSkill))
 }
 
-func gatherGrill(cmd *cobra.Command, args []string) grillView {
+// gatherTopic collects the skill at skill (the repository's copy wins) and
+// the plan named by args or the Current plan, with its Messages. Problems
+// become notes, like in bfc prime.
+func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
 	ctx := cmd.Context()
-	v := grillView{Skill: builtInSkill(grillSkill)}
+	v := topicView{Skill: builtInSkill(skill)}
 	if root, err := openStore(cmd); err == nil {
-		if skill, err := readDefault(root.Root(), grillSkill, beforecode.Skills); err == nil {
-			v.Skill = skill
+		if data, err := readDefault(root.Root(), skill, beforecode.Skills); err == nil {
+			v.Skill = data
 		}
 	}
 	s, setup := openPrime(cmd)
@@ -77,44 +83,65 @@ func builtInSkill(rel string) []byte {
 }
 
 // renderGrill prints v as Markdown for an agent.
-func renderGrill(w io.Writer, v grillView) error {
+func renderGrill(w io.Writer, v topicView) error {
 	var b strings.Builder
-	b.WriteString(withoutFrontMatter(string(v.Skill)))
-	if v.Plan == nil {
-		fmt.Fprintf(&b, "\n## Plan\n\n%s\n\nName the plan to grill: `bfc prime grill <id>`; `bfc list` shows the plans.\n", v.Note)
+	if !writeTopicHead(&b, v, "grill") {
 		_, err := io.WriteString(w, b.String())
 		return err
 	}
 	p := v.Plan
+	fmt.Fprintf(&b, "- Author: %s <%s>, whom you grill.\n", orDash(p.Status.Author.Name), orDash(p.Status.Author.Email))
+	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, authorAddress(p))
+	b.WriteString("- Record the answer: `bfc reply <id> --verbatim -m \"<their words>\"`\n")
+	writeFenced(&b, "intent.md", p.Intent)
+	writeGrillSection(&b, v)
+	_, err := io.WriteString(w, b.String())
+	return err
+}
+
+// writeTopicHead writes the skill and the heading of the plan of the topic
+// bfc prime <topic>, and reports whether there is a plan; without one it
+// writes the note and how to name a plan.
+func writeTopicHead(b *strings.Builder, v topicView, topic string) bool {
+	b.WriteString(withoutFrontMatter(string(v.Skill)))
+	if v.Plan == nil {
+		fmt.Fprintf(b, "\n## Plan\n\n%s\n\nName the plan: `bfc prime %s <id>`; `bfc list` shows the plans.\n", v.Note, topic)
+		return false
+	}
 	which := "Plan"
 	if v.Current {
 		which = "Current plan"
 	}
-	author := p.Status.Author
-	to := author.Email
-	if to == "" {
-		to = "<author email>"
-	}
-	fmt.Fprintf(&b, "\n## %s: %s %s\n\n", which, p.ShortID, p.Title)
-	fmt.Fprintf(&b, "- State: %s\n", p.Status.State)
-	fmt.Fprintf(&b, "- Author: %s <%s>, whom you grill.\n", orDash(author.Name), orDash(author.Email))
-	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, to)
-	b.WriteString("- Record the answer: `bfc reply <id> --verbatim -m \"<their words>\"`\n")
+	fmt.Fprintf(b, "\n## %s: %s %s\n\n- State: %s\n", which, v.Plan.ShortID, v.Plan.Title, v.Plan.Status.State)
+	return true
+}
 
-	intent := string(p.Intent)
-	if !strings.HasSuffix(intent, "\n") {
-		intent += "\n"
+// authorAddress is the email of the plan's author for --to, or a
+// placeholder when the author has none.
+func authorAddress(p *index.Plan) string {
+	if p.Status.Author.Email == "" {
+		return "<author email>"
 	}
-	fence := fenceFor(intent)
-	fmt.Fprintf(&b, "\n### intent.md\n\n%smarkdown\n%s%s\n", fence, intent, fence)
+	return p.Status.Author.Email
+}
 
+// writeFenced writes a level-3 heading and doc in a Markdown fence.
+func writeFenced(b *strings.Builder, heading string, doc []byte) {
+	text := string(doc)
+	if !strings.HasSuffix(text, "\n") {
+		text += "\n"
+	}
+	fence := fenceFor(text)
+	fmt.Fprintf(b, "\n### %s\n\n%smarkdown\n%s%s\n", heading, fence, text, fence)
+}
+
+// writeGrillSection writes the Questions of the plan with their answers.
+func writeGrillSection(b *strings.Builder, v topicView) {
 	b.WriteString("\n### The Grill so far\n\n")
 	if v.Unread != "" {
 		b.WriteString("The Grill so far cannot be read: " + v.Unread + "\n")
 	}
-	writeGrill(&b, v.Messages)
-	_, err := io.WriteString(w, b.String())
-	return err
+	writeGrill(b, v.Messages)
 }
 
 // writeGrill prints each Question of msgs with its answers, in the order
@@ -144,7 +171,7 @@ func writeGrill(b *strings.Builder, msgs []core.Message) {
 		}
 	}
 	if n == 0 {
-		b.WriteString("No Questions yet: start with the first round.\n")
+		b.WriteString("No Questions yet.\n")
 	}
 }
 
