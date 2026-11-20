@@ -646,6 +646,10 @@ func TestDoctorReportsTheClaudeSetup(t *testing.T) {
 	wantDoctor(t, out, "warn", "claude hook", "does not run bfc hook pre-tool-use", "bfc setup claude")
 	wantDoctor(t, out, "warn", "claude skill", ".claude/skills/beforecode/SKILL.md", "missing", "bfc setup claude")
 
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"),
+		`{"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "bfc hook pre-tool-use"}]}]}}`)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", "only for Edit", "bfc setup claude")
+
 	mustBfc(t, repo, "setup", "claude")
 	out = mustBfc(t, repo, "doctor")
 	wantDoctor(t, out, "ok", "claude skill", "matches this bfc")

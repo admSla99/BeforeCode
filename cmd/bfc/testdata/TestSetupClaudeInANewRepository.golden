@@ -14,5 +14,5 @@ added    permissions.deny Bash(bfc withdraw:*)
 added    permissions.deny Bash(bfc close:*)
 created  .claude/skills/beforecode/SKILL.md
 
-Next: commit .claude through a pull request, so the setup reaches everyone who runs Claude Code here:
-  git add .claude && git commit -m "Set up Claude Code for BeforeCode"
+Next: commit .claude on a branch and merge it through a pull request, so the setup reaches everyone who runs Claude Code here:
+  git switch -c set-up-claude-code && git add .claude && git commit -m "Set up Claude Code for BeforeCode"

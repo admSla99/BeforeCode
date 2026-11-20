@@ -14,6 +14,6 @@ Before you plan, grill or implement, run `bfc prime` and follow what it prints:
 - `bfc prime grill <id>`: grill a plan's Intent.
 - `bfc prime plan <id>`: write a plan's `plan.md`.
 
-Gates (submit, approve, request changes, withdraw, close) are for people. When a plan needs one, tell the user to run `bfc` and take it in the TUI.
+Gates (submit, approve, request changes, withdraw, close) are for people, never for you. When a plan needs one, tell the user to run `bfc` and take it in the TUI.
 
 If `bfc` is not installed, tell the user so and stop there; the commands and rules come only from `bfc prime`.

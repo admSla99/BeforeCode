@@ -83,8 +83,8 @@ func TestSetupClaudeMergesExistingSettings(t *testing.T) {
 			t.Errorf("a second run reports a change: %q\n%s", line, again)
 		}
 	}
-	if !strings.Contains(again, "nothing changed") {
-		t.Errorf("a second run should say nothing changed:\n%s", again)
+	if !strings.Contains(again, "Nothing changed") || !strings.Contains(again, "pull request") {
+		t.Errorf("a second run should say nothing changed and remind of the pull request:\n%s", again)
 	}
 }
 
@@ -93,7 +93,7 @@ func TestSetupClaudeKeepsTheHookWithAPathToBfc(t *testing.T) {
 	t.Parallel()
 	repo := newLocalRepo(t)
 	settings := filepath.Join(repo, ".claude", "settings.json")
-	writeFile(t, settings, `{"hooks": {"PreToolUse": [{"matcher": "`+hookMatcher+`", "hooks": [{"type": "command", "command": "\"C:/Program Files/bfc/bfc.exe\" hook pre-tool-use"}]}]}}`)
+	writeFile(t, settings, `{"hooks": {"PreToolUse": [{"matcher": "`+claude.HookMatcher+`", "hooks": [{"type": "command", "command": "\"C:/Program Files/bfc/bfc.exe\" hook pre-tool-use"}]}]}}`)
 
 	out := mustBfc(t, repo, "setup", "claude")
 	if strings.Contains(out, "hooks.PreToolUse") {
@@ -138,9 +138,45 @@ func TestSetupClaudeRefusesInvalidSettings(t *testing.T) {
 // edits.
 func TestHookMatcherNamesTheEditTools(t *testing.T) {
 	t.Parallel()
-	got := strings.Split(hookMatcher, "|")
+	got := strings.Split(claude.HookMatcher, "|")
 	slices.Sort(got)
 	if want := slices.Sorted(maps.Keys(editTools)); !slices.Equal(got, want) {
-		t.Errorf("hookMatcher names %v, the hook checks %v", got, want)
+		t.Errorf("claude.HookMatcher names %v, the hook checks %v", got, want)
+	}
+}
+
+// AC-3: bfc's hook with a matcher that leaves out edit tools gets the full
+// matcher, not a second entry.
+func TestSetupClaudeWidensTheMatcherOfTheHook(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	settings := filepath.Join(repo, ".claude", "settings.json")
+	writeFile(t, settings, `{"hooks": {"PreToolUse": [{"matcher": "Write|Edit", "hooks": [{"type": "command", "command": "bfc hook pre-tool-use", "timeout": 5}]}]}}`)
+
+	out := mustBfc(t, repo, "setup", "claude")
+	if want := `updated  hooks.PreToolUse bfc hook pre-tool-use for ` + claude.HookMatcher + `, was "Write|Edit"`; !strings.Contains(out, want) {
+		t.Errorf("output lacks %q:\n%s", want, out)
+	}
+	got := readFile(t, settings)
+	if strings.Count(got, "hook pre-tool-use") != 1 || !strings.Contains(got, `"matcher": "`+claude.HookMatcher+`"`) || !strings.Contains(got, `"timeout": 5`) {
+		t.Errorf("want one hook with the full matcher and its own keys:\n%s", got)
+	}
+}
+
+// AC-3: a checkout with CRLF line endings keeps the skill.
+func TestSetupClaudeKeepsTheSkillWithCRLF(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	mustBfc(t, repo, "setup", "claude")
+	skill := filepath.Join(repo, ".claude", "skills", "beforecode", "SKILL.md")
+	crlf := strings.ReplaceAll(string(claude.Skill), "\n", "\r\n")
+	writeFile(t, skill, crlf)
+
+	out := mustBfc(t, repo, "setup", "claude")
+	if !strings.Contains(out, "kept     "+claude.SkillPath) {
+		t.Errorf("want the skill kept:\n%s", out)
+	}
+	if got := readFile(t, skill); got != crlf {
+		t.Error("the skill was rewritten")
 	}
 }

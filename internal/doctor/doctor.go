@@ -8,7 +8,6 @@ package doctor
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"os"
@@ -286,55 +285,40 @@ func checkClaude(_ context.Context, e *env) Result {
 	return pass("%s is %s", command, path)
 }
 
-// claudeSettings is the Claude Code settings file of the repository, which
-// bfc setup claude writes (ADR 0010).
-const claudeSettings = claude.SettingsPath
-
 // checkClaudeHook reports whether the repository's Claude Code settings run
-// bfc hook pre-tool-use, and warns when they run it with a bfc that cannot
-// be found: Claude Code then reports the hook as failed and lets the edit
-// through.
+// bfc hook pre-tool-use for every edit tool, and warns when they run it with
+// a bfc that cannot be found: Claude Code then reports the hook as failed
+// and lets the edit through.
 func checkClaudeHook(_ context.Context, e *env) Result {
 	if e.s == nil {
 		return skip("needs a git repository")
 	}
-	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claudeSettings)))
+	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claude.SettingsPath)))
 	if errors.Is(err, os.ErrNotExist) {
-		return skip("no " + claudeSettings + "; bfc setup claude sets up Claude Code")
+		return skip("no " + claude.SettingsPath + "; bfc setup claude sets up Claude Code")
 	}
 	if err != nil {
-		return warn("cannot read %s: %v", claudeSettings, err)
+		return warn("cannot read %s: %v", claude.SettingsPath, err)
 	}
-	var settings struct {
-		Hooks struct {
-			PreToolUse []struct {
-				Hooks []struct {
-					Command string `json:"command"`
-				} `json:"hooks"`
-			} `json:"PreToolUse"`
-		} `json:"hooks"`
+	h, ok, err := claude.FindHook(data)
+	switch {
+	case err != nil:
+		return warn("%s is not valid JSON: %v", claude.SettingsPath, err)
+	case !ok:
+		return warn("%s does not run bfc %s, so Claude Code edits go unchecked; run bfc setup claude", claude.SettingsPath, claude.HookArgs)
+	case !h.CoversEdits():
+		return warn("%s runs %s only for %s, so other edits go unchecked; run bfc setup claude", claude.SettingsPath, h.Command, h.Matcher)
 	}
-	if err := json.Unmarshal(data, &settings); err != nil {
-		return warn("%s is not valid JSON: %v", claudeSettings, err)
+	bin, _ := claude.HookBinary(h.Command)
+	path, err := lookPath(bin, e.vars)
+	switch {
+	case err == nil:
+		return pass("%s runs %s with %s", claude.SettingsPath, h.Command, path)
+	case bin == "bfc":
+		return warn("%s runs %s, but bfc is not on PATH, so Claude Code cannot run the hook and edits go unchecked; install bfc on PATH", claude.SettingsPath, h.Command)
+	default:
+		return warn("%s runs %s, but %s is not found, so Claude Code cannot run the hook and edits go unchecked", claude.SettingsPath, h.Command, bin)
 	}
-	for _, m := range settings.Hooks.PreToolUse {
-		for _, h := range m.Hooks {
-			bin, ok := claude.HookBinary(h.Command)
-			if !ok {
-				continue
-			}
-			path, err := lookPath(bin, e.vars)
-			switch {
-			case err == nil:
-				return pass("%s runs %s with %s", claudeSettings, h.Command, path)
-			case bin == "bfc":
-				return warn("%s runs %s, but bfc is not on PATH, so Claude Code cannot run the hook and edits go unchecked; install bfc on PATH", claudeSettings, h.Command)
-			default:
-				return warn("%s runs %s, but %s is not found, so Claude Code cannot run the hook and edits go unchecked", claudeSettings, h.Command, bin)
-			}
-		}
-	}
-	return warn("%s does not run bfc %s, so Claude Code edits go unchecked; run bfc setup claude", claudeSettings, claude.HookArgs)
 }
 
 // checkClaudeSkill reports whether the beforecode skill is this bfc's
@@ -346,7 +330,7 @@ func checkClaudeSkill(_ context.Context, e *env) Result {
 	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claude.SkillPath)))
 	switch {
 	case errors.Is(err, os.ErrNotExist):
-		if _, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(claudeSettings))); errors.Is(err, os.ErrNotExist) {
+		if _, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(claude.SettingsPath))); errors.Is(err, os.ErrNotExist) {
 			return skip("no " + claude.SkillPath + "; bfc setup claude writes it")
 		}
 		return warn("%s is missing, so Claude Code does not know to use bfc; run bfc setup claude", claude.SkillPath)

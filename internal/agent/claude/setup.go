@@ -35,6 +35,10 @@ func SkillMatches(data []byte) bool {
 // PreToolUse hook.
 const HookArgs = "hook pre-tool-use"
 
+// HookMatcher names the Claude Code tools that edit files, which bfc's hook
+// checks (ADR 0011).
+const HookMatcher = "Edit|Write|MultiEdit|NotebookEdit"
+
 // HookBinary returns the bfc binary that command runs as the PreToolUse
 // hook, such as "bfc" or a quoted path to bfc.exe, and false when command
 // is not bfc's hook.
@@ -47,30 +51,89 @@ func HookBinary(command string) (string, bool) {
 	return bin, true
 }
 
-// Rules are what bfc setup claude puts into the settings: the PreToolUse
-// hook for the tools in Matcher, and the permissions.
+// Hook is a PreToolUse entry of the settings that runs bfc's hook.
+type Hook struct {
+	Matcher string // the tools it runs for
+	Command string // such as "bfc hook pre-tool-use"
+}
+
+// CoversEdits reports whether the hook runs for every tool in HookMatcher.
+// An empty matcher or "*" runs for every tool.
+func (h Hook) CoversEdits() bool {
+	if h.Matcher == "" || h.Matcher == "*" {
+		return true
+	}
+	tools := strings.Split(h.Matcher, "|")
+	for _, t := range strings.Split(HookMatcher, "|") {
+		if !slices.Contains(tools, t) {
+			return false
+		}
+	}
+	return true
+}
+
+// preToolUse is the part of a PreToolUse entry of the settings that bfc
+// reads.
+type preToolUse struct {
+	Matcher string        `json:"matcher"`
+	Hooks   []hookCommand `json:"hooks"`
+}
+
+type hookCommand struct {
+	Type    string `json:"type"`
+	Command string `json:"command"`
+}
+
+// hook returns the entry as bfc's Hook, false when it does not run it.
+func (e preToolUse) hook() (Hook, bool) {
+	for _, h := range e.Hooks {
+		if _, ok := HookBinary(h.Command); ok {
+			return Hook{e.Matcher, h.Command}, true
+		}
+	}
+	return Hook{}, false
+}
+
+// FindHook returns the first PreToolUse entry of the settings in data that
+// runs bfc's hook, false when there is none. It fails when data is not
+// valid JSON.
+func FindHook(data []byte) (Hook, bool, error) {
+	var settings struct {
+		Hooks struct {
+			PreToolUse []preToolUse `json:"PreToolUse"`
+		} `json:"hooks"`
+	}
+	if err := json.Unmarshal(data, &settings); err != nil {
+		return Hook{}, false, err
+	}
+	for _, e := range settings.Hooks.PreToolUse {
+		if h, ok := e.hook(); ok {
+			return h, true, nil
+		}
+	}
+	return Hook{}, false, nil
+}
+
+// Rules are what bfc setup claude puts into the settings besides the hook
+// for HookMatcher: the hook's command and the permissions.
 type Rules struct {
-	Matcher string   // such as "Edit|Write"
 	Command string   // the hook, such as "bfc hook pre-tool-use"
 	Allow   []string // permissions.allow, such as "Bash(bfc prime:*)"
 	Deny    []string // permissions.deny
 }
 
-// preToolUse is the part of a PreToolUse entry of the settings that
-// MergeSettings reads.
-type preToolUse struct {
-	Matcher string `json:"matcher"`
-	Hooks   []struct {
-		Command string `json:"command"`
-	} `json:"hooks"`
-}
+// Change is one thing MergeSettings changed: what it did ("added",
+// "updated") and to what.
+type Change struct{ Action, What string }
 
 // MergeSettings adds the rules to the Claude Code settings in data (empty
-// for a new file) and returns the new settings and what it added, one line
-// each. Everything else in data stays as it was, in its order. A
-// PreToolUse entry for Matcher that already runs bfc's hook counts as the
-// hook. When nothing is missing, it returns data unchanged and no lines.
-func MergeSettings(data []byte, r Rules) ([]byte, []string, error) {
+// for a new file) and returns the new settings and what it changed.
+// Everything else in data stays as it was, in its order. A PreToolUse entry
+// that already runs bfc's hook, through any path to bfc, is the hook: when
+// its matcher leaves out a tool of HookMatcher, the matcher is set to
+// HookMatcher rather than a second entry added. When nothing is missing, it
+// returns data unchanged and no changes.
+func MergeSettings(data []byte, r Rules) ([]byte, []Change, error) {
 	settings := object{}
 	if len(bytes.TrimSpace(data)) > 0 {
 		var err error
@@ -78,45 +141,91 @@ func MergeSettings(data []byte, r Rules) ([]byte, []string, error) {
 			return nil, nil, err
 		}
 	}
-	var added []string
-
-	hooks, err := settings.object("hooks")
+	changes, err := mergeHook(&settings, r.Command)
 	if err != nil {
 		return nil, nil, err
+	}
+	perms, err := mergePermissions(&settings, r.Allow, r.Deny)
+	if err != nil {
+		return nil, nil, err
+	}
+	changes = append(changes, perms...)
+	if len(changes) == 0 {
+		return data, nil, nil
+	}
+	var out bytes.Buffer
+	if err := json.Indent(&out, settings.marshal(), "", "  "); err != nil {
+		return nil, nil, err
+	}
+	out.WriteByte('\n')
+	return out.Bytes(), changes, nil
+}
+
+// mergeHook makes hooks.PreToolUse run command for HookMatcher.
+func mergeHook(settings *object, command string) ([]Change, error) {
+	hooks, err := settings.object("hooks")
+	if err != nil {
+		return nil, err
 	}
 	entries, err := hooks.array("hooks", "PreToolUse")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	if !slices.ContainsFunc(entries, func(raw json.RawMessage) bool { return runsHook(raw, r.Matcher) }) {
-		type command struct {
-			Type    string `json:"type"`
-			Command string `json:"command"`
+	var change Change
+	var h Hook
+	i := slices.IndexFunc(entries, func(raw json.RawMessage) bool {
+		var e preToolUse
+		if json.Unmarshal(raw, &e) != nil {
+			return false
 		}
+		var ok bool
+		h, ok = e.hook()
+		return ok
+	})
+	switch {
+	case i < 0:
 		entry, err := marshal(struct {
-			Matcher string    `json:"matcher"`
-			Hooks   []command `json:"hooks"`
-		}{r.Matcher, []command{{"command", r.Command}}})
+			Matcher string        `json:"matcher"`
+			Hooks   []hookCommand `json:"hooks"`
+		}{HookMatcher, []hookCommand{{"command", command}}})
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
-		hooks.setArray("PreToolUse", append(entries, entry))
-		settings.set("hooks", hooks.marshal())
-		added = append(added, fmt.Sprintf("hooks.PreToolUse %s for %s", r.Command, r.Matcher))
+		entries = append(entries, entry)
+		change = Change{"added", fmt.Sprintf("hooks.PreToolUse %s for %s", command, HookMatcher)}
+	default:
+		if h.CoversEdits() {
+			return nil, nil
+		}
+		entry, err := parseObject(entries[i])
+		if err != nil {
+			return nil, fmt.Errorf("%q is not a JSON object", "hooks.PreToolUse")
+		}
+		matcher, _ := marshal(HookMatcher) // a string always marshals
+		entry.set("matcher", matcher)
+		entries[i] = entry.marshal()
+		change = Change{"updated", fmt.Sprintf("hooks.PreToolUse %s for %s, was %q", h.Command, HookMatcher, h.Matcher)}
 	}
+	hooks.setArray("PreToolUse", entries)
+	settings.set("hooks", hooks.marshal())
+	return []Change{change}, nil
+}
 
+// mergePermissions adds the rules missing from permissions.allow and
+// permissions.deny.
+func mergePermissions(settings *object, allow, deny []string) ([]Change, error) {
 	perms, err := settings.object("permissions")
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	changed := false
+	var changes []Change
 	for _, list := range []struct {
 		key   string
 		rules []string
-	}{{"allow", r.Allow}, {"deny", r.Deny}} {
+	}{{"allow", allow}, {"deny", deny}} {
 		items, err := perms.array("permissions", list.key)
 		if err != nil {
-			return nil, nil, err
+			return nil, err
 		}
 		have := make([]string, 0, len(items))
 		for _, raw := range items {
@@ -132,45 +241,20 @@ func MergeSettings(data []byte, r Rules) ([]byte, []string, error) {
 			}
 			raw, err := marshal(rule)
 			if err != nil {
-				return nil, nil, err
+				return nil, err
 			}
 			items = append(items, raw)
 			have = append(have, rule)
-			added = append(added, fmt.Sprintf("permissions.%s %s", list.key, rule))
+			changes = append(changes, Change{"added", "permissions." + list.key + " " + rule})
 		}
 		if len(items) > n {
 			perms.setArray(list.key, items)
-			changed = true
 		}
 	}
-	if changed {
+	if len(changes) > 0 {
 		settings.set("permissions", perms.marshal())
 	}
-
-	if len(added) == 0 {
-		return data, nil, nil
-	}
-	var out bytes.Buffer
-	if err := json.Indent(&out, settings.marshal(), "", "  "); err != nil {
-		return nil, nil, err
-	}
-	out.WriteByte('\n')
-	return out.Bytes(), added, nil
-}
-
-// runsHook reports whether the PreToolUse entry raw is for matcher and
-// runs bfc's hook.
-func runsHook(raw json.RawMessage, matcher string) bool {
-	var e preToolUse
-	if json.Unmarshal(raw, &e) != nil || e.Matcher != matcher {
-		return false
-	}
-	return slices.ContainsFunc(e.Hooks, func(h struct {
-		Command string `json:"command"`
-	}) bool {
-		_, ok := HookBinary(h.Command)
-		return ok
-	})
+	return changes, nil
 }
 
 // object is a JSON object that keeps the order of its members and the

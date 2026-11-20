@@ -1,7 +1,6 @@
 package main
 
 import (
-	"bytes"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -31,7 +30,7 @@ edits without an approved Current plan (bfc hook pre-tool-use), allows the
 bfc commands agents use and denies the Gates. Everything else in
 .claude/settings.json is kept, and running it again changes nothing.
 
-Nothing is committed and the plans ref is not touched: commit .claude through
+Nothing is committed and the Plans ref is not touched: commit .claude through
 a pull request, so the setup reaches the whole team.`,
 		Args: cobra.NoArgs,
 		RunE: runSetupClaude,
@@ -39,15 +38,12 @@ a pull request, so the setup reaches the whole team.`,
 	return setup
 }
 
-// hookMatcher names the Claude Code tools the hook checks: the editTools.
-const hookMatcher = "Edit|Write|MultiEdit|NotebookEdit"
-
 // agentCommands are the bfc commands Claude Code may run without asking.
 var agentCommands = []string{"prime", "show", "list", "ask", "reply", "edit", "start"}
 
 // claudeRules are what bfc setup claude puts into .claude/settings.json.
 func claudeRules() claude.Rules {
-	r := claude.Rules{Matcher: hookMatcher, Command: "bfc " + claude.HookArgs}
+	r := claude.Rules{Command: "bfc " + claude.HookArgs}
 	for _, c := range agentCommands {
 		r.Allow = append(r.Allow, "Bash(bfc "+c+":*)")
 	}
@@ -71,7 +67,7 @@ func runSetupClaude(cmd *cobra.Command, _ []string) error {
 	if err != nil {
 		return err
 	}
-	settings, added, err := claude.MergeSettings(old, claudeRules())
+	settings, changes, err := claude.MergeSettings(old, claudeRules())
 	if err != nil {
 		return fmt.Errorf("%s: %w; fix it, then run bfc setup claude again", claude.SettingsPath, err)
 	}
@@ -81,7 +77,14 @@ func runSetupClaude(cmd *cobra.Command, _ []string) error {
 	}
 
 	changed := false
-	settingsAction := writeAction(old, settings)
+	settingsAction := "created"
+	switch {
+	case old == nil:
+	case len(changes) == 0:
+		settingsAction = "kept"
+	default:
+		settingsAction = "updated"
+	}
 	if settingsAction != "kept" {
 		if err := writeCreating(settingsFile, settings); err != nil {
 			return err
@@ -89,10 +92,17 @@ func runSetupClaude(cmd *cobra.Command, _ []string) error {
 		changed = true
 	}
 	report(out, settingsAction, claude.SettingsPath)
-	for _, a := range added {
-		report(out, "added", a)
+	for _, c := range changes {
+		report(out, c.Action, c.What)
 	}
-	skillAction := writeAction(oldSkill, claude.Skill)
+	skillAction := "created"
+	switch {
+	case oldSkill == nil:
+	case claude.SkillMatches(oldSkill): // also with CRLF line endings
+		skillAction = "kept"
+	default:
+		skillAction = "updated"
+	}
 	if skillAction != "kept" {
 		if err := writeCreating(skillFile, claude.Skill); err != nil {
 			return err
@@ -101,12 +111,12 @@ func runSetupClaude(cmd *cobra.Command, _ []string) error {
 	}
 	report(out, skillAction, claude.SkillPath)
 
+	next := "\nNext: commit .claude"
 	if !changed {
-		_, err = fmt.Fprintln(out, "\nClaude Code is already set up; nothing changed.")
-		return err
+		next = "\nNothing changed. If .claude is not committed yet, commit it"
 	}
-	_, err = fmt.Fprintln(out, "\nNext: commit .claude through a pull request, so the setup reaches everyone who runs Claude Code here:\n"+
-		"  git add .claude && git commit -m \"Set up Claude Code for BeforeCode\"")
+	_, err = fmt.Fprintln(out, next+" on a branch and merge it through a pull request, so the setup reaches everyone who runs Claude Code here:\n"+
+		"  git switch -c set-up-claude-code && git add .claude && git commit -m \"Set up Claude Code for BeforeCode\"")
 	return err
 }
 
@@ -117,19 +127,6 @@ func readOptional(name string) ([]byte, error) {
 		return nil, nil
 	}
 	return data, err
-}
-
-// writeAction says what writing data over old does: created, updated or
-// kept. A missing file has old nil.
-func writeAction(old, data []byte) string {
-	switch {
-	case old == nil:
-		return "created"
-	case bytes.Equal(old, data):
-		return "kept"
-	default:
-		return "updated"
-	}
 }
 
 // writeCreating writes data to the file, creating its directory.
