@@ -1,0 +1,18 @@
+created  .claude/settings.json
+added    hooks.PreToolUse bfc hook pre-tool-use for Edit|Write|MultiEdit|NotebookEdit
+added    permissions.allow Bash(bfc prime:*)
+added    permissions.allow Bash(bfc show:*)
+added    permissions.allow Bash(bfc list:*)
+added    permissions.allow Bash(bfc ask:*)
+added    permissions.allow Bash(bfc reply:*)
+added    permissions.allow Bash(bfc edit:*)
+added    permissions.allow Bash(bfc start:*)
+added    permissions.deny Bash(bfc submit:*)
+added    permissions.deny Bash(bfc approve:*)
+added    permissions.deny Bash(bfc request-changes:*)
+added    permissions.deny Bash(bfc withdraw:*)
+added    permissions.deny Bash(bfc close:*)
+created  .claude/skills/beforecode/SKILL.md
+
+Next: commit .claude on a branch and merge it through a pull request, so the setup reaches everyone who runs Claude Code here:
+  git switch -c set-up-claude-code && git add .claude && git commit -m "Set up Claude Code for BeforeCode"

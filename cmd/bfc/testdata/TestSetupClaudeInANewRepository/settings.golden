@@ -1,0 +1,33 @@
+{
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit|NotebookEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bfc hook pre-tool-use"
+          }
+        ]
+      }
+    ]
+  },
+  "permissions": {
+    "allow": [
+      "Bash(bfc prime:*)",
+      "Bash(bfc show:*)",
+      "Bash(bfc list:*)",
+      "Bash(bfc ask:*)",
+      "Bash(bfc reply:*)",
+      "Bash(bfc edit:*)",
+      "Bash(bfc start:*)"
+    ],
+    "deny": [
+      "Bash(bfc submit:*)",
+      "Bash(bfc approve:*)",
+      "Bash(bfc request-changes:*)",
+      "Bash(bfc withdraw:*)",
+      "Bash(bfc close:*)"
+    ]
+  }
+}

@@ -630,3 +630,30 @@ func TestDoctorWarnsWhenTheHookIsInstalledButBfcIsNotOnPath(t *testing.T) {
 		`{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": `+string(command)+`}]}]}}`)
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", spaced, "is not found")
 }
+
+// Issue #63, AC-5: bfc doctor reports whether .claude/settings.json has the
+// bfc hook and whether the beforecode skill is this bfc's version of it.
+func TestDoctorReportsTheClaudeSetup(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+
+	out := mustBfc(t, repo, "doctor")
+	wantDoctor(t, out, "skip", "claude hook", "no .claude/settings.json", "bfc setup claude")
+	wantDoctor(t, out, "skip", "claude skill", "bfc setup claude")
+
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), `{"model": "opus"}`)
+	out = mustBfc(t, repo, "doctor")
+	wantDoctor(t, out, "warn", "claude hook", "does not run bfc hook pre-tool-use", "bfc setup claude")
+	wantDoctor(t, out, "warn", "claude skill", ".claude/skills/beforecode/SKILL.md", "missing", "bfc setup claude")
+
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"),
+		`{"hooks": {"PreToolUse": [{"matcher": "Edit", "hooks": [{"type": "command", "command": "bfc hook pre-tool-use"}]}]}}`)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", "only for Edit", "bfc setup claude")
+
+	mustBfc(t, repo, "setup", "claude")
+	out = mustBfc(t, repo, "doctor")
+	wantDoctor(t, out, "ok", "claude skill", "matches this bfc")
+
+	writeFile(t, filepath.Join(repo, ".claude", "skills", "beforecode", "SKILL.md"), "an older skill\n")
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude skill", "differs from this bfc", "bfc setup claude")
+}

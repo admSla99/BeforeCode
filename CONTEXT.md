@@ -16,7 +16,7 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Question** | A Message addressed to a person or to the AI. It is open until it is answered. An open question blocks approval. |
 | **Thread** | A Message that replies to nothing, together with all replies to it. People and the AI both post. |
 | **Grill** | An interactive session where the AI challenges the developer one question at a time, driven by a Skill. Each question is a Question by the AI to the plan author, each answer a Message that answers it. |
-| **Skill** | A `SKILL.md` file in `.beforecode/skills/` that drives a grill, a review or a plan check. Versioned on normal branches. |
+| **Skill** | A `SKILL.md` file in `.beforecode/skills/` that drives a grill, a review or a plan check. Versioned on normal branches. Not the `beforecode` skill that `bfc setup claude` writes to `.claude/skills/`: that is a Claude Code skill which only points the agent to Prime. |
 | **Gate** | A lifecycle step that only a person may take, never an agent: submit, approve, request changes, withdraw, close. |
 | **Approval** | An `approved` event by someone other than the plan author. It approves one exact version of the Plan document; any later edit to `plan.md` makes it stale and the plan returns to `in-review`. Policy is in `.beforecode/config.yaml`; default is one approver. An agent never approves. |
 | **Review round** | The time from a `submitted` Event to the `withdrawn` or `changes-requested` Event that ends it. Only Approvals given within the open round count; a new `bfc submit` starts a new round that needs new Approvals. |
