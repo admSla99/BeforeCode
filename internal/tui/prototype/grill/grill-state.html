@@ -1,0 +1,254 @@
+<!doctype html>
+<!-- PROTOTYPE, throw away. Issue #62: the state model of the TUI Grill screen. -->
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Grill State Model</title>
+<style>
+  :root { --bg:#fbfbfa; --fg:#1d1d1f; --muted:#6b6b70; --line:#e3e3e0; --accent:#2a6fdb; --card:#fff; --warn:#b26b00; --bad:#c0392b; --ok:#1e7e34; }
+  @media (prefers-color-scheme: dark) { :root { --bg:#151517; --fg:#ececee; --muted:#9a9aa2; --line:#2c2c30; --accent:#6ea2ff; --card:#1d1d20; --warn:#e0a040; --bad:#ff7a6b; --ok:#5cc97a; } }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:15px/1.5 -apple-system, system-ui, "Segoe UI", sans-serif; }
+  main { max-width: 980px; margin: 0 auto; padding: 24px 16px 64px; }
+  h1 { font-size: 22px; margin: 0 0 4px; }
+  h2 { font-size: 15px; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); margin: 28px 0 10px; }
+  p.lead { color: var(--muted); margin: 0 0 8px; }
+  .grid { display:grid; grid-template-columns: 1fr 1fr; gap: 16px; }
+  @media (max-width: 760px) { .grid { grid-template-columns: 1fr; } }
+  .card { background: var(--card); border:1px solid var(--line); border-radius: 10px; padding: 14px 16px; }
+  dl { display:grid; grid-template-columns: 150px 1fr; gap: 6px 12px; margin:0; }
+  dt { color: var(--muted); }
+  dd { margin:0; word-break: break-word; }
+  .changed { background: color-mix(in srgb, var(--accent) 14%, transparent); border-radius: 4px; padding: 0 4px; }
+  .phase { font-weight: 600; }
+  .phase.thinking, .phase.writing { color: var(--warn); }
+  .phase.waiting { color: var(--accent); }
+  .phase.error { color: var(--bad); }
+  .phase.ended { color: var(--ok); }
+  button { font: inherit; border:1px solid var(--line); background: var(--card); color: var(--fg); border-radius: 8px; padding: 6px 10px; margin: 0 6px 6px 0; cursor: pointer; }
+  button:hover:not(:disabled) { border-color: var(--accent); }
+  button:disabled { opacity: .38; cursor: not-allowed; }
+  button.primary { background: var(--accent); color: #fff; border-color: var(--accent); }
+  .msgs { font-size: 14px; max-height: 260px; overflow:auto; }
+  .msgs div { padding: 4px 0; border-bottom: 1px dashed var(--line); }
+  .who { font-weight: 600; margin-right: 6px; }
+  .log { font: 13px/1.5 ui-monospace, SFMono-Regular, Menlo, monospace; max-height: 220px; overflow:auto; white-space: pre-wrap; color: var(--muted); }
+  .tabs { display:flex; flex-wrap: wrap; gap: 6px; margin-bottom: 10px; }
+  .tabs button.on { border-color: var(--accent); color: var(--accent); }
+  ol.steps { padding-left: 20px; }
+  ol.steps li { margin: 4px 0; }
+  ol.steps li.done { color: var(--muted); text-decoration: line-through; }
+  .notice { color: var(--warn); }
+  .decision { border-left: 3px solid var(--accent); padding-left: 10px; margin: 8px 0; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Grill screen: state model</h1>
+  <p class="lead">Prototype for issue #62. You are Ada, the plan's author, grilling the Intent of <b>bfc-t8qq Payments via Stripe</b> with Claude Code inside the <code>bfc</code> TUI. Press the buttons and watch what the screen, the plan's Messages and the saved Claude session do. Buttons that make no sense right now are greyed out. The question: <b>does this model handle cancelling, errors, a lost session, sync and the end of the Grill the way you expect?</b></p>
+
+  <div class="grid">
+    <section class="card">
+      <h2 style="margin-top:0">Now</h2>
+      <dl id="state"></dl>
+    </section>
+    <section class="card">
+      <h2 style="margin-top:0">Messages on the plan</h2>
+      <div class="msgs" id="msgs"></div>
+    </section>
+  </div>
+
+  <h2>Free play</h2>
+  <div id="buttons"></div>
+
+  <h2>Walkthroughs</h2>
+  <div class="card">
+    <div class="tabs" id="tabs"></div>
+    <div id="scenario"></div>
+  </div>
+
+  <h2>What happened</h2>
+  <div class="card log" id="log"></div>
+
+  <h2>Proposed decisions this model encodes</h2>
+  <div class="card" id="decisions">
+    <div class="decision"><b>One Question per turn, recorded by the agent.</b> Each turn runs <code>claude -p</code> with <code>--allowedTools "Bash(bfc ask:*)"</code>; the agent records its Question with <code>bfc ask --to &lt;author&gt;</code>. When the turn ends the screen looks for the newest open Question from the AI to the author: found → it waits for your answer; not found → error "the turn ended without a recorded Question", Enter retries.</div>
+    <div class="decision"><b>The TUI records your answer</b> with the same code as <code>bfc reply --verbatim</code> (you, no <code>agent</code>), then starts the next turn with <code>--resume &lt;session&gt;</code> and your words.</div>
+    <div class="decision"><b>Esc during a turn cancels it</b> (the claude process is stopped). If the agent already recorded its Question, the screen waits for your answer; otherwise it is idle and Enter continues. <b>Esc otherwise leaves</b> to the plan detail; the session and any open Question stay, so the Grill pauses. <b>Ctrl+C</b> quits bfc, stopping a running turn first.</div>
+    <div class="decision"><b>Session:</b> the Claude session id is kept in <code>.git/beforecode/grill/&lt;plan ULID&gt;.session</code>. If it is missing or <code>--resume</code> fails, a new session starts from <code>bfc prime grill &lt;id&gt;</code>, which already holds every Question and answer, so nothing is lost. The file is removed once <code>plan.md</code> is written.</div>
+    <div class="decision"><b>Sync keeps running.</b> New Messages from others appear in the conversation with a notice. If the open Question is answered elsewhere (CLI, another clone), the input closes and Enter continues with the next turn. Messages are append-only, so sync never conflicts with the Grill.</div>
+    <div class="decision"><b>Finishing:</b> <code>f</code> asks the agent for its summary (an open Question stays open and is listed). Then <code>w</code> writes <code>plan.md</code> in one more turn with the <code>write-plan</code> skill, through <code>bfc edit --stdin</code> (allowed tool: <code>bfc edit</code>). If <code>plan.md</code> is already written, the screen asks you first; your yes is what lets the agent use <code>--force</code>. After saving, the screen returns to the plan detail on <code>plan.md</code> and the app syncs.</div>
+  </div>
+</main>
+
+<script>
+// ---- The model: a pure reducer, liftable into internal/tui (grill.go). ----
+const initial = () => ({
+  screen: "plan detail",        // "plan detail" | "Grill"
+  phase: "idle",                // idle | thinking | waiting | error | ended | writing
+  turnKind: null,               // "question" | "summary" | "plan"
+  session: null,                // the saved Claude session id, or null
+  askedThisTurn: false,         // the agent ran bfc ask during the running turn
+  messages: [],                 // {id, who, text, to?, replyTo?}
+  planWritten: false,
+  notice: "",
+  quit: false,
+  seq: 0,
+});
+
+const openQuestion = s => {
+  const answered = new Set(s.messages.filter(m => m.replyTo).map(m => m.replyTo));
+  return [...s.messages].reverse().find(m => m.who === "AI" && m.to && !answered.has(m.id)) || null;
+};
+const msg = (s, m) => ({ ...s, seq: s.seq + 1, messages: [...s.messages, { id: "M" + (s.seq + 1), ...m }] });
+const questions = ["How would we know it worked?", "What happens when a card payment fails?", "Is stock held while a payment is pending?"];
+
+function reduce(s, a) {
+  s = { ...s, notice: "" };
+  switch (a) {
+    case "open": {
+      s.screen = "Grill";
+      if (openQuestion(s)) return { ...s, phase: "waiting", notice: "An open Question from an earlier session is waiting for your answer." };
+      return { ...s, phase: "idle", notice: s.session ? "Enter continues the saved session." : "Enter starts the Grill." };
+    }
+    case "start": {
+      const resumed = !!s.session;
+      return { ...s, phase: "thinking", turnKind: "question", askedThisTurn: false, session: s.session || "s-" + (s.seq + 1),
+        notice: resumed ? "claude -p --resume <session> …" : "claude -p \"bfc prime grill bfc-t8qq\" … (new session)" };
+    }
+    case "agentAsks": {
+      const n = s.messages.filter(m => m.who === "AI" && m.to).length;
+      s = msg(s, { who: "AI", to: "ada@example.com", text: questions[n % questions.length] });
+      return { ...s, askedThisTurn: true, notice: "The agent ran bfc ask: the Question is stored on the plan." };
+    }
+    case "turnEnds": {
+      if (s.turnKind === "summary") { s = msg(s, { who: "AI", text: "Summary of the Grill; next: write plan.md." }); return { ...s, phase: "ended" }; }
+      if (s.turnKind === "plan") return { ...s, phase: "idle", screen: "plan detail", planWritten: true, session: null,
+        notice: "plan.md saved with bfc edit --stdin; back on the plan detail (plan.md tab); the app syncs; session file removed." };
+      if (openQuestion(s)) return { ...s, phase: "waiting" };
+      return { ...s, phase: "error", notice: "The turn ended without a recorded Question (the agent did not run bfc ask). Enter retries." };
+    }
+    case "agentFails":
+      return { ...s, phase: "error", notice: "claude exited with an error (e.g. rate limit, network). The session and anything recorded stay. Enter retries the turn." };
+    case "sessionLost":
+      return { ...s, session: null, notice: "--resume failed: no such session. A new session starts from bfc prime grill, which holds every Question and answer so far." };
+    case "answer": {
+      const q = openQuestion(s);
+      s = msg(s, { who: "You", replyTo: q.id, text: "(your words, stored verbatim)" });
+      const next = s.session ? "claude -p --resume <session> \"<your words>\"" : "a new session from bfc prime grill bfc-t8qq, which already holds your answer";
+      return { ...s, phase: "thinking", turnKind: "question", askedThisTurn: false, session: s.session || "s-" + s.seq, notice: "Answer stored like bfc reply --verbatim; next turn: " + next + "." };
+    }
+    case "esc": {
+      if (s.phase === "thinking" || s.phase === "writing") {
+        const q = openQuestion(s);
+        if (q && s.turnKind === "question") return { ...s, phase: "waiting", notice: "Turn cancelled; the agent had already recorded its Question, so the screen waits for your answer." };
+        return { ...s, phase: "idle", notice: "Turn cancelled; nothing was recorded. Enter continues." };
+      }
+      return { ...s, screen: "plan detail", phase: "idle", notice: "Back on the plan detail. The Grill pauses: session" + (s.session ? " kept" : " none") + (openQuestion(s) ? ", the open Question stays open." : ".") };
+    }
+    case "ctrlc":
+      return { ...s, quit: true, phase: "idle", notice: (s.phase === "thinking" || s.phase === "writing") ? "Running turn stopped, then bfc quits. Reopening the Grill continues from the session." : "bfc quits. Reopening the Grill continues from the session." };
+    case "syncComment":
+      s = msg(s, { who: "Ben", text: "Should refunds really stay out?" });
+      return { ...s, notice: "Sync brought a Message from Ben; it appears in the conversation. Nothing else changes." };
+    case "syncAnswered": {
+      const q = openQuestion(s);
+      s = msg(s, { who: "You (other clone)", replyTo: q.id, text: "answered from the CLI elsewhere" });
+      return { ...s, phase: s.phase === "waiting" ? "idle" : s.phase, notice: "Sync: the open Question was answered elsewhere. The input closes; Enter continues with the next turn." };
+    }
+    case "finish": {
+      const q = openQuestion(s);
+      return { ...s, phase: "thinking", turnKind: "summary", notice: "claude -p --resume <session> \"Finish the Grill: summarise.\"" + (q ? " The open Question stays open and is listed in the summary." : "") };
+    }
+    case "writePlan":
+      return { ...s, phase: "writing", turnKind: "plan", notice: "claude -p \"bfc prime plan bfc-t8qq\" --allowedTools \"Bash(bfc edit:*)\" …" };
+    case "writePlanForce":
+      return { ...s, phase: "writing", turnKind: "plan", notice: "You said yes to replacing plan.md, so the prompt allows bfc edit --stdin --force." };
+  }
+  return s;
+}
+
+// Which actions are legal now.
+function legal(s) {
+  const q = openQuestion(s), inGrill = s.screen === "Grill" && !s.quit, running = s.phase === "thinking" || s.phase === "writing";
+  return {
+    open: s.screen === "plan detail" && !s.quit,
+    start: inGrill && (s.phase === "idle" || s.phase === "error") && !q,
+    agentAsks: inGrill && s.phase === "thinking" && s.turnKind === "question" && !s.askedThisTurn,
+    turnEnds: inGrill && running,
+    agentFails: inGrill && running,
+    sessionLost: !!s.session,
+    answer: inGrill && s.phase === "waiting" && !!q,
+    esc: inGrill,
+    ctrlc: !s.quit,
+    syncComment: true,
+    syncAnswered: !!q,
+    finish: inGrill && (s.phase === "waiting" || s.phase === "idle") && s.messages.some(m => m.who === "AI"),
+    writePlan: inGrill && s.phase === "ended" && !s.planWritten,
+    writePlanForce: inGrill && s.phase === "ended" && s.planWritten,
+  };
+}
+
+// ---- The page around it (throwaway). ----
+const labels = {
+  open: "Open the Grill (g on the plan detail)", start: "Enter: start / continue a turn", agentAsks: "Agent runs bfc ask",
+  turnEnds: "Agent's turn ends", agentFails: "Agent fails (claude exits with an error)", sessionLost: "Session file lost / --resume fails",
+  answer: "Type an answer and press Enter", esc: "Esc", ctrlc: "Ctrl+C", syncComment: "Sync brings a comment from Ben",
+  syncAnswered: "Sync: open Question answered elsewhere", finish: "f: finish the Grill", writePlan: "w: write plan.md",
+  writePlanForce: "w: plan.md already written → you answer yes",
+};
+const scenarios = {
+  "Happy path": { text: "Start a Grill, answer two Questions, finish and write plan.md. Watch the Messages fill up and the session file disappear at the end.",
+    steps: ["open","start","agentAsks","turnEnds","answer","agentAsks","turnEnds","answer","agentAsks","turnEnds","finish","turnEnds","writePlan","turnEnds"] },
+  "Esc mid-turn": { text: "Cancel a turn twice: once before the agent recorded its Question (nothing to answer, Enter continues) and once after (the screen waits for your answer).",
+    steps: ["open","start","esc","start","agentAsks","esc","answer","esc"] },
+  "Error and retry": { text: "The agent fails after recording its Question. Retrying is not needed for that Question: is it right that the screen still demands an answer first?",
+    steps: ["open","start","agentFails","start","agentAsks","agentFails","esc","open"] },
+  "Lost session": { text: "Leave the Grill, lose the session file (another machine, cleaned .git), come back. The next turn starts a new session from the plan's Messages.",
+    steps: ["open","start","agentAsks","turnEnds","answer","agentAsks","turnEnds","esc","sessionLost","open","answer"] },
+  "Sync during a Grill": { text: "Ben comments while you think, then you answer the open Question from the CLI in another clone. Watch the input close.",
+    steps: ["open","start","agentAsks","turnEnds","syncComment","syncAnswered","start"] },
+  "Agent forgot bfc ask": { text: "The agent asks in its text but never records the Question. The screen refuses to wait for an answer that could not be stored. Is an error the right call?",
+    steps: ["open","start","turnEnds","start","agentAsks","turnEnds"] },
+  "plan.md already written": { text: "Write plan.md, keep grilling, then write it again: this time you must confirm the replacement.",
+    steps: ["open","start","agentAsks","turnEnds","answer","agentAsks","turnEnds","finish","turnEnds","writePlan","turnEnds","open","answer","agentAsks","turnEnds","finish","turnEnds","writePlanForce","turnEnds"] },
+};
+
+let s = initial(), prev = s, log = [], tab = Object.keys(scenarios)[0], stepAt = 0;
+
+function act(a) {
+  prev = s; s = reduce(s, a);
+  log.push((log.length + 1) + ". " + labels[a] + (s.notice ? "  →  " + s.notice : ""));
+  render();
+}
+const field = (k, v, pv) => `<dt>${k}</dt><dd>${v !== pv ? `<span class="changed">${v}</span>` : v}</dd>`;
+function stateRows(x) {
+  const q = openQuestion(x);
+  return {
+    "Screen": x.quit ? "bfc closed" : x.screen,
+    "Grill": `<span class="phase ${x.phase}">${{idle:"idle",thinking:"agent is thinking",waiting:"waiting for your answer",error:"error",ended:"Grill finished",writing:"writing plan.md"}[x.phase]}</span>`,
+    "Open Question": q ? `${q.id}: ${q.text}` : "none",
+    "Session file": x.session ? `.git/beforecode/grill/…/${x.session}` : "none",
+    "plan.md": x.planWritten ? "written" : "template",
+    "Notice": x.notice ? `<span class="notice">${x.notice}</span>` : "—",
+  };
+}
+function render() {
+  const now = stateRows(s), before = stateRows(prev);
+  document.getElementById("state").innerHTML = Object.keys(now).map(k => field(k, now[k], before[k])).join("");
+  document.getElementById("msgs").innerHTML = s.messages.length ? s.messages.map(m =>
+    `<div><span class="who">${m.who}</span>${m.to ? "Question to " + m.to + ": " : m.replyTo ? "answers " + m.replyTo + ": " : ""}${m.text} <span style="color:var(--muted)">(${m.id})</span></div>`).join("") : "<div style='color:var(--muted)'>No Messages yet.</div>";
+  const ok = legal(s);
+  document.getElementById("buttons").innerHTML = Object.keys(labels).map(a => `<button ${ok[a] ? "" : "disabled"} onclick="act('${a}')">${labels[a]}</button>`).join("") +
+    `<button onclick="s=initial();prev=s;log=[];stepAt=0;render()">Reset</button>`;
+  document.getElementById("tabs").innerHTML = Object.keys(scenarios).map(t => `<button class="${t === tab ? "on" : ""}" onclick="tab='${t}';s=initial();prev=s;log=[];stepAt=0;render()">${t}</button>`).join("");
+  const sc = scenarios[tab];
+  document.getElementById("scenario").innerHTML = `<p>${sc.text}</p><ol class="steps">${sc.steps.map((a, i) =>
+    `<li class="${i < stepAt ? "done" : ""}">${i === stepAt ? `<button class="primary" ${ok[a] ? "" : "disabled"} onclick="stepAt++;act('${a}')">${labels[a]}</button>` : labels[a]}</li>`).join("")}</ol>`;
+  document.getElementById("log").textContent = log.join("\n") || "Press a button.";
+}
+render();
+</script>
+</body>
+</html>
