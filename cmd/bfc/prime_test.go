@@ -199,7 +199,7 @@ func TestPrimeCommandRefusesAnUnknownTopic(t *testing.T) {
 	t.Parallel()
 	dir := newLocalRepo(t)
 	out, err := bfcIn(t, dir, "prime", "grilling", "bfc-zzzz")
-	if err == nil || !strings.Contains(out, `unknown topic "grilling"`) || !strings.Contains(out, "known topics: grill") {
+	if err == nil || !strings.Contains(out, `unknown topic "grilling"`) || !strings.Contains(out, "known topics: grill, plan") {
 		t.Errorf("err = %v\n%s", err, out)
 	}
 }

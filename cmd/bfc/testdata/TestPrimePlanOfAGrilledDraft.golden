@@ -1,0 +1,39 @@
+# Write plan.md
+
+Use the template.
+
+## Current plan: bfc-5v7x Payments via Stripe
+
+- State: draft
+- Author: Ada Lovelace <ada@example.com>
+- Check plan.md with `bfc edit bfc-5v7x --stdin --check`, then store it once with `bfc edit bfc-5v7x --stdin`, the document on stdin
+- Ask what is missing: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`, then `bfc reply <id> --verbatim -m "<their words>"`
+
+### plan.md template
+
+```markdown
+## Context
+
+## Acceptance criteria
+
+- AC-1:
+```
+
+### intent.md
+
+```markdown
+---
+title: Payments via Stripe
+---
+
+## Problem
+
+Cards fail.
+```
+
+### The Grill so far
+
+1. Question 01JD3K8Q2W5V7X9Y0Z1A2B3C5A about intent.md to ada@example.com (answered):
+   > Which cards fail?
+   Reply 01JD3K8Q2W5V7X9Y0Z1A2B3C5B by Ada Lovelace:
+   > Only 3-D Secure cards.

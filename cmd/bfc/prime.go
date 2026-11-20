@@ -17,9 +17,10 @@ import (
 )
 
 // primeTopics are the topics of bfc prime <topic> [id], each printing what
-// an agent needs for one task. A later issue adds plan (#65).
+// an agent needs for one task.
 var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
 	"grill": runPrimeGrill,
+	"plan":  runPrimePlan,
 }
 
 func newPrimeCmd() *cobra.Command {
