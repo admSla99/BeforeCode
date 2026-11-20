@@ -1,7 +1,7 @@
 // Package e2e runs the real bfc binary the way two developers would: two
 // clones of one bare remote, each with its own git identity. It proves the
-// phase 1 exit criterion of docs/design.md (issue #19). Nothing here uses
-// the network.
+// exit criteria of docs/design.md for phase 1 (issue #19) and, in
+// claude_test.go, phase 2 (issue #67). Nothing here uses the network.
 package e2e
 
 import (

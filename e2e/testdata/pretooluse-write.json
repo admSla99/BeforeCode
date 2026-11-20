@@ -1,0 +1,18 @@
+{
+  "session_id": "1ab659f7-772f-43fa-901c-81b4b67b5ff7",
+  "transcript_path": "/root/.claude/projects/-work/1ab659f7-772f-43fa-901c-81b4b67b5ff7.jsonl",
+  "cwd": "/work",
+  "scratchpad_dir": "/tmp/claude-0/-work/1ab659f7-772f-43fa-901c-81b4b67b5ff7/scratchpad",
+  "prompt_id": "88f797b7-1e4b-40a0-b412-bd7f8b3ba1de",
+  "permission_mode": "acceptEdits",
+  "effort": {
+    "level": "medium"
+  },
+  "hook_event_name": "PreToolUse",
+  "tool_name": "Write",
+  "tool_input": {
+    "file_path": "/work/main.go",
+    "content": "package main"
+  },
+  "tool_use_id": "toolu_01312w3C3QRBnA5mZZm2Y4Yd"
+}
