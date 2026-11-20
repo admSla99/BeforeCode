@@ -291,6 +291,10 @@ func buildManyPlans(dir string) error {
 		return err
 	}
 	repo := filepath.Join(dir, "repo")
+	// A branch with commits, as in a real project.
+	if err := gitSteps([]string{repo, "commit", "-q", "--allow-empty", "-m", "start"}); err != nil {
+		return err
+	}
 	out, err := bfcRun(repo, "new", "--no-edit", "Payments")
 	if err != nil {
 		return fmt.Errorf("bfc new: %w\n%s", err, out)
@@ -405,11 +409,12 @@ func gitStarts(t *testing.T, trace string) int {
 }
 
 // AC-5: the hook remembers that the Current plan is approved, so an edit
-// after an allowed one starts at most two git processes, which keeps it
-// fast where starting git is slow (Windows).
+// after an allowed one starts one git process on a branch with commits,
+// which keeps it fast where starting git is slow (Windows).
 func TestHookRemembersAnApprovedPlan(t *testing.T) {
 	t.Parallel()
 	dir, _ := approvedPlan(t)
+	commit(t, dir)
 	edit := map[string]any{"file_path": filepath.Join(dir, "main.go"), "old_string": "a", "new_string": "b"}
 	if r := runHook(t, dir, "Edit", edit); r.err != nil || r.stdout != "" {
 		t.Fatalf("first edit: err = %v, stdout = %s", r.err, r.stdout)
@@ -420,8 +425,8 @@ func TestHookRemembersAnApprovedPlan(t *testing.T) {
 	if r := runHook(t, dir, "Edit", edit); r.err != nil || r.stdout != "" {
 		t.Fatalf("second edit: err = %v, stdout = %s", r.err, r.stdout)
 	}
-	if n := gitStarts(t, trace); n > 2 {
-		t.Errorf("the second edit started %d git processes, want at most 2", n)
+	if n := gitStarts(t, trace); n != 1 {
+		t.Errorf("the second edit started %d git processes, want 1", n)
 	}
 }
 

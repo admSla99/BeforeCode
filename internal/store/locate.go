@@ -18,12 +18,23 @@ type Location struct {
 	Head   string // the full name of the current branch, "" for a detached HEAD
 }
 
-// Locate reads the Location of the repository around dir with two git
-// commands. Unlike Open it does not check the git version; it is meant for
-// a repository that a full check (Open) has seen before. A missing plans
-// ref is ErrNotInitialised.
+// Locate reads the Location of the repository around dir with one git
+// command, or two on a branch without commits yet. Unlike Open it does not
+// check the git version; it is meant for a repository that a full check
+// (Open) has seen before. A missing plans ref is ErrNotInitialised.
 func Locate(ctx context.Context, dir string, env ...string) (Location, error) {
 	s := &Store{dir: dir, env: env}
+	// One git start where starting git is slow: rev-parse names the branch
+	// too, but fails on a branch without commits. --symbolic-full-name
+	// applies to the arguments after it, so HEAD comes last.
+	out, _, err := s.run(ctx, nil, nil, "rev-parse", "--show-toplevel", "--absolute-git-dir", Ref+"^{commit}", "--symbolic-full-name", "HEAD")
+	if lines := strings.Split(strings.TrimSpace(string(out)), "\n"); err == nil && len(lines) == 4 {
+		l := Location{Root: lines[0], GitDir: lines[1], Tip: lines[2]}
+		if strings.HasPrefix(lines[3], "refs/") { // "HEAD" when detached
+			l.Head = lines[3]
+		}
+		return l, nil
+	}
 	out, stderr, err := s.run(ctx, nil, nil, "rev-parse", "--show-toplevel", "--absolute-git-dir", Ref+"^{commit}")
 	lines := strings.Split(strings.TrimSpace(string(out)), "\n")
 	if err != nil || len(lines) != 3 {
