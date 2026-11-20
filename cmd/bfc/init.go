@@ -23,7 +23,7 @@ func newInitCmd() *cobra.Command {
 		Use:   "init",
 		Short: "Set up BeforeCode in this repository",
 		Long: `Set up BeforeCode in this repository: write .beforecode/config.yaml and the
-default templates, create the plans ref and add its fetch refspec.
+default templates and skills, create the plans ref and add its fetch refspec.
 
 Nothing is committed or pushed. Existing files and the plans ref are kept, so
 running init again is safe. If the remote already has plans, use bfc bootstrap.`,
@@ -111,7 +111,10 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string, remo
 		}
 		report(out, "created", config.Path)
 	}
-	if err := copyTemplates(out, root); err != nil {
+	if err := copyDefaults(out, root, beforecode.Templates, ".beforecode/templates"); err != nil {
+		return err
+	}
+	if err := copyDefaults(out, root, beforecode.Skills, beforecode.SkillsDir); err != nil {
 		return err
 	}
 	if initialised {
@@ -145,13 +148,14 @@ func runInit(cmd *cobra.Command, s *store.Store, local bool, remote string, remo
 	return err
 }
 
-// copyTemplates writes each default template that is not there yet.
-func copyTemplates(out io.Writer, root string) error {
-	return fs.WalkDir(beforecode.Templates, ".beforecode/templates", func(name string, d fs.DirEntry, err error) error {
+// copyDefaults writes each file of dir in defaults, the files built into
+// bfc, that the repository does not have yet.
+func copyDefaults(out io.Writer, root string, defaults fs.FS, dir string) error {
+	return fs.WalkDir(defaults, dir, func(name string, d fs.DirEntry, err error) error {
 		if err != nil || d.IsDir() {
 			return err
 		}
-		data, err := beforecode.Templates.ReadFile(name)
+		data, err := fs.ReadFile(defaults, name)
 		if err != nil {
 			return err
 		}

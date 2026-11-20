@@ -1,0 +1,32 @@
+# Grill an Intent
+
+Ask one question per round.
+
+## Current plan: bfc-5v7x Payments via Stripe
+
+- State: draft
+- Author: Ada Lovelace <ada@example.com>, whom you grill.
+- Record a Question: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`; keep the `id` it prints
+- Record the answer: `bfc reply <id> --verbatim -m "<their words>"`
+
+### intent.md
+
+```markdown
+---
+title: Payments via Stripe
+---
+
+## Problem
+
+Cards fail.
+```
+
+### The Grill so far
+
+1. Question 01JD3K8Q2W5V7X9Y0Z1A2B3C5A about intent.md to ada@example.com (answered):
+   > Which cards fail?
+   > All of them, or some?
+   Reply 01JD3K8Q2W5V7X9Y0Z1A2B3C5B by Ada Lovelace:
+   > Only 3-D Secure cards.
+2. Question 01JD3K8Q2W5V7X9Y0Z1A2B3C5C about intent.md to ada@example.com (open):
+   > How do we know it worked?

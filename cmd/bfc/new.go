@@ -98,9 +98,16 @@ func runNew(cmd *cobra.Command, title string, noEdit bool) error {
 // readTemplate returns the template at rel in the repository's working
 // tree, or the default built into bfc when the repository has none.
 func readTemplate(root, rel string) ([]byte, error) {
+	return readDefault(root, rel, beforecode.Templates)
+}
+
+// readDefault returns the file at rel in the repository's working tree, or
+// the one in defaults, built into bfc, when the repository has none: the
+// repository's copy wins.
+func readDefault(root, rel string, defaults fs.FS) ([]byte, error) {
 	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(rel)))
 	if errors.Is(err, fs.ErrNotExist) {
-		return beforecode.Templates.ReadFile(rel)
+		return fs.ReadFile(defaults, rel)
 	}
 	return data, err
 }

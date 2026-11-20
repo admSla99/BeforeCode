@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -16,8 +17,10 @@ import (
 )
 
 // primeTopics are the topics of bfc prime <topic> [id], each printing what
-// an agent needs for one task. Later issues add grill (#64) and plan (#65).
-var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{}
+// an agent needs for one task. A later issue adds plan (#65).
+var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
+	"grill": runPrimeGrill,
+}
 
 func newPrimeCmd() *cobra.Command {
 	return &cobra.Command{
@@ -49,20 +52,43 @@ A topic as the first argument prints the instructions for one task instead.`,
 	}
 }
 
+// openPrime opens the plans of this clone for bfc prime and its topics,
+// reading only the local Plans ref. setup says why it cannot, "" when it
+// can.
+func openPrime(cmd *cobra.Command) (s *store.Store, setup string) {
+	s, err := openStore(cmd)
+	if err != nil {
+		return nil, err.Error()
+	}
+	// Only the local ref: openPlans would ask the remote about a missing one.
+	if _, err := s.Read(cmd.Context(), "format-version"); errors.Is(err, store.ErrNotInitialised) {
+		return nil, errNotInitialised.Error()
+	}
+	if s, err = openPlans(cmd, forReading); err != nil {
+		return nil, err.Error()
+	}
+	return s, ""
+}
+
+// primePlan returns the plan named by args, or the Current plan without
+// one; current says which. Without a Current plan it fails with
+// errNoCurrentPlan.
+func primePlan(ctx context.Context, s *store.Store, args []string) (p index.Plan, current bool, err error) {
+	if len(args) == 1 {
+		p, err = resolvePlan(ctx, s, args[0])
+		return p, false, err
+	}
+	p, err = currentPlan(ctx, s)
+	return p, true, err
+}
+
 // gatherPrime collects what bfc prime prints. Problems become part of the
 // view instead of errors.
 func gatherPrime(cmd *cobra.Command, args []string) primeView {
 	ctx := cmd.Context()
-	s, err := openStore(cmd)
-	if err != nil {
-		return primeView{Setup: err.Error()}
-	}
-	// Only the local ref: openPlans would ask the remote about a missing one.
-	if _, err := s.Read(ctx, "format-version"); errors.Is(err, store.ErrNotInitialised) {
-		return primeView{Setup: errNotInitialised.Error()}
-	}
-	if s, err = openPlans(cmd, forReading); err != nil {
-		return primeView{Setup: err.Error()}
+	s, setup := openPrime(cmd)
+	if setup != "" {
+		return primeView{Setup: setup}
 	}
 	var v primeView
 	v.Identity, _ = currentUser(ctx, s)
@@ -70,13 +96,8 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 	if err != nil {
 		return primeView{Setup: err.Error()}
 	}
-	var p index.Plan
-	if len(args) == 1 {
-		p, err = resolvePlan(ctx, s, args[0])
-	} else {
-		p, err = currentPlan(ctx, s)
-		v.Current = true
-	}
+	p, current, err := primePlan(ctx, s, args)
+	v.Current = current
 	switch {
 	case errors.Is(err, errNoCurrentPlan):
 	case err != nil:

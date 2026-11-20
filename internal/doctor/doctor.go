@@ -16,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	beforecode "github.com/admSla99/BeforeCode"
 	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/config"
 	"github.com/admSla99/BeforeCode/internal/store"
@@ -79,6 +80,7 @@ var checks = []check{
 	{name: "plans", run: checkPlans},
 	{name: "skipped events", run: checkSkippedEvents},
 	{name: "short IDs", run: checkShortIDs},
+	{name: "skills", run: checkSkills},
 	{name: "claude", run: checkClaude},
 	{name: "claude hook", run: checkClaudeHook},
 	{name: "claude skill", run: checkClaudeSkill},
@@ -283,6 +285,32 @@ func checkClaude(_ context.Context, e *env) Result {
 		return warn("%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)
 	}
 	return pass("%s is %s", command, path)
+}
+
+// checkSkills reports the repository's skills. A missing directory is a
+// warning: bfc then uses the skills built into it.
+func checkSkills(_ context.Context, e *env) Result {
+	if e.s == nil || !e.cfgFound {
+		return skip("needs " + config.Path)
+	}
+	dir := filepath.Join(e.s.Root(), filepath.FromSlash(beforecode.SkillsDir))
+	entries, err := os.ReadDir(dir)
+	if errors.Is(err, os.ErrNotExist) {
+		return warn("%s is missing, so the skills built into bfc are used; bfc init writes them, then commit %s", beforecode.SkillsDir, beforecode.SkillsDir)
+	}
+	if err != nil {
+		return warn("cannot read %s: %v", beforecode.SkillsDir, err)
+	}
+	var names []string
+	for _, d := range entries {
+		if _, err := os.Stat(filepath.Join(dir, d.Name(), "SKILL.md")); err == nil {
+			names = append(names, d.Name())
+		}
+	}
+	if len(names) == 0 {
+		return pass("%s has no skills; the ones built into bfc are used", beforecode.SkillsDir)
+	}
+	return pass("%s: %s", beforecode.SkillsDir, strings.Join(names, ", "))
 }
 
 // checkClaudeHook reports whether the repository's Claude Code settings run
