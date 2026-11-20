@@ -17,6 +17,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/config"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
@@ -81,6 +82,7 @@ var checks = []check{
 	{name: "short IDs", run: checkShortIDs},
 	{name: "claude", run: checkClaude},
 	{name: "claude hook", run: checkClaudeHook},
+	{name: "claude skill", run: checkClaudeSkill},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -286,21 +288,19 @@ func checkClaude(_ context.Context, e *env) Result {
 
 // claudeSettings is the Claude Code settings file of the repository, which
 // bfc setup claude writes (ADR 0010).
-const claudeSettings = ".claude/settings.json"
+const claudeSettings = claude.SettingsPath
 
-// hookCommand is what Claude Code runs before a tool call.
-const hookCommand = "hook pre-tool-use"
-
-// checkClaudeHook warns when the repository's Claude Code settings run
-// bfc hook pre-tool-use with a bfc that cannot be found: Claude Code then
-// reports the hook as failed and lets the edit through.
+// checkClaudeHook reports whether the repository's Claude Code settings run
+// bfc hook pre-tool-use, and warns when they run it with a bfc that cannot
+// be found: Claude Code then reports the hook as failed and lets the edit
+// through.
 func checkClaudeHook(_ context.Context, e *env) Result {
 	if e.s == nil {
 		return skip("needs a git repository")
 	}
 	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claudeSettings)))
 	if errors.Is(err, os.ErrNotExist) {
-		return skip("no " + claudeSettings)
+		return skip("no " + claudeSettings + "; bfc setup claude sets up Claude Code")
 	}
 	if err != nil {
 		return warn("cannot read %s: %v", claudeSettings, err)
@@ -319,9 +319,8 @@ func checkClaudeHook(_ context.Context, e *env) Result {
 	}
 	for _, m := range settings.Hooks.PreToolUse {
 		for _, h := range m.Hooks {
-			bin, ok := strings.CutSuffix(strings.TrimSpace(h.Command), " "+hookCommand)
-			bin = strings.Trim(strings.TrimSpace(bin), `"'`)
-			if !ok || strings.TrimSuffix(filepath.Base(filepath.FromSlash(bin)), ".exe") != "bfc" {
+			bin, ok := claude.HookBinary(h.Command)
+			if !ok {
 				continue
 			}
 			path, err := lookPath(bin, e.vars)
@@ -335,7 +334,28 @@ func checkClaudeHook(_ context.Context, e *env) Result {
 			}
 		}
 	}
-	return skip(claudeSettings + " does not run bfc " + hookCommand)
+	return warn("%s does not run bfc %s, so Claude Code edits go unchecked; run bfc setup claude", claudeSettings, claude.HookArgs)
+}
+
+// checkClaudeSkill reports whether the beforecode skill is this bfc's
+// version of it. Without any Claude Code setup it does not apply.
+func checkClaudeSkill(_ context.Context, e *env) Result {
+	if e.s == nil {
+		return skip("needs a git repository")
+	}
+	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(claude.SkillPath)))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		if _, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(claudeSettings))); errors.Is(err, os.ErrNotExist) {
+			return skip("no " + claude.SkillPath + "; bfc setup claude writes it")
+		}
+		return warn("%s is missing, so Claude Code does not know to use bfc; run bfc setup claude", claude.SkillPath)
+	case err != nil:
+		return warn("cannot read %s: %v", claude.SkillPath, err)
+	case !claude.SkillMatches(data):
+		return warn("%s differs from this bfc's version; run bfc setup claude to rewrite it", claude.SkillPath)
+	}
+	return pass("%s matches this bfc", claude.SkillPath)
 }
 
 // lookPath finds a command like exec.LookPath, on the PATH of vars when they

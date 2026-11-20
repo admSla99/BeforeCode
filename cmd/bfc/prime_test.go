@@ -23,7 +23,7 @@ func golden(t *testing.T, got string) {
 	t.Helper()
 	path := filepath.Join("testdata", t.Name()+".golden")
 	if *update {
-		if err := os.MkdirAll("testdata", 0o755); err != nil {
+		if err := os.MkdirAll(filepath.Dir(path), 0o755); err != nil {
 			t.Fatal(err)
 		}
 		if err := os.WriteFile(path, []byte(got), 0o644); err != nil {

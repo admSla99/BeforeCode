@@ -52,6 +52,8 @@ git push -u origin bfc-5v7x-payments-via-stripe   # once, so that others' bfc st
 bfc show                        # without an ID: the Current plan, the one named in the branch
 ```
 
+**Use it from Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team.
+
 `bfc pull`, `bfc push` and `bfc sync` share plans; concurrent changes are merged, never force-pushed. `bfc` alone opens the TUI, which syncs in the background. `bfc doctor` checks the setup and says how to fix what is wrong; `bfc doctor --fix` applies the safe fixes.
 
 Plans live in the hidden ref `refs/beforecode/plans`: reading and writing plans never touches your working tree, index or branches. The one command that changes your branch is `bfc start`, because you ask it to; it switches like `git switch` does and never pushes. `bfc use <id>` names the Current plan without changing the branch.
