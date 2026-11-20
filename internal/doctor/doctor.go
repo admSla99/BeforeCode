@@ -293,7 +293,8 @@ func checkSkills(_ context.Context, e *env) Result {
 	if e.s == nil || !e.cfgFound {
 		return skip("needs " + config.Path)
 	}
-	entries, err := os.ReadDir(filepath.Join(e.s.Root(), filepath.FromSlash(beforecode.SkillsDir)))
+	dir := filepath.Join(e.s.Root(), filepath.FromSlash(beforecode.SkillsDir))
+	entries, err := os.ReadDir(dir)
 	if errors.Is(err, os.ErrNotExist) {
 		return warn("%s is missing, so the skills built into bfc are used; bfc init writes them, then commit %s", beforecode.SkillsDir, beforecode.SkillsDir)
 	}
@@ -302,7 +303,7 @@ func checkSkills(_ context.Context, e *env) Result {
 	}
 	var names []string
 	for _, d := range entries {
-		if _, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(beforecode.SkillsDir), d.Name(), "SKILL.md")); err == nil {
+		if _, err := os.Stat(filepath.Join(dir, d.Name(), "SKILL.md")); err == nil {
 			names = append(names, d.Name())
 		}
 	}

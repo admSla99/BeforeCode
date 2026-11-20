@@ -100,3 +100,33 @@ func TestPrimeGrillCommandWithoutAPlan(t *testing.T) {
 		t.Errorf("unknown plan:\n%s", out)
 	}
 }
+
+// The front matter is for the harness; the agent gets the body, also from
+// a file with CRLF, a byte order mark or no newline after the front matter.
+func TestWithoutFrontMatter(t *testing.T) {
+	t.Parallel()
+	for in, want := range map[string]string{
+		"---\nname: x\n---\n\n# Body\n":       "# Body\n",
+		"---\r\nname: x\r\n---\r\n# Body\r\n": "# Body\n",
+		"\ufeff---\nname: x\n---\n# Body\n":   "# Body\n",
+		"---\nname: x\n---":                   "",
+		"# No front matter\n":                 "# No front matter\n",
+	} {
+		if got := withoutFrontMatter(in); got != want {
+			t.Errorf("withoutFrontMatter(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+// Like bfc prime, bfc prime grill reads only the local Plans ref: without
+// one it says how to set BeforeCode up, and still prints the skill.
+func TestPrimeGrillCommandWithoutAPlansRef(t *testing.T) {
+	t.Parallel()
+	plain := t.TempDir()
+	gitIn(t, plain, "init", "-q")
+	gitIn(t, plain, "remote", "add", "origin", filepath.Join(t.TempDir(), "missing.git"))
+	out := mustBfc(t, plain, "prime", "grill")
+	if !strings.Contains(out, "# Grill an Intent") || !strings.Contains(out, "BeforeCode is not set up") {
+		t.Errorf("bfc prime grill without a plans ref:\n%s", out)
+	}
+}

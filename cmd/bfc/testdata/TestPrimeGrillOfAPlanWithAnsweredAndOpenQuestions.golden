@@ -6,8 +6,8 @@ Ask one question per round.
 
 - State: draft
 - Author: Ada Lovelace <ada@example.com>, whom you grill.
-- Record a Question: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`
-- Record the answer: `bfc reply <ULID> --verbatim -m "<their words>"`
+- Record a Question: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`; keep the `id` it prints
+- Record the answer: `bfc reply <id> --verbatim -m "<their words>"`
 
 ### intent.md
 

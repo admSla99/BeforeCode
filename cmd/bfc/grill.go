@@ -25,7 +25,9 @@ type grillView struct {
 	Plan     *index.Plan
 	Current  bool
 	Messages []core.Message // all Messages of the plan, oldest first
-	Note     string
+	// Unread says why the Messages cannot be read.
+	Unread string
+	Note   string
 }
 
 // runPrimeGrill is bfc prime grill [id]: the grill-intent skill, then the
@@ -41,25 +43,18 @@ func runPrimeGrill(cmd *cobra.Command, args []string) error {
 func gatherGrill(cmd *cobra.Command, args []string) grillView {
 	ctx := cmd.Context()
 	v := grillView{Skill: builtInSkill(grillSkill)}
-	s, err := openStore(cmd)
-	if err != nil {
-		v.Note = err.Error()
+	if root, err := openStore(cmd); err == nil {
+		if skill, err := readDefault(root.Root(), grillSkill, beforecode.Skills); err == nil {
+			v.Skill = skill
+		}
+	}
+	s, setup := openPrime(cmd)
+	if setup != "" {
+		v.Note = setup
 		return v
 	}
-	if skill, err := readDefault(s.Root(), grillSkill, beforecode.Skills); err == nil {
-		v.Skill = skill
-	}
-	if s, err = openPlans(cmd, forReading); err != nil {
-		v.Note = err.Error()
-		return v
-	}
-	var p index.Plan
-	if len(args) == 1 {
-		p, err = resolvePlan(ctx, s, args[0])
-	} else {
-		p, err = currentPlan(ctx, s)
-		v.Current = true
-	}
+	p, current, err := primePlan(ctx, s, args)
+	v.Current = current
 	switch {
 	case errors.Is(err, errNoCurrentPlan):
 		v.Note = "There is no Current plan."
@@ -70,7 +65,7 @@ func gatherGrill(cmd *cobra.Command, args []string) grillView {
 	}
 	v.Plan = &p
 	if v.Messages, err = readMessages(ctx, s, p.ID); err != nil {
-		v.Note = "The Grill so far cannot be read: " + err.Error()
+		v.Unread = err.Error()
 	}
 	return v
 }
@@ -96,11 +91,15 @@ func renderGrill(w io.Writer, v grillView) error {
 		which = "Current plan"
 	}
 	author := p.Status.Author
+	to := author.Email
+	if to == "" {
+		to = "<author email>"
+	}
 	fmt.Fprintf(&b, "\n## %s: %s %s\n\n", which, p.ShortID, p.Title)
 	fmt.Fprintf(&b, "- State: %s\n", p.Status.State)
 	fmt.Fprintf(&b, "- Author: %s <%s>, whom you grill.\n", orDash(author.Name), orDash(author.Email))
-	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`\n", p.ShortID, orDash(author.Email))
-	b.WriteString("- Record the answer: `bfc reply <ULID> --verbatim -m \"<their words>\"`\n")
+	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, to)
+	b.WriteString("- Record the answer: `bfc reply <id> --verbatim -m \"<their words>\"`\n")
 
 	intent := string(p.Intent)
 	if !strings.HasSuffix(intent, "\n") {
@@ -110,8 +109,8 @@ func renderGrill(w io.Writer, v grillView) error {
 	fmt.Fprintf(&b, "\n### intent.md\n\n%smarkdown\n%s%s\n", fence, intent, fence)
 
 	b.WriteString("\n### The Grill so far\n\n")
-	if v.Note != "" {
-		b.WriteString(v.Note + "\n")
+	if v.Unread != "" {
+		b.WriteString("The Grill so far cannot be read: " + v.Unread + "\n")
 	}
 	writeGrill(&b, v.Messages)
 	_, err := io.WriteString(w, b.String())
@@ -159,9 +158,13 @@ func indent(text string) string {
 // withoutFrontMatter returns a SKILL.md without its YAML front matter,
 // which is for the harness that loads skills, not for the agent.
 func withoutFrontMatter(doc string) string {
-	if rest, ok := strings.CutPrefix(strings.ReplaceAll(doc, "\r\n", "\n"), "---\n"); ok {
-		if _, body, found := strings.Cut(rest, "\n---\n"); found {
-			return strings.TrimLeft(body, "\n")
+	text := strings.TrimPrefix(strings.ReplaceAll(doc, "\r\n", "\n"), "\ufeff")
+	if rest, ok := strings.CutPrefix(text, "---\n"); ok {
+		if _, body, found := strings.Cut(rest+"\n", "\n---\n"); found {
+			if body = strings.Trim(body, "\n"); body != "" {
+				body += "\n"
+			}
+			return body
 		}
 	}
 	return doc
