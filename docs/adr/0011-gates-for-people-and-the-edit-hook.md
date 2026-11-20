@@ -28,6 +28,7 @@ Why: an agent runs `bfc` under the developer's git identity. Without this check 
 - Every other tool is allowed. **Bash is not blocked.**
 - **On an internal error** (not a git repository, no Plans ref, damaged ref) it blocks, with the exact fix: `bfc bootstrap` or `bfc doctor`.
 - It reads only the local Plans ref and the Index, never the network.
+- **It remembers an approved Current plan** in `beforecode/hook-approved` of the worktree's own git directory (`.git/beforecode/hook-approved` in a plain clone), a disposable cache like the Index. The file holds what the decision depended on: the bfc version, the Plans ref tip, the current branch and the plan set with `bfc use`. While they are the same, an edit needs two git starts (`rev-parse` and `symbolic-ref`) instead of ten to twenty, which keeps the hook under 200 ms where starting git is slow (Windows, about 950 ms per edit without it, issue #61). Any change of them, such as an approval, a pull or a switch of branch, makes the hook do the full check again. Only an allowed edit is remembered; a block is always the result of the full check.
 - `claude.enforce: false` in `.beforecode/config.yaml` turns it off for the repository.
 
 ## Considered

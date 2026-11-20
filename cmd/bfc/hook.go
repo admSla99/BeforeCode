@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"os"
 	"path/filepath"
 	"runtime"
 	"strings"
@@ -60,45 +61,108 @@ func runPreToolUse(cmd *cobra.Command, _ []string) error {
 	if !ok {
 		return nil
 	}
-	s, err := openStore(cmd)
+	wd, err := workDir(cmd)
 	if err != nil {
 		return denyBroken(cmd, err)
 	}
 	cwd := in.Cwd
 	if cwd == "" {
-		if cwd, err = workDir(cmd); err != nil {
-			return denyBroken(cmd, err)
-		}
+		cwd = wd
 	}
 	path, _ := in.ToolInput[field].(string)
+
+	// The fast path: two git starts tell whether the hook already found the
+	// Current plan approved with this plans ref, branch and bfc use. Any
+	// failure leaves the decision to the full check. The key is read before
+	// the full check, so that a change during it makes the next edit check
+	// again.
+	loc, err := store.Locate(cmd.Context(), wd, extraEnv(cmd)...)
+	key := ""
+	if err == nil {
+		if !needsPlan(loc.Root, cwd, path) {
+			return nil
+		}
+		cfg, _, err := readConfigIn(loc.Root)
+		if err == nil && !cfg.Enforce() {
+			return nil
+		}
+		if key = approvedKey(loc); err == nil && key != "" && remembered(loc, key) {
+			return nil
+		}
+	}
+	approved, err := checkEdit(cmd, cwd, path)
+	if approved && key != "" {
+		// A failure only costs the next edit the full check.
+		if os.MkdirAll(filepath.Dir(approvedFile(loc)), 0o755) == nil {
+			_ = os.WriteFile(approvedFile(loc), []byte(key), 0o644)
+		}
+	}
+	return err
+}
+
+// checkEdit is the full check of an edit of path. It writes the decision
+// that blocks the edit, if any, and reports whether it allowed it because
+// the Current plan is approved.
+func checkEdit(cmd *cobra.Command, cwd, path string) (approved bool, err error) {
+	s, err := openStore(cmd)
+	if err != nil {
+		return false, denyBroken(cmd, err)
+	}
 	if !needsPlan(s.Root(), cwd, path) {
-		return nil
+		return false, nil
 	}
 	switch cfg, _, err := readConfig(s); {
 	case err != nil:
-		return denyBroken(cmd, fmt.Errorf("%s: %w", config.Path, err))
+		return false, denyBroken(cmd, fmt.Errorf("%s: %w", config.Path, err))
 	case !cfg.Enforce():
-		return nil
+		return false, nil
 	}
 	// Not openPlans: it asks the remote about a missing plans ref, and the
 	// hook reads only this clone.
 	switch err := checkPlansRef(cmd, s, forReading); {
 	case errors.Is(err, store.ErrNotInitialised):
-		return denyBroken(cmd, errNotInitialised)
+		return false, denyBroken(cmd, errNotInitialised)
 	case err != nil:
-		return denyBroken(cmd, err)
+		return false, denyBroken(cmd, err)
 	}
 	p, err := currentPlan(cmd.Context(), s)
 	var planErr currentPlanError
 	switch {
 	case errors.As(err, &planErr):
-		return deny(cmd, planErr.Error()+"; bfc prime says more")
+		return false, deny(cmd, planErr.Error()+"; bfc prime says more")
 	case err != nil:
-		return denyBroken(cmd, err)
+		return false, denyBroken(cmd, err)
 	case p.Status.State != core.StateApproved:
-		return deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved plan: get it approved (run bfc pull if it was approved elsewhere), or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
+		return false, deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved plan: get it approved (run bfc pull if it was approved elsewhere), or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
 	}
-	return nil
+	return true, nil
+}
+
+// The hook remembers that it found the Current plan approved in
+// .git/beforecode/hook-approved, a disposable cache like the index. The file
+// holds what the decision depended on: this bfc, the plans ref tip, the
+// branch and the plan set with bfc use. Any change of them makes the hook
+// check again (ADR 0011).
+
+// approvedKey is the content of the cache file for loc, or "" when it
+// cannot be read.
+func approvedKey(loc store.Location) string {
+	used, err := os.ReadFile(filepath.Join(loc.GitDir, "beforecode", "current"))
+	if err != nil && !errors.Is(err, os.ErrNotExist) {
+		return ""
+	}
+	return fmt.Sprintf("bfc %s\ntip %s\nhead %s\nuse %s\n", version, loc.Tip, loc.Head, strings.TrimSpace(string(used)))
+}
+
+func approvedFile(loc store.Location) string {
+	return filepath.Join(loc.GitDir, "beforecode", "hook-approved")
+}
+
+// remembered reports whether the hook found the Current plan approved
+// under key.
+func remembered(loc store.Location, key string) bool {
+	data, err := os.ReadFile(approvedFile(loc))
+	return err == nil && string(data) == key
 }
 
 // denyBroken blocks the tool call because the hook cannot read the setup.

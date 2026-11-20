@@ -259,7 +259,12 @@ func requiredApprovals(s *store.Store) (int, error) {
 // readConfig reads .beforecode/config.yaml from the working tree. found is
 // false when there is no such file.
 func readConfig(s *store.Store) (cfg config.Config, found bool, err error) {
-	data, err := os.ReadFile(filepath.Join(s.Root(), filepath.FromSlash(config.Path)))
+	return readConfigIn(s.Root())
+}
+
+// readConfigIn reads .beforecode/config.yaml of the repository at root.
+func readConfigIn(root string) (cfg config.Config, found bool, err error) {
+	data, err := os.ReadFile(filepath.Join(root, filepath.FromSlash(config.Path)))
 	if errors.Is(err, fs.ErrNotExist) {
 		return config.Config{}, false, nil
 	}
