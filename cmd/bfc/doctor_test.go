@@ -1,8 +1,11 @@
 package main
 
 import (
+	"encoding/json"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strings"
 	"testing"
@@ -558,4 +561,72 @@ func TestDoctorHasNoRepairForMissingObjectsInLocalMode(t *testing.T) {
 	if strings.Contains(out, "bfc doctor --fix") {
 		t.Errorf("a failure without a repair offers --fix:\n%s", out)
 	}
+}
+
+// Issue #59, AC-6: bfc doctor says whether claude.command is found. Claude
+// Code is optional, so a missing one is a warning that does not fail the run.
+func TestDoctorReportsWhetherClaudeCodeIsFound(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	cfg := filepath.Join(repo, ".beforecode", "config.yaml")
+	withCommand := func(command string) {
+		writeFile(t, cfg, "version: 3\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\nclaude:\n  command: '"+command+"'\n")
+	}
+
+	missing := filepath.Join(t.TempDir(), "no-claude")
+	withCommand(missing)
+	out := mustBfc(t, repo, "doctor")
+	wantDoctor(t, out, "warn", "claude", missing, "not found", "claude.command")
+
+	found := filepath.Join(t.TempDir(), "my-claude")
+	if runtime.GOOS == "windows" {
+		found += ".exe"
+	}
+	if err := os.WriteFile(found, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	withCommand(found)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude", found)
+}
+
+// Issue #61, AC-7: bfc doctor warns when .claude/settings.json runs
+// bfc hook pre-tool-use but bfc is not on PATH: Claude Code then cannot run
+// the hook and edits go unchecked.
+func TestDoctorWarnsWhenTheHookIsInstalledButBfcIsNotOnPath(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	git, err := exec.LookPath("git")
+	if err != nil {
+		t.Fatal(err)
+	}
+	bin := t.TempDir()
+	setEnv(t, "PATH", bin+string(os.PathListSeparator)+filepath.Dir(git))
+
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "skip", "claude hook", ".claude/settings.json")
+
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"), `{
+  "hooks": {
+    "PreToolUse": [
+      {"matcher": "Edit|Write|MultiEdit|NotebookEdit", "hooks": [{"type": "command", "command": "bfc hook pre-tool-use"}]}
+    ]
+  }
+}`)
+	// mustBfc: a warning does not make bfc doctor fail.
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", ".claude/settings.json", "bfc hook pre-tool-use", "bfc is not on PATH")
+
+	exe := filepath.Join(bin, "bfc")
+	if runtime.GOOS == "windows" {
+		exe += ".exe"
+	}
+	if err := os.WriteFile(exe, []byte("#!/bin/sh\n"), 0o700); err != nil {
+		t.Fatal(err)
+	}
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "claude hook", exe)
+
+	// A quoted path, with a space, as on Windows.
+	spaced := filepath.Join(t.TempDir(), "Program Files", filepath.Base(exe))
+	command, _ := json.Marshal(`"` + spaced + `" hook pre-tool-use`)
+	writeFile(t, filepath.Join(repo, ".claude", "settings.json"),
+		`{"hooks": {"PreToolUse": [{"hooks": [{"type": "command", "command": `+string(command)+`}]}]}}`)
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude hook", spaced, "is not found")
 }

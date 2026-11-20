@@ -1,0 +1,64 @@
+# BeforeCode
+
+This repository plans its work with BeforeCode (`bfc`). Every change is made against a Plan: a short `intent.md` written by a person and a `plan.md` written for agents, with acceptance criteria `AC-1`, `AC-2`, …
+
+## How to work with bfc
+
+- The user works in the TUI (`bfc` without arguments) and does not run the CLI. You run it, with `--json` where you read.
+- Commands you may use:
+  - `bfc prime [id]`: these instructions and the Current plan.
+  - `bfc show [id] --json`: one plan with `intent.md`, `plan.md`, its acceptance criteria and open Questions.
+  - `bfc list --json` and `bfc search <text>`: find plans.
+  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.
+  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.
+  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.
+- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent. When a plan needs one, tell the user to open `bfc` and take it there.
+- Edits need an approved plan: a hook blocks file edits unless the Current plan is `approved`. Do not change code before that.
+- Implement `plan.md` as approved. When the work must depart from it, record the deviation with `bfc ask <id> --to <plan author email> --ref plan.md#AC-n -m <what and why>` and tell the user.
+
+## Waiting on you
+
+For Ada Lovelace <ada@example.com>, the git author of this clone, who runs you:
+
+- Review bfc-9k2m Refunds: tell the user to open `bfc`, select it and press `a` to approve.
+- Question 01JD3K8Q2W5V7X9Y0Z1A2B3C4E in bfc-5v7x from ben@example.com about plan.md#AC-1: Which card?
+
+Ask the user and record the answer with `bfc reply <ULID> --verbatim -m <their words>`.
+
+## Current plan: bfc-5v7x Payments via Stripe
+
+- State: approved. You may implement it.
+- Author: Ada Lovelace <ada@example.com>
+- Approvals: 1 of 1 (ben@example.com)
+
+### Open Questions
+
+- 01JD3K8Q2W5V7X9Y0Z1A2B3C4E to ada@example.com about plan.md#AC-1: Which card?
+
+### plan.md
+
+```markdown
+## Context
+
+Cards fail.
+
+## Approach
+
+Stripe.
+
+## Affected areas
+
+payments/
+
+## Out of scope
+
+Refunds.
+
+## Tasks
+
+- Add the client.
+
+## Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+```

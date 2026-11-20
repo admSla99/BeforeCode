@@ -25,8 +25,8 @@ func newRootCmd(version string) *cobra.Command {
 	}
 	root.AddCommand(newVersionCmd(version), newInitCmd(), newNewCmd(), newListCmd(), newShowCmd(), newStartCmd(), newUseCmd(), newEditCmd(),
 		newSubmitCmd(), newApproveCmd(), newRequestChangesCmd(), newWithdrawCmd(),
-		newAskCmd(), newReplyCmd(),
-		newSearchCmd(), newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newDoctorCmd(), newCloseCmd(), newTUICmd())
+		newAskCmd(), newReplyCmd(), newPrimeCmd(),
+		newSearchCmd(), newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newDoctorCmd(), newCloseCmd(), newHookCmd(), newTUICmd())
 	guardGates(root) // the Gates are for people (ADR 0011)
 	return root
 }

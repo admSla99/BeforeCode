@@ -122,3 +122,16 @@ func TestValidatePlanGivesLineNumbers(t *testing.T) {
 		t.Errorf("problems = %+v", problems)
 	}
 }
+
+// AcceptanceCriteria lists the IDs in the order of plan.md, skipping
+// comments, code blocks, items outside the section and broken items.
+func TestAcceptanceCriteriaListsTheIDsInOrder(t *testing.T) {
+	plan := goodPlan + "\n```\n- AC-7: inside a fence\n```\n- AC-2: last\n- AC-2: twice\n- not a criterion\n\n## Notes\n\n- AC-8: outside the section\n"
+	got := core.AcceptanceCriteria([]byte(plan))
+	if want := []string{"AC-1", "AC-3", "AC-2"}; strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("got %v, want %v", got, want)
+	}
+	if got := core.AcceptanceCriteria(nil); len(got) != 0 {
+		t.Errorf("no plan.md: got %v", got)
+	}
+}

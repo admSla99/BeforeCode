@@ -1,4 +1,4 @@
-# ADR 0003: `.beforecode/config.yaml` version 1 (and version 2)
+# ADR 0003: `.beforecode/config.yaml` version 1 (and versions 2 and 3)
 
 Date: 2026-11-17. Status: accepted. Settled with the maintainer for issue #8 (`bfc init`).
 
@@ -62,9 +62,33 @@ Version 2 adds one optional key, following the rule above that every new key bum
 
 | Key | Type | Rule |
 | --- | --- | --- |
-| `sync.interval` | integer, optional | Seconds between background syncs while the TUI is open, 5 to 3600. Missing means 15. Allowed only in version 2 and only when `sync.enabled` is `true`. |
+| `sync.interval` | integer, optional | Seconds between background syncs while the TUI is open, 5 to 3600. Missing means 15. Allowed from version 2 and only when `sync.enabled` is `true`. |
 
 - `bfc` reads versions 1 and 2. A version 1 file keeps working unchanged, with an interval of 15 seconds.
 - `bfc init` writes version 2, and `interval: 15` when sync is on.
 - A version 1 binary stops on a version 2 file with "update bfc".
 - The interval is in the committed file, so the whole team shares it. A per-clone setting was not needed.
+
+## Version 3 (2026-11-19, issue #59)
+
+Version 3 adds an optional `claude` section for Claude Code, the first harness (ADR 0008, 0011):
+
+```yaml
+claude:
+  # The command that starts Claude Code: a name on PATH or an absolute path.
+  command: claude
+  # false: the PreToolUse hook allows edits without an approved plan.
+  enforce: true
+```
+
+| Key | Type | Rule |
+| --- | --- | --- |
+| `claude.command` | string, optional | The command the agent adapter starts (`<command> -p --output-format stream-json --verbose … -- <prompt>`). Missing means `claude`; empty is an error. |
+| `claude.enforce` | boolean, optional | Whether `bfc hook pre-tool-use` blocks edits without an approved Current plan (ADR 0011). Missing means `true`. |
+
+- The section and both keys are optional. A missing key takes its default, so a version 1 or 2 file keeps working with `claude` and enforcement on.
+- The section is allowed only in version 3; in an older file it is an error that names version 3. Unknown keys inside it are errors, as everywhere.
+- `bfc init` writes version 3 with the whole section and its defaults, commented, so that a team sees both settings in the file it edits in pull requests.
+- `bfc doctor` reports whether `claude.command` is found (`exec.LookPath`). Claude Code is optional for `bfc`, so a missing command is a warning, not a failure.
+- `claude.command` is one executable, not a shell line; arguments for it are not supported. It is a name looked up on `PATH` or an absolute path: a relative path would be resolved against a different directory by `bfc doctor` and by the agent adapter, which runs in the agent's working directory.
+- A version 2 binary stops on a version 3 file with "update bfc".

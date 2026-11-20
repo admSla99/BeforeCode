@@ -266,8 +266,13 @@ func printMessage(cmd *cobra.Command, v index.Plan, m core.Message, asJSON bool)
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
-	return enc.Encode(messageJSON{
+	return enc.Encode(toMessageJSON(v, m))
+}
+
+// toMessageJSON is m of the plan v in its --json shape.
+func toMessageJSON(v index.Plan, m core.Message) messageJSON {
+	return messageJSON{
 		ID: m.ID.String(), Plan: v.ID.String(), ShortID: v.ShortID, Author: m.Author,
 		At: m.At.UTC().Format(time.RFC3339), Agent: m.Agent, To: m.To, ReplyTo: m.ReplyTo, Ref: m.Ref, Body: m.Body,
-	})
+	}
 }

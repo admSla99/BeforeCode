@@ -8,7 +8,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 
 - Go + Bubble Tea (Bubbles, Lip Gloss, Glamour, Huh). One static binary, command name `bfc`.
 - Plans are plain Markdown/YAML files stored in the hidden git ref `refs/beforecode/plans`. No Dolt, no server. SQLite is a disposable local cache only.
-- Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (`.claude/settings.json`, `.claude/commands/`) live on normal branches (ADR 0010).
+- Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (`.claude/settings.json`, `.claude/skills/beforecode/SKILL.md`) live on normal branches (ADR 0010).
 - Git is driven through the system `git` binary (subprocess), never a Go git library.
 - GitHub only, single repository. No GitLab, no multi-repo plans.
 - Two documents per plan: short `intent.md` (human) and `plan.md` (for agents, with acceptance criteria `AC-1`, `AC-2`, …).
