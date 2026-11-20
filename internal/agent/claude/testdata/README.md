@@ -3,7 +3,9 @@
 The `*.jsonl` files are the standard output of a real Claude Code 2.1.328
 (`claude --version`), recorded once on 2026-11-19 for issue #59 in an empty
 git repository holding `notes.txt` with the word `hello`. The tests replay
-them through `fakeclaude/`; no test starts the real Claude Code.
+them through `fakeclaude/`; no test starts the real Claude Code. `cmd/bfc`
+builds the same fake for the TUI Grill (issue #66), and uses
+`FAKECLAUDE_RESUME_*` to make only a resumed turn fail.
 
 | File | Command | Exit |
 | --- | --- | --- |

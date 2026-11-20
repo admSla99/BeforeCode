@@ -40,6 +40,7 @@ type PlanDetailScreen struct {
 	reason   string
 	syncText string // set by the app before each View
 	syncHint string // set by the app: why sync is offline or in conflict
+	canGrill bool   // set by the app: the Grill is available
 	rendered string // the document as last rendered, to keep the scroll
 }
 
@@ -51,6 +52,9 @@ func NewPlanDetail(plans Plans, shortID string) PlanDetailScreen {
 
 // backMsg asks the app to return to the list.
 type backMsg struct{}
+
+// openGrillMsg asks the app to open the Grill of the plan.
+type openGrillMsg struct{ shortID string }
 
 type detailLoadedMsg struct {
 	detail PlanDetail
@@ -137,6 +141,8 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.refresh()
 		m.view.GotoTop()
 		return m, nil
+	case key.Matches(msg, m.keys.Grill) && m.canGrill && m.detail.Editable && m.loadErr == nil:
+		return m, func() tea.Msg { return openGrillMsg{m.shortID} }
 	case key.Matches(msg, m.keys.Edit) && m.detail.Editable && m.loadErr == nil:
 		m.status = ""
 		return m, m.plans.Edit(m.shortID, m.doc)
@@ -190,6 +196,9 @@ func (m PlanDetailScreen) helpKeys() []key.Binding {
 	keys := []key.Binding{m.keys.SwitchDoc}
 	if m.detail.Editable {
 		keys = append(keys, m.keys.Edit)
+		if m.canGrill {
+			keys = append(keys, m.keys.Grill)
+		}
 	}
 	for _, a := range reviewActionOrder {
 		if slices.Contains(m.detail.Actions, a) {
