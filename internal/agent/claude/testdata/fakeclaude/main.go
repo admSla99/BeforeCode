@@ -5,12 +5,14 @@
 // $FAKECLAUDE_HANG is set, or exits with $FAKECLAUDE_EXIT. When it is
 // started with --resume and $FAKECLAUDE_RESUME_FIXTURE is set, it uses the
 // $FAKECLAUDE_RESUME_* variables instead, so that a resumed turn can fail
-// while a new one succeeds.
+// while a new one succeeds. $FAKECLAUDE_EXEC, when set, is a shell command
+// it runs first, standing in for a tool the agent runs.
 package main
 
 import (
 	"fmt"
 	"os"
+	"os/exec"
 	"slices"
 	"strconv"
 	"strings"
@@ -27,6 +29,14 @@ func main() {
 		wd, _ := os.Getwd()
 		record := "dir=" + wd + "\n" + strings.Join(os.Args[1:], "\n") + "\n"
 		if err := os.WriteFile(path, []byte(record), 0o600); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(2)
+		}
+	}
+	if script := os.Getenv("FAKECLAUDE_EXEC"); script != "" {
+		c := exec.Command("sh", "-c", script)
+		c.Stderr = os.Stderr
+		if err := c.Run(); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(2)
 		}

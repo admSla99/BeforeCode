@@ -29,7 +29,7 @@ type tuiGrill struct {
 }
 
 // Snapshot returns the plan's Grill: the Questions from the AI to the
-// author with their answers, and the other Messages.
+// author with the author's answers, and every other Message.
 func (g *tuiGrill) Snapshot(ctx context.Context, shortID string) (tui.GrillSnapshot, error) {
 	s, err := openPlans(g.cmd, forReading)
 	if err != nil {
@@ -70,7 +70,8 @@ func (g *tuiGrill) Snapshot(ctx context.Context, shortID string) (tui.GrillSnaps
 		snap.Questions = append(snap.Questions, q)
 	}
 	for _, m := range msgs {
-		if grill[m.ID.String()] || grill[m.ReplyTo] {
+		answer := grill[m.ReplyTo] && m.Agent == "" && strings.EqualFold(m.Author.Email, v.Status.Author.Email)
+		if grill[m.ID.String()] || answer {
 			continue
 		}
 		who := m.Author.Name
@@ -80,7 +81,7 @@ func (g *tuiGrill) Snapshot(ctx context.Context, shortID string) (tui.GrillSnaps
 		if m.Agent != "" {
 			who += " (AI)"
 		}
-		snap.Others = append(snap.Others, tui.GrillComment{Who: who, Text: m.Body})
+		snap.Others = append(snap.Others, tui.GrillMessage{Who: who, Text: m.Body})
 	}
 	return snap, nil
 }
@@ -149,6 +150,15 @@ func (g *tuiGrill) Turn(ctx context.Context, shortID string, t tui.GrillTurn) (<
 		turn:    t,
 		dir:     loc.Root,
 		session: filepath.Join(loc.GitDir, "beforecode", "grill", v.ID.String()+".session"),
+		planBlob: func() string {
+			// The version of plan.md now; a write-plan turn compares it at the end.
+			s, err := openStore(g.cmd)
+			if err != nil {
+				return ""
+			}
+			id, _ := s.ObjectID(context.Background(), core.PlanDir(v.ID)+"/plan.md")
+			return id
+		},
 	}
 	out := make(chan tui.GrillEvent)
 	go r.run(ctx, out)
@@ -162,6 +172,9 @@ type grillRun struct {
 	turn    tui.GrillTurn
 	dir     string
 	session string // the file that keeps the session id
+	// planBlob returns the object of plan.md in the Plans ref, "" when
+	// there is none.
+	planBlob func() string
 }
 
 func (r grillRun) run(ctx context.Context, out chan<- tui.GrillEvent) {
@@ -176,10 +189,24 @@ func (r grillRun) run(ctx context.Context, out chan<- tui.GrillEvent) {
 	}
 	data, _ := os.ReadFile(r.session)
 	session := strings.TrimSpace(string(data))
+	before := ""
+	if r.turn.Kind == tui.TurnWritePlan {
+		before = r.planBlob()
+	}
 	resumeFailed, err := r.attempt(ctx, session, send)
 	if resumeFailed {
 		_ = os.Remove(r.session)
 		_, err = r.attempt(ctx, "", send)
+	}
+	if r.turn.Kind == tui.TurnWritePlan {
+		// The Grill is over only once plan.md was stored, whatever the
+		// agent says.
+		if after := r.planBlob(); after != "" && after != before {
+			_ = os.Remove(r.session)
+			if !send(tui.GrillEvent{PlanSaved: true}) {
+				return
+			}
+		}
 	}
 	if err != nil {
 		send(tui.GrillEvent{Err: err})
@@ -198,7 +225,15 @@ func (r grillRun) attempt(ctx context.Context, session string, send func(tui.Gri
 	if err != nil {
 		return false, err
 	}
-	wrote := false
+	// On an early return the agent's events are drained, so that it never
+	// blocks on a send.
+	defer func() {
+		go func() {
+			for range events {
+			}
+		}()
+	}()
+	wrote, acted := false, false
 	for e := range events {
 		switch e.Kind {
 		case agent.Text:
@@ -211,17 +246,19 @@ func (r grillRun) attempt(ctx context.Context, session string, send func(tui.Gri
 				return false, ctx.Err()
 			}
 		case agent.ToolUse:
+			acted = true
 			if cmdline := toolCommand(e); cmdline != "" && !send(tui.GrillEvent{Tool: cmdline}) {
 				return false, ctx.Err()
 			}
 		case agent.Result:
-			if r.turn.Kind == tui.TurnWritePlan {
-				_ = os.Remove(r.session) // the Grill is over
-			} else if err := r.keep(e.Session); err != nil {
+			if err := r.keep(e.Session); err != nil {
 				return false, err
 			}
 		case agent.Error:
-			if session != "" && !wrote && ctx.Err() == nil {
+			// Only a resume that failed before the agent did anything
+			// starts a new session; otherwise a Question could be asked
+			// twice.
+			if session != "" && !wrote && !acted && ctx.Err() == nil {
 				return true, nil
 			}
 			return false, errors.New(firstLine(e.Text))
@@ -251,7 +288,11 @@ func (r grillRun) prompt(resumed bool) string {
 		"When nothing is left to ask, record and ask whether the author wants to finish the Grill."
 	switch r.turn.Kind {
 	case tui.TurnSummary:
-		return "Finish the Grill of " + id + " now: write a short summary of what was decided and what is still open. Ask no new Question."
+		p := "Finish the Grill of " + id + " now: write a short summary of what was decided and what is still open. Ask no new Question."
+		if !resumed {
+			p = "Read the Grill of plan " + id + " with `bfc prime grill " + id + "`. " + p
+		}
+		return p
 	case tui.TurnWritePlan:
 		p := "The Grill of " + id + " is finished. Write its plan.md now: run `bfc prime plan " + id + "` and follow it, without asking the author anything in this turn. " +
 			"Check the document with `bfc edit " + id + " --stdin --check` until it has no problems, then store it once with `bfc edit " + id + " --stdin`."

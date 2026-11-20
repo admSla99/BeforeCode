@@ -10,7 +10,6 @@ import (
 	"charm.land/bubbles/v2/key"
 	tea "charm.land/bubbletea/v2"
 	"charm.land/lipgloss/v2"
-	"github.com/charmbracelet/x/ansi"
 
 	"github.com/admSla99/BeforeCode/internal/core"
 )
@@ -56,6 +55,8 @@ type GrillEvent struct {
 	Text string // the agent's text, a piece at a time
 	Tool string // a command the agent runs now, one line
 	Err  error  // the turn failed
+	// PlanSaved reports that a TurnWritePlan stored a new plan.md.
+	PlanSaved bool
 }
 
 // GrillSnapshot is what the Grill screen shows of a plan.
@@ -69,7 +70,7 @@ type GrillSnapshot struct {
 	Questions []GrillQuestion
 	// Others are Messages that neither ask nor answer a Grill Question,
 	// such as comments of other people, oldest first.
-	Others []GrillComment
+	Others []GrillMessage
 	// PlanWritten is true when plan.md is no longer the template.
 	PlanWritten bool
 }
@@ -82,8 +83,9 @@ type GrillQuestion struct {
 	Open   bool
 }
 
-// GrillComment is a Message outside the Grill's Questions and answers.
-type GrillComment struct{ Who, Text string }
+// GrillMessage is a Message outside the Grill's Questions and their
+// answers, such as a comment by someone else.
+type GrillMessage struct{ Who, Text string }
 
 // open returns the newest open Question, or nil.
 func (s GrillSnapshot) open() *GrillQuestion {
@@ -102,7 +104,8 @@ const (
 	phaseIdle     grillPhase = iota // nothing runs; Enter starts or continues
 	phaseThinking                   // a turn runs and streams
 	phaseWaiting                    // the author types the answer
-	phaseError                      // the last turn failed; Enter retries
+	phaseSaving                     // the answer is being stored
+	phaseError                      // the last turn failed; Enter retries it
 	phaseEnded                      // the agent wrote its summary
 	phaseWriting                    // the write-plan turn runs
 )
@@ -132,12 +135,17 @@ type GrillScreen struct {
 	failed  bool      // notice is an error
 	confirm bool      // asking whether to replace plan.md
 	cancel  context.CancelFunc
-	// stopped is set when the author cancelled the running turn.
-	stopped bool
-	// settle is set when the next Snapshot decides the phase after a turn.
-	settle   bool
-	frame    int    // of the spinner
-	syncText string // set by the app before each View
+	// stopped is set when the author cancelled the running turn, quitting
+	// when ctrl+c waits for it to end before bfc quits.
+	stopped, quitting bool
+	turnErr           error // the running turn failed
+	planSaved         bool  // the running turn stored plan.md
+	// settling is the number of the snapshot that decides the phase after
+	// a turn; 0 when none is awaited. Only that snapshot decides, not one a
+	// sync asked for earlier.
+	settling, loads int
+	frame           int    // of the spinner
+	syncText        string // set by the app before each View
 }
 
 // NewGrill returns the Grill screen of the plan with this Short ID.
@@ -149,9 +157,9 @@ func NewGrill(grill Grill, shortID string) GrillScreen {
 // answer. The app syncs after it.
 type GrillChangedMsg struct{}
 
-// GrillReloadMsg asks the screen to read the plan's Grill again, after a
-// sync brought changes.
-type GrillReloadMsg struct{}
+// reloadGrillMsg asks the screen to read the plan's Grill again; the app
+// sends it after a sync brought changes.
+type reloadGrillMsg struct{}
 
 // closeGrillMsg asks the app to return to the plan detail.
 type closeGrillMsg struct{}
@@ -159,6 +167,7 @@ type closeGrillMsg struct{}
 type grillLoadedMsg struct {
 	snap GrillSnapshot
 	err  error
+	n    int // the number of the load, see settling
 }
 
 // grillEventMsg carries one event of a running turn; done is set when the
@@ -178,29 +187,51 @@ type grillAnsweredMsg struct{ err error }
 
 type grillTickMsg struct{}
 
-func (m GrillScreen) load() tea.Msg {
-	s, err := m.grill.Snapshot(context.Background(), m.shortID)
-	return grillLoadedMsg{s, err}
+// load reads the plan's Grill as load number n.
+func (m GrillScreen) load(n int) tea.Cmd {
+	g, short := m.grill, m.shortID
+	return func() tea.Msg {
+		s, err := g.Snapshot(context.Background(), short)
+		return grillLoadedMsg{s, err, n}
+	}
+}
+
+// reload is a load that decides nothing.
+func (m *GrillScreen) reload() tea.Cmd {
+	m.loads++
+	return m.load(m.loads)
+}
+
+// settle loads the snapshot that decides the phase after a turn.
+func (m *GrillScreen) settle() tea.Cmd {
+	m.loads++
+	m.settling = m.loads
+	return tea.Batch(m.load(m.loads), grillChanged)
 }
 
 // Init loads the plan's Grill.
-func (m GrillScreen) Init() tea.Cmd { return m.load }
+func (m GrillScreen) Init() tea.Cmd { return m.load(0) }
 
-func next(ch <-chan GrillEvent) tea.Cmd {
+func nextGrillEvent(ch <-chan GrillEvent) tea.Cmd {
 	return func() tea.Msg {
 		ev, ok := <-ch
 		return grillEventMsg{ev: ev, ch: ch, done: !ok}
 	}
 }
 
-func tickSpinner() tea.Cmd {
+func tickGrillSpinner() tea.Cmd {
 	return tea.Tick(120*time.Millisecond, func(time.Time) tea.Msg { return grillTickMsg{} })
 }
+
+func grillChanged() tea.Msg { return GrillChangedMsg{} }
+
+func (m GrillScreen) running() bool { return m.phase == phaseThinking || m.phase == phaseWriting }
 
 // start runs a turn.
 func (m GrillScreen) start(t GrillTurn) (GrillScreen, tea.Cmd) {
 	ctx, cancel := context.WithCancel(context.Background())
-	m.cancel, m.turn, m.stream, m.tool, m.stopped, m.confirm = cancel, t, "", "", false, false
+	m.cancel, m.turn, m.stream, m.tool, m.confirm = cancel, t, "", "", false
+	m.stopped, m.turnErr, m.planSaved = false, nil, false
 	m.phase = phaseThinking
 	if t.Kind == TurnWritePlan {
 		m.phase = phaseWriting
@@ -210,7 +241,7 @@ func (m GrillScreen) start(t GrillTurn) (GrillScreen, tea.Cmd) {
 	return m, tea.Batch(func() tea.Msg {
 		ch, err := g.Turn(ctx, short, t)
 		return grillStartedMsg{ch, err}
-	}, tickSpinner())
+	}, tickGrillSpinner())
 }
 
 // Update handles a message.
@@ -221,13 +252,14 @@ func (m GrillScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.help.SetWidth(msg.Width)
 	case grillLoadedMsg:
 		return m.loadedSnap(msg)
-	case GrillReloadMsg:
-		return m, m.load
+	case reloadGrillMsg:
+		return m, m.reload()
 	case grillStartedMsg:
 		if msg.err != nil {
-			return m.turnFailed(msg.err)
+			m.turnErr = msg.err
+			return m.endTurn()
 		}
-		return m, next(msg.ch)
+		return m, nextGrillEvent(msg.ch)
 	case grillEventMsg:
 		return m.event(msg)
 	case grillAnsweredMsg:
@@ -238,11 +270,11 @@ func (m GrillScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		answer := m.input
 		m.input = ""
 		m, cmd := m.start(GrillTurn{Kind: TurnAsk, Answer: answer})
-		return m, tea.Batch(cmd, m.load, changed)
+		return m, tea.Batch(cmd, m.reload(), grillChanged)
 	case grillTickMsg:
-		if m.phase == phaseThinking || m.phase == phaseWriting {
+		if m.running() {
 			m.frame++
-			return m, tickSpinner()
+			return m, tickGrillSpinner()
 		}
 	case tea.KeyPressMsg:
 		return m.press(msg)
@@ -250,9 +282,8 @@ func (m GrillScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
-func changed() tea.Msg { return GrillChangedMsg{} }
-
-// loadedSnap takes a new snapshot, and after a turn decides what comes next.
+// loadedSnap takes a new snapshot; the one a turn's end asked for decides
+// what comes next.
 func (m GrillScreen) loadedSnap(msg grillLoadedMsg) (tea.Model, tea.Cmd) {
 	m.loaded, m.loadErr = true, msg.err
 	if msg.err != nil {
@@ -261,105 +292,128 @@ func (m GrillScreen) loadedSnap(msg grillLoadedMsg) (tea.Model, tea.Cmd) {
 	before := m.snap
 	m.snap = msg.snap
 	if n := len(m.snap.Others) - len(before.Others); n > 0 && before.ShortID != "" {
-		m.notice, m.failed = fmt.Sprintf("Sync brought %d new Message(s).", n), false
+		m.notice, m.failed = fmt.Sprintf("%d new Message(s) arrived.", n), false
 	}
 	open := m.snap.open()
 	switch {
-	case m.settle:
-		m.settle = false
-		switch {
-		case open != nil:
-			m.phase = phaseWaiting
-		case m.stopped:
-			m.phase = phaseIdle
-		default:
-			m.phase, m.notice, m.failed = phaseError, "The turn ended without a recorded Question; the agent did not run bfc ask.", true
-		}
+	case m.settling != 0 && msg.n == m.settling:
+		m.settling = 0
+		m.decide(open != nil)
+	case m.settling != 0 || m.running():
+		// The turn decides once it has ended.
 	case m.phase == phaseWaiting && open == nil:
 		m.phase, m.input = phaseIdle, ""
 		m.notice = strings.TrimSpace(m.notice + " The open Question was answered elsewhere.")
 		m.failed = false
-	case m.phase == phaseIdle && open != nil && before.ShortID == "":
+	case m.phase == phaseIdle && open != nil && msg.n == 0:
 		m.phase = phaseWaiting // a Question from an earlier session waits
 	}
 	return m, nil
 }
 
+// decide sets the phase after a turn that asked for a Question, was
+// cancelled or failed, from whether a Question is open now.
+func (m *GrillScreen) decide(open bool) {
+	switch {
+	case open:
+		// Whatever happened, the recorded Question waits for its answer.
+		m.phase = phaseWaiting
+	case m.turnErr != nil:
+		m.phase = phaseError
+	case m.stopped:
+		m.phase = phaseIdle
+	default:
+		m.phase, m.notice, m.failed = phaseError, "The turn ended without a recorded Question; the agent did not run bfc ask.", true
+	}
+}
+
 // event handles one event of the running turn.
 func (m GrillScreen) event(msg grillEventMsg) (tea.Model, tea.Cmd) {
-	if msg.done {
-		return m.turnEnded()
-	}
-	if msg.ev.Err != nil {
-		if m.stopped {
-			return m, next(msg.ch) // the cancel; the turn ends next
-		}
-		return m.turnFailed(msg.ev.Err)
-	}
-	m.stream += msg.ev.Text
-	if msg.ev.Tool != "" {
-		m.tool = msg.ev.Tool
-	}
-	return m, next(msg.ch)
-}
-
-func (m GrillScreen) turnFailed(err error) (tea.Model, tea.Cmd) {
-	m.phase, m.notice, m.failed = phaseError, err.Error(), true
-	m.cancel = nil
-	return m, tea.Batch(m.load, changed)
-}
-
-// turnEnded decides what comes after a turn that ran to its end or was
-// cancelled.
-func (m GrillScreen) turnEnded() (tea.Model, tea.Cmd) {
-	if m.phase == phaseError {
-		return m, nil // turnFailed handled it
-	}
-	m.cancel = nil
 	switch {
+	case msg.done:
+		return m.endTurn()
+	case msg.ev.Err != nil:
+		if !m.stopped {
+			m.turnErr = msg.ev.Err
+		}
+	case msg.ev.PlanSaved:
+		m.planSaved = true
+	default:
+		m.stream += msg.ev.Text
+		if msg.ev.Tool != "" {
+			m.tool = msg.ev.Tool
+		}
+	}
+	return m, nextGrillEvent(msg.ch)
+}
+
+// endTurn decides what comes after a turn: it ran to its end, failed, or
+// was cancelled. A turn that reached its goal counts even when the cancel
+// came too late to stop it.
+func (m GrillScreen) endTurn() (tea.Model, tea.Cmd) {
+	if m.cancel != nil {
+		m.cancel()
+		m.cancel = nil
+	}
+	if m.quitting {
+		return m, tea.Quit
+	}
+	switch {
+	case m.turnErr != nil:
+		m.notice, m.failed = m.turnErr.Error(), true
 	case m.stopped:
 		m.notice, m.failed = "Turn cancelled.", false
-		if m.turn.Kind != TurnAsk {
-			m.phase = phaseIdle
+	}
+	switch m.turn.Kind {
+	case TurnWritePlan:
+		switch {
+		case m.planSaved:
+			return m, func() tea.Msg { return PlanEditedMsg{Changed: true} }
+		case m.stopped && m.turnErr == nil:
+			m.phase = phaseEnded
+		case m.turnErr == nil:
+			m.phase, m.notice, m.failed = phaseError, "The turn ended without saving plan.md.", true
+		default:
+			m.phase = phaseError
+		}
+		return m, nil
+	case TurnSummary:
+		if m.turnErr == nil && !m.stopped {
+			m.phase, m.summary = phaseEnded, strings.TrimSpace(m.stream)
 			return m, nil
 		}
-		m.settle = true
-		return m, tea.Batch(m.load, changed)
-	case m.turn.Kind == TurnSummary:
-		m.phase, m.summary = phaseEnded, strings.TrimSpace(m.stream)
-		return m, nil
-	case m.turn.Kind == TurnWritePlan:
-		return m, func() tea.Msg { return PlanEditedMsg{Changed: true} }
 	}
-	m.settle = true
-	return m, tea.Batch(m.load, changed)
+	return m, m.settle()
 }
 
 func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
-	running := m.phase == phaseThinking || m.phase == phaseWriting
 	switch {
 	case key.Matches(msg, m.keys.Quit):
-		if m.cancel != nil {
+		if m.running() && m.cancel != nil {
+			// Stop the agent and quit once it has ended.
+			m.stopped, m.quitting = true, true
 			m.cancel()
+			return m, nil
 		}
 		return m, tea.Quit
 	case m.confirm:
-		m.confirm = false
-		if key.Matches(msg, m.keys.Yes) {
+		switch {
+		case key.Matches(msg, m.keys.Yes):
 			return m.start(GrillTurn{Kind: TurnWritePlan, Force: true})
+		case key.Matches(msg, m.keys.No):
+			m.confirm = false
 		}
+		return m, nil
+	case m.running():
+		if key.Matches(msg, m.keys.Cancel) && m.cancel != nil {
+			m.stopped = true
+			m.cancel()
+		}
+		return m, nil
+	case m.phase == phaseSaving || !m.loaded:
 		return m, nil
 	case key.Matches(msg, m.keys.Cancel):
-		if running {
-			m.stopped = true
-			if m.cancel != nil {
-				m.cancel()
-			}
-			return m, nil
-		}
 		return m, func() tea.Msg { return closeGrillMsg{} }
-	case running || !m.loaded:
-		return m, nil
 	case m.phase == phaseWaiting:
 		switch {
 		case key.Matches(msg, m.keys.FinishTyping):
@@ -369,11 +423,13 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 				return m, nil
 			}
 			q, g, short, text := m.snap.open(), m.grill, m.shortID, strings.TrimSpace(m.input)
-			m.input = text
+			m.input, m.phase = text, phaseSaving
 			return m, func() tea.Msg { return grillAnsweredMsg{g.Answer(context.Background(), short, q.ID, text)} }
 		}
 		editLine(&m.input, msg)
 		return m, nil
+	case key.Matches(msg, m.keys.Send) && m.phase == phaseError:
+		return m.start(m.turn) // retry the turn that failed
 	case key.Matches(msg, m.keys.Send):
 		return m.start(GrillTurn{Kind: TurnAsk})
 	case key.Matches(msg, m.keys.Finish) && m.phase != phaseEnded && len(m.snap.Questions) > 0:
@@ -391,11 +447,14 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // View draws the screen: header, the Question, the answered ones, then
 // the notice, the answer line, the status bar and the help.
 func (m GrillScreen) View() tea.View {
-	if !m.loaded {
-		return tea.NewView("Loading " + m.shortID + "…")
-	}
-	if m.loadErr != nil {
-		return tea.NewView(styleError.Render(m.loadErr.Error()) + "\n" + m.help.ShortHelpView([]key.Binding{m.keys.Cancel, m.keys.Quit}))
+	if !m.loaded || m.loadErr != nil {
+		text := "Loading " + m.shortID + "…"
+		if m.loadErr != nil {
+			text = styleError.Render(m.loadErr.Error())
+		}
+		lines := pad([]string{truncate(text, m.width)}, max(m.height-1, 1))
+		lines = append(lines, truncate(m.help.ShortHelpView([]key.Binding{m.keys.Cancel, m.keys.Quit}), m.width))
+		return tea.NewView(strings.Join(lines, "\n"))
 	}
 	w := m.width
 	foot := m.footer()
@@ -419,8 +478,8 @@ func (m GrillScreen) View() tea.View {
 
 func (m GrillScreen) header() string {
 	n := len(m.snap.Questions)
-	if m.phase == phaseThinking && m.turn.Kind == TurnAsk {
-		n++
+	if m.phase == phaseThinking && m.turn.Kind == TurnAsk && m.snap.open() == nil {
+		n++ // the Question being asked
 	}
 	return styleTitle.Render("Grill") + "  " + m.snap.ShortID + " " + m.snap.Title + "  " +
 		styleDim.Render(fmt.Sprintf("%s · Question %d", m.snap.State, max(n, 1)))
@@ -431,7 +490,7 @@ func (m GrillScreen) header() string {
 func (m GrillScreen) focus(w int) []string {
 	q := m.snap.open()
 	switch {
-	case m.phase == phaseThinking || m.phase == phaseWriting:
+	case m.running():
 		head := "Claude is asking…"
 		switch m.turn.Kind {
 		case TurnSummary:
@@ -488,22 +547,25 @@ func (m GrillScreen) footer() []string {
 	if m.confirm {
 		lines = append(lines, "plan.md is already written. Replace it with the agent's version? "+styleDim.Render("(y: yes, n: no)"))
 	}
-	if m.phase == phaseWaiting {
+	switch m.phase {
+	case phaseWaiting:
 		lines = append(lines, styleAccent.Render("› ")+m.input+"▌")
+	case phaseSaving:
+		lines = append(lines, styleAccent.Render("› ")+m.input+styleDim.Render("  (saving…)"))
 	}
 	return append(lines, m.statusBar(), m.help.ShortHelpView(m.helpKeys()))
 }
 
-var spinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
+var grillSpinner = []string{"⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"}
 
 func (m GrillScreen) statusBar() string {
 	var s string
 	switch m.phase {
 	case phaseThinking:
-		s = spinner[m.frame%len(spinner)] + " agent is thinking"
+		s = grillSpinner[m.frame%len(grillSpinner)] + " agent is thinking"
 	case phaseWriting:
-		s = spinner[m.frame%len(spinner)] + " writing plan.md"
-	case phaseWaiting:
+		s = grillSpinner[m.frame%len(grillSpinner)] + " writing plan.md"
+	case phaseWaiting, phaseSaving:
 		s = "▸ your answer"
 	case phaseError:
 		s = "✗ error"
@@ -525,8 +587,10 @@ func (m GrillScreen) helpKeys() []key.Binding {
 	switch {
 	case m.confirm:
 		return []key.Binding{k.Yes, k.No}
-	case m.phase == phaseThinking || m.phase == phaseWriting:
+	case m.running():
 		return []key.Binding{k.CancelTurn, k.Quit}
+	case m.phase == phaseSaving:
+		return []key.Binding{k.Quit}
 	case m.phase == phaseWaiting:
 		return []key.Binding{k.SendAnswer, k.FinishTyping, k.Cancel, k.Quit}
 	case m.phase == phaseEnded:
@@ -539,38 +603,4 @@ func (m GrillScreen) helpKeys() []key.Binding {
 		return []key.Binding{k.Start, k.Cancel, k.Quit}
 	}
 	return []key.Binding{k.Continue, k.Finish, k.Cancel, k.Quit}
-}
-
-// wrap wraps text to w cells.
-func wrap(text string, w int) []string {
-	if strings.TrimSpace(text) == "" {
-		return nil
-	}
-	return strings.Split(ansi.Wrap(strings.TrimSpace(text), max(w, 1), ""), "\n")
-}
-
-func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
-
-func tail(lines []string, n int) []string {
-	if len(lines) > n {
-		return lines[len(lines)-n:]
-	}
-	return lines
-}
-
-func pad(lines []string, n int) []string {
-	for len(lines) < n {
-		lines = append(lines, "")
-	}
-	if len(lines) > n {
-		lines = lines[:n]
-	}
-	return lines
-}
-
-func orDash(s string) string {
-	if s == "" {
-		return "-"
-	}
-	return s
 }

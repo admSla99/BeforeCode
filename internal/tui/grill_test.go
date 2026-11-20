@@ -30,7 +30,13 @@ type fakeGrill struct {
 	hold chan struct{}
 	// tool, when set, is a command the agent runs in every turn.
 	tool string
-	n    int
+	// askLate records the Question only after hold is closed.
+	askLate bool
+	// noSave makes the write-plan turn end without storing plan.md.
+	noSave bool
+	// answerHold, when set, keeps Answer from returning until it is closed.
+	answerHold chan struct{}
+	n          int
 }
 
 func newFakeGrill() *fakeGrill {
@@ -85,7 +91,7 @@ func (f *fakeGrill) Turn(ctx context.Context, _ string, t GrillTurn) (<-chan Gri
 	f.mu.Lock()
 	f.turns = append(f.turns, t)
 	text, ask, err := f.script(t)
-	hold, tool := f.hold, f.tool
+	hold, tool, late := f.hold, f.tool, f.askLate
 	f.mu.Unlock()
 	ch := make(chan GrillEvent)
 	go func() {
@@ -106,11 +112,16 @@ func (f *fakeGrill) Turn(ctx context.Context, _ string, t GrillTurn) (<-chan Gri
 		if tool != "" && !send(GrillEvent{Tool: tool}) {
 			return
 		}
-		if ask != "" {
-			f.mu.Lock()
-			f.n++
-			f.snap.Questions = append(f.snap.Questions, GrillQuestion{ID: "Q" + string(rune('0'+f.n)), Text: ask, Open: true})
-			f.mu.Unlock()
+		record := func() {
+			if ask != "" {
+				f.mu.Lock()
+				f.n++
+				f.snap.Questions = append(f.snap.Questions, GrillQuestion{ID: "Q" + string(rune('0'+f.n)), Text: ask, Open: true})
+				f.mu.Unlock()
+			}
+		}
+		if !late {
+			record()
 		}
 		if hold != nil {
 			select {
@@ -120,6 +131,9 @@ func (f *fakeGrill) Turn(ctx context.Context, _ string, t GrillTurn) (<-chan Gri
 				return
 			}
 		}
+		if late {
+			record()
+		}
 		if !send(GrillEvent{Text: text[half:]}) {
 			return
 		}
@@ -127,16 +141,20 @@ func (f *fakeGrill) Turn(ctx context.Context, _ string, t GrillTurn) (<-chan Gri
 			send(GrillEvent{Err: err})
 			return
 		}
-		if t.Kind == TurnWritePlan {
+		if t.Kind == TurnWritePlan && !f.noSave {
 			f.mu.Lock()
 			f.snap.PlanWritten = true
 			f.mu.Unlock()
+			send(GrillEvent{PlanSaved: true})
 		}
 	}()
 	return ch, nil
 }
 
 func (f *fakeGrill) Answer(_ context.Context, _ string, questionID, text string) error {
+	if f.answerHold != nil {
+		<-f.answerHold
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
 	f.answers = append(f.answers, questionID+" "+text)
@@ -282,7 +300,7 @@ func TestGrillEscCancelsTheTurn(t *testing.T) {
 func TestGrillEscLeaves(t *testing.T) {
 	t.Parallel()
 	m := NewGrill(newFakeGrill(), "bfc-5v7x")
-	next, _ := m.Update(m.load())
+	next, _ := m.Update(m.load(0)())
 	_, cmd := next.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
 	if cmd == nil {
 		t.Fatal("esc does nothing")
@@ -303,9 +321,9 @@ func TestGrillSyncBringsAnAnswerFromElsewhere(t *testing.T) {
 	waitFor(t, tm, "send answer")
 	g.mu.Lock()
 	g.snap.Questions[0].Open, g.snap.Questions[0].Answer = false, "Answered in the CLI."
-	g.snap.Others = append(g.snap.Others, GrillComment{Who: "Peter Horváth", Text: "Should refunds stay out?"})
+	g.snap.Others = append(g.snap.Others, GrillMessage{Who: "Peter Horváth", Text: "Should refunds stay out?"})
 	g.mu.Unlock()
-	tm.Send(GrillReloadMsg{})
+	tm.Send(reloadGrillMsg{})
 	waitFor(t, tm, "answered elsewhere")
 	waitFor(t, tm, "Should refunds stay out?")
 	finalGolden(t, tm)
@@ -395,7 +413,8 @@ func TestAppNoGrillForAClosedPlan(t *testing.T) {
 	waitFor(t, tm, "IN-REVIEW")
 	send(tm, "enter")
 	waitFor(t, tm, "Affected areas")
-	send(tm, "g")
+	send(tm, "g", "tab")
+	waitFor(t, tm, "Problem") // tab still switched documents: g did nothing
 	if out := screen(t, tm); strings.Contains(out, "g grill") || strings.Contains(out, "Enter starts the Grill") {
 		t.Errorf("a closed plan offers the Grill:\n%s", out)
 	}
@@ -436,7 +455,7 @@ func TestAppSyncReloadsTheGrill(t *testing.T) {
 	g := newFakeGrill()
 	tm := openGrill(t, f, g)
 	g.mu.Lock()
-	g.snap.Others = append(g.snap.Others, GrillComment{Who: "Peter Horváth", Text: "Refunds?"})
+	g.snap.Others = append(g.snap.Others, GrillMessage{Who: "Peter Horváth", Text: "Refunds?"})
 	g.mu.Unlock()
 	f.mu.Lock()
 	f.syncFn = func() SyncResult { return SyncResult{Outcome: SyncOK, Changed: true} }
@@ -461,5 +480,154 @@ func TestGrillShowsTheAgentsCommand(t *testing.T) {
 	waitFor(t, tm, "send answer")
 	if err := tm.Quit(); err != nil {
 		t.Fatal(err)
+	}
+}
+
+// AC-4: Esc before the agent recorded its Question leaves the Grill idle.
+func TestGrillEscBeforeTheQuestionIsRecorded(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().asking()
+	g.hold, g.askLate = make(chan struct{}), true
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "agent is thinking")
+	pressKey(tm, tea.KeyEscape)
+	waitFor(t, tm, "Turn cancelled")
+	waitFor(t, tm, "enter start the Grill")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// While the answer is being stored, a second Enter stores nothing more and
+// starts no second turn.
+func TestGrillStoresAnAnswerOnce(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().asking()
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "send answer")
+	g.mu.Lock()
+	g.answerHold = make(chan struct{})
+	g.mu.Unlock()
+	typeText(tm, "Paid on its own.")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "saving…")
+	pressKey(tm, tea.KeyEnter)
+	typeText(tm, "x")
+	close(g.answerHold)
+	waitFor(t, tm, "answered (1)")
+	waitFor(t, tm, "send answer")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	g.mu.Lock()
+	defer g.mu.Unlock()
+	if len(g.answers) != 1 || len(g.turns) != 2 || g.turns[1].Answer != "Paid on its own." {
+		t.Errorf("answers = %q, turns = %+v", g.answers, g.turns)
+	}
+}
+
+// AC-4: a failed summary is retried as a summary.
+func TestGrillRetriesTheTurnThatFailed(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().asking()
+	base := g.script
+	fail := true
+	g.script = func(turn GrillTurn) (string, string, error) {
+		if turn.Kind == TurnSummary && fail {
+			fail = false
+			return "", "", errors.New("rate limited")
+		}
+		return base(turn)
+	}
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "send answer")
+	tm.Send(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
+	waitFor(t, tm, "rate limited")
+	waitFor(t, tm, "send answer") // the open Question still waits
+	tm.Send(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
+	waitFor(t, tm, "Grill finished")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// A turn that fails after the agent recorded its Question waits for the
+// answer; the error stays on the notice line.
+func TestGrillErrorAfterTheQuestionWaitsForTheAnswer(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill()
+	g.script = func(GrillTurn) (string, string, error) {
+		return "Which cards fail?", "Which cards fail?", errors.New("connection reset")
+	}
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "connection reset")
+	waitFor(t, tm, "send answer")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// AC-7: a write-plan turn that ends without storing plan.md is an error,
+// not a return to the detail.
+func TestGrillWritePlanWithoutSavingIsAnError(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().asking()
+	g.noSave = true
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "send answer")
+	tm.Send(tea.KeyPressMsg{Code: 'f', Mod: tea.ModCtrl})
+	waitFor(t, tm, "w write plan.md")
+	pressKey(tm, 'w')
+	waitFor(t, tm, "without saving plan.md")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+}
+
+// Esc that comes after the write-plan turn stored plan.md still reports the
+// edit, so the app syncs and shows it.
+func TestGrillLateEscStillReportsTheSavedPlan(t *testing.T) {
+	t.Parallel()
+	m := NewGrill(newFakeGrill(), "bfc-5v7x")
+	m.loaded, m.phase, m.turn = true, phaseWriting, GrillTurn{Kind: TurnWritePlan}
+	m.cancel = func() {}
+	next, _ := m.Update(grillEventMsg{ev: GrillEvent{PlanSaved: true}})
+	next, _ = next.Update(tea.KeyPressMsg{Code: tea.KeyEscape})
+	_, cmd := next.Update(grillEventMsg{done: true})
+	if cmd == nil {
+		t.Fatal("no message after the turn")
+	}
+	if msg, ok := cmd().(PlanEditedMsg); !ok || !msg.Changed {
+		t.Errorf("after the turn: %#v, want PlanEditedMsg{Changed: true}", cmd())
+	}
+}
+
+// AC-4: ctrl+c during a turn stops the agent and quits once it has ended.
+func TestGrillCtrlCStopsTheTurnFirst(t *testing.T) {
+	t.Parallel()
+	m := NewGrill(newFakeGrill(), "bfc-5v7x")
+	cancelled := false
+	m.loaded, m.phase, m.turn = true, phaseThinking, GrillTurn{Kind: TurnAsk}
+	m.cancel = func() { cancelled = true }
+	next, cmd := m.Update(tea.KeyPressMsg{Code: 'c', Mod: tea.ModCtrl})
+	if !cancelled || cmd != nil {
+		t.Fatalf("ctrl+c must cancel and wait: cancelled=%v cmd=%v", cancelled, cmd != nil)
+	}
+	_, cmd = next.Update(grillEventMsg{done: true})
+	if cmd == nil {
+		t.Fatal("no quit after the turn ended")
+	}
+	if _, ok := cmd().(tea.QuitMsg); !ok {
+		t.Errorf("after the turn: %T, want tea.QuitMsg", cmd())
 	}
 }

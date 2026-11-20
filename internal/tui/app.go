@@ -81,7 +81,7 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 				cmds = append(cmds, m.detail.load)
 			}
 			if m.grill != nil {
-				cmds = append(cmds, m.grill.load)
+				cmds = append(cmds, func() tea.Msg { return reloadGrillMsg{} })
 			}
 		}
 	case PlanCreatedMsg:
@@ -147,7 +147,7 @@ func (m *App) forward(msg tea.Msg) []tea.Cmd {
 		toList, toDetail, toGrill = true, false, false
 	case detailLoadedMsg, reviewDoneMsg, PlanEditedMsg:
 		toList, toDetail, toGrill = false, m.detail != nil, false
-	case grillLoadedMsg, grillEventMsg, grillStartedMsg, grillAnsweredMsg, grillTickMsg, GrillReloadMsg:
+	case grillLoadedMsg, grillEventMsg, grillStartedMsg, grillAnsweredMsg, grillTickMsg, reloadGrillMsg:
 		toList, toDetail = false, false
 	case syncTickMsg, syncDoneMsg, GrillChangedMsg:
 		return nil

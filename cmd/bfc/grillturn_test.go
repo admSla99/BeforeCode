@@ -184,9 +184,53 @@ func TestGrillTurnReportsAFailure(t *testing.T) {
 	}
 }
 
+// bfcOnce builds this bfc once, for the fake Claude Code to run.
+var (
+	bfcOnce sync.Once
+	bfcBin  string
+	bfcErr  error
+)
+
+func bfcBinary(t *testing.T) string {
+	t.Helper()
+	bfcOnce.Do(func() {
+		bfcBin = filepath.Join(fixtureRoot, "bfc")
+		if runtime.GOOS == "windows" {
+			bfcBin += ".exe"
+		}
+		out, err := exec.Command("go", "build", "-o", bfcBin, ".").CombinedOutput()
+		if err != nil {
+			bfcErr, bfcBin = err, string(out)
+		}
+	})
+	if bfcErr != nil {
+		t.Fatalf("building bfc: %v\n%s", bfcErr, bfcBin)
+	}
+	return bfcBin
+}
+
+// runTurnEvents runs a turn and returns all its events.
+func runTurnEvents(t *testing.T, g *tuiGrill, short string, turn tui.GrillTurn) []tui.GrillEvent {
+	t.Helper()
+	ch, err := g.Turn(context.Background(), short, turn)
+	if err != nil {
+		t.Fatal(err)
+	}
+	var evs []tui.GrillEvent
+	for ev := range ch {
+		evs = append(evs, ev)
+	}
+	return evs
+}
+
+func planSaved(evs []tui.GrillEvent) bool {
+	return slices.ContainsFunc(evs, func(e tui.GrillEvent) bool { return e.PlanSaved })
+}
+
 // AC-7: the write-plan turn is prompted with bfc prime plan, may use
-// bfc edit, uses --force only when the author agreed, and removes the
-// session file once plan.md is written.
+// bfc edit, and uses --force only when the author agreed. Only a plan.md
+// that was really stored ends the Grill: it reports PlanSaved and removes
+// the session file.
 func TestGrillTurnWritesThePlan(t *testing.T) {
 	t.Parallel()
 	dir, short, id, argsFile := grillRepo(t)
@@ -194,21 +238,43 @@ func TestGrillTurnWritesThePlan(t *testing.T) {
 	if _, err := runTurn(t, g, short, tui.GrillTurn{Kind: tui.TurnAsk}); err != nil {
 		t.Fatal(err)
 	}
-	if _, err := runTurn(t, g, short, tui.GrillTurn{Kind: tui.TurnWritePlan}); err != nil {
-		t.Fatal(err)
-	}
+	evs := runTurnEvents(t, g, short, tui.GrillTurn{Kind: tui.TurnWritePlan})
 	args, prompt := claudeArgs(t, argsFile)
 	if !slices.Contains(args, "Bash(bfc edit:*)") || !strings.Contains(prompt, "bfc prime plan "+short) || strings.Contains(prompt, "--force") {
-		t.Errorf("write-plan args = %q", args)
+		t.Errorf("write-plan turn: %q, %q", args, prompt)
+	}
+	if planSaved(evs) {
+		t.Error("PlanSaved without a stored plan.md")
+	}
+	if _, err := os.Stat(sessionFile(t, dir, id)); err != nil {
+		t.Errorf("the session file must stay while plan.md is not written: %v", err)
+	}
+
+	// The agent stores plan.md with bfc edit --stdin.
+	planFile := filepath.Join(t.TempDir(), "plan.md")
+	writeFile(t, planFile, validPlan)
+	setEnv(t, "FAKECLAUDE_EXEC", "'"+bfcBinary(t)+"' edit "+short+" --stdin < '"+planFile+"'")
+	evs = runTurnEvents(t, grillIn(t, dir), short, tui.GrillTurn{Kind: tui.TurnWritePlan, Force: true})
+	if !planSaved(evs) {
+		t.Errorf("no PlanSaved after bfc edit stored plan.md: %+v", evs)
+	}
+	if _, prompt := claudeArgs(t, argsFile); !strings.Contains(prompt, "--force") {
+		t.Errorf("with the author's yes the prompt allows --force: %q", prompt)
 	}
 	if _, err := os.Stat(sessionFile(t, dir, id)); !os.IsNotExist(err) {
 		t.Errorf("the session file stays after plan.md was written: %v", err)
 	}
-	if _, err := runTurn(t, g, short, tui.GrillTurn{Kind: tui.TurnWritePlan, Force: true}); err != nil {
+}
+
+// AC-5: a summary in a new session reads the Grill first.
+func TestGrillSummaryInANewSessionReadsTheGrill(t *testing.T) {
+	t.Parallel()
+	dir, short, _, argsFile := grillRepo(t)
+	if _, err := runTurn(t, grillIn(t, dir), short, tui.GrillTurn{Kind: tui.TurnSummary}); err != nil {
 		t.Fatal(err)
 	}
-	if _, prompt := claudeArgs(t, argsFile); !strings.Contains(prompt, "--force") {
-		t.Errorf("with the author's yes the prompt allows --force: %q", prompt)
+	if _, prompt := claudeArgs(t, argsFile); !strings.Contains(prompt, "bfc prime grill "+short) {
+		t.Errorf("summary prompt = %q", prompt)
 	}
 }
 
@@ -225,6 +291,7 @@ func TestGrillSnapshotAndAnswer(t *testing.T) {
 	setEnv(t, agentEnv, "")
 	as(t, dir, benP)
 	mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "-m", "Refunds too?")
+	mustBfc(t, dir, "reply", q1, "-m", "Also Maestro.")
 	as(t, dir, adaP)
 
 	g := grillIn(t, dir)
@@ -239,8 +306,8 @@ func TestGrillSnapshotAndAnswer(t *testing.T) {
 	if !slices.Equal(snap.Questions, want) {
 		t.Errorf("questions = %+v, want %+v", snap.Questions, want)
 	}
-	if len(snap.Others) != 1 || snap.Others[0].Who != "Ben Bitdiddle" || snap.Others[0].Text != "Refunds too?" {
-		t.Errorf("others = %+v", snap.Others)
+	if want := []tui.GrillMessage{{Who: "Ben Bitdiddle", Text: "Refunds too?"}, {Who: "Ben Bitdiddle", Text: "Also Maestro."}}; !slices.Equal(snap.Others, want) {
+		t.Errorf("others = %+v, want %+v", snap.Others, want)
 	}
 	if snap.Author != "Ada Lovelace" || snap.AuthorEmail != "ada@example.com" || snap.PlanWritten {
 		t.Errorf("snapshot = %+v", snap)
