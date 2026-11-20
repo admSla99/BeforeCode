@@ -1,0 +1,24 @@
+Grill  bfc-5v7x Payments via Stripe  draft · Question 2
+
+Question
+What happens when a card payment fails?
+
+── answered (1) ──
+1. What observable result would prove it worked?
+   → A test-card checkout turns the order paid.
+
+
+
+
+
+
+
+
+
+
+
+
+
+› ▌
+ ▸ your answer · author: Jana Nováková                                          
+enter send answer • ctrl+f finish • esc back • ctrl+c quit

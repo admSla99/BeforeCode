@@ -2,7 +2,7 @@
 
 Date: 2026-11-20. Status: accepted. Settled with the maintainer through the prototype in issue #62, for the Grill screen (issue #66).
 
-In the TUI Grill each turn of Claude Code must leave exactly one Question on the plan, recorded by the agent itself with `bfc ask` (its only allowed tool), and the TUI then stores the author's typed answer with the same code as `bfc reply --verbatim`. A turn that ends without a recorded Question is an error the author retries; the screen never turns the agent's text into a Question on its own. This keeps one path for Grill Messages, the same as a Grill in Claude Code (`grill-intent`, ADR 0002 section 7): a Question carries `agent` and is the agent's, an answer has none and is the author's own words, so the plan holds the same record whichever way the Grill ran.
+In the TUI Grill each turn of Claude Code must leave exactly one Question on the plan, recorded by the agent itself with `bfc ask` (the only command it may write with; it may also read the plan with `bfc prime` and `bfc show`), and the TUI then stores the author's typed answer with the same code as `bfc reply --verbatim`. A turn that ends without a recorded Question is an error the author retries; the screen never turns the agent's text into a Question on its own. This keeps one path for Grill Messages, the same as a Grill in Claude Code (`grill-intent`, ADR 0002 section 7): a Question carries `agent` and is the agent's, an answer has none and is the author's own words, so the plan holds the same record whichever way the Grill ran.
 
 ## Considered options
 

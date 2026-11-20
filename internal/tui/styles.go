@@ -1,6 +1,8 @@
 package tui
 
 import (
+	"strings"
+
 	"charm.land/lipgloss/v2"
 	"github.com/charmbracelet/x/ansi"
 
@@ -15,6 +17,9 @@ var (
 	styleSelected = lipgloss.NewStyle().Reverse(true)
 	styleError    = lipgloss.NewStyle().Foreground(lipgloss.Red)
 	styleTab      = lipgloss.NewStyle().Bold(true).Underline(true)
+	styleWarn     = lipgloss.NewStyle().Foreground(lipgloss.Yellow)
+	styleOK       = lipgloss.NewStyle().Foreground(lipgloss.Green)
+	styleAccent   = lipgloss.NewStyle().Foreground(lipgloss.Cyan)
 )
 
 // stateStyle colors a Plan state.
@@ -37,4 +42,38 @@ func truncate(s string, width int) string {
 		return s
 	}
 	return ansi.Truncate(s, width, "…")
+}
+
+// wrap wraps text to w cells.
+func wrap(text string, w int) []string {
+	if strings.TrimSpace(text) == "" {
+		return nil
+	}
+	return strings.Split(ansi.Wrap(strings.TrimSpace(text), max(w, 1), ""), "\n")
+}
+
+func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+func tail(lines []string, n int) []string {
+	if len(lines) > n {
+		return lines[len(lines)-n:]
+	}
+	return lines
+}
+
+func pad(lines []string, n int) []string {
+	for len(lines) < n {
+		lines = append(lines, "")
+	}
+	if len(lines) > n {
+		lines = lines[:n]
+	}
+	return lines
+}
+
+func orDash(s string) string {
+	if s == "" {
+		return "-"
+	}
+	return s
 }

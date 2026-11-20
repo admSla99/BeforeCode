@@ -53,7 +53,9 @@ func runTUI(cmd *cobra.Command) error {
 		cmd.SetErr(stderr)
 		_, _ = io.Copy(stderr, &warnings)
 	}()
-	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{cmd: cmd}, tuiOptions(cmd))
+	opts := tuiOptions(cmd)
+	opts.Grill = &tuiGrill{cmd: cmd}
+	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{cmd: cmd}, opts)
 	_, err := tea.NewProgram(app, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
 	return err
 }
