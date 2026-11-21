@@ -1,0 +1,77 @@
+bfc-xxxx  Payments
+ID:         <ULID-1>
+State:      draft
+Author:     Ada Lovelace <ada@example.com>
+Approvals:  -
+Activity:   <time>
+
+Open questions:
+  <ULID-2>  to ben@example.com  plan.md#AC-1  Is one retry enough?
+
+--- intent.md ---
+---
+title: Payments
+labels: []
+---
+
+## Problem
+
+<!-- What is wrong or missing today? A few sentences. -->
+
+## Who it is for
+
+<!-- Who has the problem, and who benefits when it is solved. -->
+
+## How we know it worked
+
+<!-- An observable result, not a task list. -->
+
+## Out of scope
+
+<!-- What this plan deliberately does not solve. -->
+
+--- plan.md ---
+## Context
+
+Cards fail.
+
+## Approach
+
+Stripe.
+
+## Affected areas
+
+payments/
+
+## Out of scope
+
+Refunds.
+
+## Tasks
+
+- Add the client.
+
+## Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+
+--- Discussion ---
+
+<ULID-3>  Ben Bitdiddle <ben@example.com>  <time>
+  Split the rollout into two steps.
+
+  <ULID-4>  Ada Lovelace <ada@example.com>  <time>
+    Done in plan.md:
+    two steps now.
+
+<ULID-5>  Ada Lovelace <ada@example.com> (through claude-code)  <time>
+  to ada@example.com  intent.md  Question, answered
+  Which cards fail?
+  All of them, or some?
+
+  <ULID-6>  Ada Lovelace <ada@example.com>  <time>
+    Only 3-D Secure cards.
+
+<ULID-2>  Ada Lovelace <ada@example.com>  <time>
+  to ben@example.com  plan.md#AC-1  Question, open
+  Is one retry enough?
