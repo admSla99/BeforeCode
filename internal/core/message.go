@@ -120,8 +120,8 @@ func OpenQuestions(msgs []Message) []Message {
 	return open
 }
 
-// Post is a Message as the Discussion lists it.
-type Post struct {
+// DiscussionMessage is a Message as the Discussion lists it.
+type DiscussionMessage struct {
 	Message
 	// Depth is 0 for the first Message of a Thread, 1 for a reply to it,
 	// and so on.
@@ -135,7 +135,7 @@ type Post struct {
 // after the Message it replies to, oldest first (ADR 0002 section 7). A
 // reply to a Message that is not in msgs starts a Thread of its own, and
 // replies in a cycle are listed last, so no Message is left out.
-func Discussion(msgs []Message) []Post {
+func Discussion(msgs []Message) []DiscussionMessage {
 	known := make(map[string]bool, len(msgs))
 	for _, m := range msgs {
 		known[m.ID.String()] = true
@@ -146,7 +146,7 @@ func Discussion(msgs []Message) []Post {
 			replies[m.ReplyTo] = append(replies[m.ReplyTo], m)
 		}
 	}
-	posts := make([]Post, 0, len(msgs))
+	out := make([]DiscussionMessage, 0, len(msgs))
 	seen := make(map[ulid.ULID]bool, len(msgs))
 	var walk func(m Message, depth int)
 	walk = func(m Message, depth int) {
@@ -155,7 +155,7 @@ func Discussion(msgs []Message) []Post {
 		}
 		seen[m.ID] = true
 		rs := replies[m.ID.String()]
-		posts = append(posts, Post{Message: m, Depth: depth, Answered: m.IsQuestion() && answered(m, rs)})
+		out = append(out, DiscussionMessage{Message: m, Depth: depth, Answered: m.IsQuestion() && answered(m, rs)})
 		for _, r := range rs {
 			walk(r, depth+1)
 		}
@@ -168,7 +168,7 @@ func Discussion(msgs []Message) []Post {
 	for _, m := range msgs {
 		walk(m, 0)
 	}
-	return posts
+	return out
 }
 
 func answered(q Message, replies []Message) bool {

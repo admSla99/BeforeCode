@@ -225,6 +225,15 @@ func printPlan(w io.Writer, v index.Plan, msgs []core.Message) error {
 	return err
 }
 
+// throughAgent is the author by, with the harness when an AI wrote the
+// Message.
+func throughAgent(by, agent string) string {
+	if agent == "" {
+		return by
+	}
+	return by + " (through " + agent + ")"
+}
+
 // writeDiscussion prints every Message of msgs as the Threads read (see
 // core.Discussion): a line with its ULID, author and time, a line with its
 // addressees, ref and, for a Question, whether it is open, then its text.
@@ -240,22 +249,17 @@ func writeDiscussion(b *strings.Builder, msgs []core.Message) {
 		if p.Author.Email != "" {
 			by += " <" + p.Author.Email + ">"
 		}
-		if p.Agent != "" {
-			by += " (through " + p.Agent + ")"
-		}
-		fmt.Fprintf(b, "\n%s%s  %s  %s\n", pad, p.ID, by, formatTime(p.At))
+		fmt.Fprintf(b, "\n%s%s  %s  %s\n", pad, p.ID, throughAgent(by, p.Agent), formatTime(p.At))
 		var fields []string
-		if p.IsQuestion() {
-			fields = append(fields, "to "+strings.Join(p.To, ", "))
-		}
 		if p.Ref != "" {
 			fields = append(fields, p.Ref)
 		}
-		switch {
-		case p.IsQuestion() && p.Answered:
-			fields = append(fields, "Question, answered")
-		case p.IsQuestion():
-			fields = append(fields, "Question, open")
+		if p.IsQuestion() {
+			status := "Question, open"
+			if p.Answered {
+				status = "Question, answered"
+			}
+			fields = append([]string{"to " + strings.Join(p.To, ", ")}, append(fields, status)...)
 		}
 		if len(fields) > 0 {
 			fmt.Fprintf(b, "%s  %s\n", pad, strings.Join(fields, "  "))

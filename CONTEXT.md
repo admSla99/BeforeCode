@@ -15,6 +15,7 @@ Use these terms exactly. If a new concept appears, add it here in the same pull 
 | **Message** | One post in the discussion of a Plan, by a person or the AI. Messages are never edited. A Message can reply to another Message and can refer to a part of the Plan (a section or an acceptance criterion). |
 | **Question** | A Message addressed to a person or to the AI. It is open until it is answered. An open question blocks approval. |
 | **Thread** | A Message that replies to nothing, together with all replies to it. People and the AI both post. |
+| **Discussion** | Every Message of a Plan presented as one document: each Thread in the order of its first Message, each reply under the Message it replies to, each Question marked open or answered. `bfc show` prints it after the documents. |
 | **Grill** | An interactive session where the AI challenges the developer one question at a time, driven by a Skill. Each question is a Question by the AI to the plan author, each answer a Message that answers it. |
 | **Grill round** | One step of a Grill: the AI records a Question to the plan author with `bfc ask`, asks it, and records the author's answer word for word with `bfc reply --verbatim`. Not a Review round. |
 | **Skill** | A `SKILL.md` file in `.beforecode/skills/` that drives a grill, a review or a plan check. Versioned on normal branches. Not the `beforecode` skill that `bfc setup claude` writes to `.claude/skills/`: that is a Claude Code skill which only points the agent to Prime. |

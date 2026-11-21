@@ -147,7 +147,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"- The user works in the TUI (`bfc` without arguments) and does not run the CLI. You run it, with `--json` where you read.\n" +
 	"- Commands you may use:\n" +
 	"  - `bfc prime [id]`: these instructions and the Current plan.\n" +
-	"  - `bfc show [id] --json`: one plan with `intent.md`, `plan.md`, its acceptance criteria and open Questions.\n" +
+	"  - `bfc show [id] --json`: one plan with `intent.md`, `plan.md`, its acceptance criteria, open Questions and every Message (`messages`).\n" +
 	"  - `bfc list --json` and `bfc search <text>`: find plans.\n" +
 	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.\n" +
 	"  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.\n" +
