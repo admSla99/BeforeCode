@@ -2,7 +2,7 @@
 
 - Two clones (Ana, Ben) of one local bare remote, Linux, in a cloud session.
 - bfc dev built from the pull request's branch; Claude Code 2.1.329 (the real one, not the fake).
-- The TUI ran in tmux at 80x24 and was driven by an agent (Claude Code) typing keys for Ana and Ben, not by a person as issue #67 asks. The maintainer may repeat it by hand; the steps are the ones below.
+- The TUI ran in tmux at 80x24 and was driven by an agent (Claude Code) typing keys for Ana and Ben, not by a person as issue #67 asks. The maintainer accepted this run for AC-5 and will not repeat it by hand.
 - The automated test (`e2e/claude_test.go`) does not drive the TUI, which needs a terminal: the fake Claude Code runs the bfc commands of a Grill directly, and the answer goes through `bfc reply`, which writes the same Message as the Grill screen. This run is the one through the TUI.
 - The repository held `greet.go`, a program that prints `hello`. The Intent: greet the user by name from the first argument, fall back to `hello`.
 
