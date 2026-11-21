@@ -64,7 +64,7 @@ bfc start bfc-5v7x              # the approved plan becomes the Current plan
 claude                          # "implement the current plan": it runs bfc prime and may edit now
 ```
 
-Until the Current plan is approved, the hook refuses Claude Code's edits and tells it to run `bfc prime`. The Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside Claude Code: they are yours, in the TUI or the CLI. A Question of the Grill left open blocks approval; answer it with `bfc reply` (#92).
+Until the Current plan is approved, the hook refuses Claude Code's edits and tells it to run `bfc prime`. The Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside Claude Code: they are yours, in the TUI or the CLI. An open Question blocks approval; the plan detail says so.
 
 `bfc pull`, `bfc push` and `bfc sync` share plans; concurrent changes are merged, never force-pushed. `bfc` alone opens the TUI, which syncs in the background. `bfc doctor` checks the setup and says how to fix what is wrong; `bfc doctor --fix` applies the safe fixes.
 

@@ -1,6 +1,7 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 
 	"charm.land/lipgloss/v2"
@@ -53,6 +54,15 @@ func wrap(text string, w int) []string {
 }
 
 func oneLine(s string) string { return strings.Join(strings.Fields(s), " ") }
+
+// plural is n with noun, which gets an s unless n is 1: "1 Question",
+// "2 open Questions".
+func plural(n int, noun string) string {
+	if n == 1 {
+		return "1 " + noun
+	}
+	return fmt.Sprintf("%d %ss", n, noun)
+}
 
 func tail(lines []string, n int) []string {
 	if len(lines) > n {

@@ -204,8 +204,10 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 		if err != nil {
 			return tui.PlanDetail{}, err
 		}
-		if core.CheckOpenQuestions(v.Status, core.OpenQuestions(msgs)) == nil {
+		if open := core.OpenQuestions(msgs); core.CheckOpenQuestions(v.Status, open) == nil {
 			d.Actions = append(d.Actions, tui.ActionApprove)
+		} else {
+			d.BlockingQuestions = len(open)
 		}
 	}
 	if core.CheckRequestChanges(v.Status, actor, "a reason") == nil {

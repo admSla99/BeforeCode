@@ -101,13 +101,14 @@ func (s GrillSnapshot) open() *GrillQuestion {
 type grillPhase int
 
 const (
-	phaseIdle     grillPhase = iota // nothing runs; Enter starts or continues
-	phaseThinking                   // a turn runs and streams
-	phaseWaiting                    // the author types the answer
-	phaseSaving                     // the answer is being stored
-	phaseError                      // the last turn failed; Enter retries it
-	phaseEnded                      // the agent wrote its summary
-	phaseWriting                    // the write-plan turn runs
+	phaseIdle        grillPhase = iota // nothing runs; Enter starts or continues
+	phaseThinking                      // a turn runs and streams
+	phaseWaiting                       // the author types the answer
+	phaseSaving                        // the answer is being stored
+	phaseError                         // the last turn failed; Enter retries it
+	phaseEnded                         // the agent wrote its summary
+	phaseWriting                       // the write-plan turn runs
+	phaseNothingLeft                   // the agent asked nothing: nothing is left to ask
 )
 
 // GrillScreen is the Grill of one plan: one Question at a time, with the
@@ -307,6 +308,8 @@ func (m GrillScreen) loadedSnap(msg grillLoadedMsg) (tea.Model, tea.Cmd) {
 		m.failed = false
 	case m.phase == phaseIdle && open != nil && msg.n == 0:
 		m.phase = phaseWaiting // a Question from an earlier session waits
+	case m.phase == phaseNothingLeft && open != nil:
+		m.phase = phaseWaiting // a Question that sync brought waits
 	}
 	return m, nil
 }
@@ -323,7 +326,8 @@ func (m *GrillScreen) decide(open bool) {
 	case m.stopped:
 		m.phase = phaseIdle
 	default:
-		m.phase, m.notice, m.failed = phaseError, "The turn ended without a recorded Question; the agent did not run bfc ask.", true
+		// No Question: the agent has nothing left to ask (#92).
+		m.phase = phaseNothingLeft
 	}
 }
 
@@ -432,7 +436,7 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.start(m.turn) // retry the turn that failed
 	case key.Matches(msg, m.keys.Send):
 		return m.start(GrillTurn{Kind: TurnAsk})
-	case key.Matches(msg, m.keys.Finish) && m.phase != phaseEnded && len(m.snap.Questions) > 0:
+	case key.Matches(msg, m.keys.Finish) && m.phase != phaseEnded && (len(m.snap.Questions) > 0 || m.phase == phaseNothingLeft):
 		return m.start(GrillTurn{Kind: TurnSummary})
 	case key.Matches(msg, m.keys.Write) && m.phase == phaseEnded:
 		if m.snap.PlanWritten {
@@ -481,8 +485,12 @@ func (m GrillScreen) header() string {
 	if m.phase == phaseThinking && m.turn.Kind == TurnAsk && m.snap.open() == nil {
 		n++ // the Question being asked
 	}
+	count := fmt.Sprintf("Question %d", max(n, 1))
+	if m.phase == phaseNothingLeft {
+		count = plural(n, "Question") + " asked"
+	}
 	return styleTitle.Render("Grill") + "  " + m.snap.ShortID + " " + m.snap.Title + "  " +
-		styleDim.Render(fmt.Sprintf("%s · Question %d", m.snap.State, max(n, 1)))
+		styleDim.Render(string(m.snap.State)+" · "+count)
 }
 
 // focus is the large part on top: the agent's streaming text, the open
@@ -507,6 +515,10 @@ func (m GrillScreen) focus(w int) []string {
 		return append([]string{styleTitle.Render("Summary")}, wrap(m.summary, w)...)
 	case m.phase == phaseError && strings.TrimSpace(m.stream) != "":
 		return append([]string{styleTitle.Render("Claude wrote")}, wrap(m.stream, w)...)
+	case m.phase == phaseNothingLeft:
+		lines := []string{styleTitle.Render("Nothing left to ask")}
+		lines = append(lines, wrap(m.stream, w)...)
+		return append(lines, "", "f finishes the Grill with a summary; Enter asks for another Question.")
 	case q != nil:
 		return append([]string{styleTitle.Render("Question")}, wrap(q.Text, w)...)
 	case len(m.snap.Questions) == 0:
@@ -571,6 +583,8 @@ func (m GrillScreen) statusBar() string {
 		s = "✗ error"
 	case phaseEnded:
 		s = "✓ Grill finished"
+	case phaseNothingLeft:
+		s = "✓ nothing left to ask"
 	default:
 		s = "idle"
 	}
@@ -595,6 +609,8 @@ func (m GrillScreen) helpKeys() []key.Binding {
 		return []key.Binding{k.SendAnswer, k.FinishTyping, k.Cancel, k.Quit}
 	case m.phase == phaseEnded:
 		return []key.Binding{k.Write, k.Continue, k.Cancel, k.Quit}
+	case m.phase == phaseNothingLeft:
+		return []key.Binding{k.Finish, k.Continue, k.Cancel, k.Quit}
 	case m.phase == phaseError && len(m.snap.Questions) == 0:
 		return []key.Binding{k.Retry, k.Cancel, k.Quit}
 	case m.phase == phaseError:
