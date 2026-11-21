@@ -519,3 +519,15 @@ func TestAppCloseIsOfferedOnlyWhenAllowed(t *testing.T) {
 		t.Errorf("close offered without the action:\n%s", out)
 	}
 }
+
+// #92: when open Questions keep the reviewer from approving, the detail
+// says so instead of only leaving a out.
+func TestAppDetailSaysWhyApprovalWaits(t *testing.T) {
+	f := newFakeTeam()
+	d := f.details["bfc-5v7x"]
+	d.ApprovalWaitsOn = 2
+	f.details["bfc-5v7x"] = d
+	tm := openDetailWith(t, f, ActionRequestChanges)
+	waitFor(t, tm, "open Questions")
+	golden(t, screen(t, tm))
+}

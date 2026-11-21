@@ -239,17 +239,51 @@ func TestGrillAsksAndRecordsTheAnswer(t *testing.T) {
 	}
 }
 
-// AC-3: a turn that ends without a recorded Question is an error; Enter
-// retries it.
-func TestGrillTurnWithoutAQuestionIsAnError(t *testing.T) {
+// #92: a turn that ends without a recorded Question means the agent has
+// nothing left to ask. It is not an error: the screen shows what the agent
+// wrote and offers to finish, and f starts the summary.
+func TestGrillTurnWithoutAQuestionOffersToFinish(t *testing.T) {
 	t.Parallel()
 	g := newFakeGrill()
-	g.script = func(GrillTurn) (string, string, error) { return "What is the problem?", "", nil }
+	base := g.script
+	g.script = func(turn GrillTurn) (string, string, error) {
+		if turn.Kind == TurnAsk {
+			return "Nothing is left to ask: the Intent says who, what and how we know it worked.", "", nil
+		}
+		return base(turn)
+	}
 	tm := newGrillModel(t, g)
 	waitFor(t, tm, "Enter starts the Grill")
 	pressKey(tm, tea.KeyEnter)
-	waitFor(t, tm, "without a recorded Question")
+	waitFor(t, tm, "f finish")
 	finalGolden(t, tm)
+}
+
+// #92: f after a turn without a Question finishes the Grill, even before
+// any Question was asked.
+func TestGrillFinishesAfterATurnWithoutAQuestion(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill()
+	base := g.script
+	g.script = func(turn GrillTurn) (string, string, error) {
+		if turn.Kind == TurnAsk {
+			return "Nothing is left to ask.", "", nil
+		}
+		return base(turn)
+	}
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "f finish")
+	pressKey(tm, 'f')
+	waitFor(t, tm, "Summary: success")
+	if err := tm.Quit(); err != nil {
+		t.Fatal(err)
+	}
+	turns := g.recordedTurns()
+	if len(turns) != 2 || turns[0].Kind != TurnAsk || turns[1].Kind != TurnSummary {
+		t.Errorf("turns = %+v", turns)
+	}
 }
 
 // AC-4: a failed turn shows the reason, and Enter retries.

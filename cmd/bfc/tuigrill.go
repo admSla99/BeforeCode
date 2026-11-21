@@ -285,7 +285,8 @@ func (r grillRun) prompt(resumed bool) string {
 	rules := "Ask exactly one Question in this turn: record it first with `bfc ask " + id + " --to " + r.plan.Status.Author.Email +
 		" --ref intent.md -m \"<question>\"`, then end your turn with the same Question as your reply. " +
 		"The bfc TUI shows it to the author and records their answer itself, so do not run `bfc reply`. " +
-		"When nothing is left to ask, record and ask whether the author wants to finish the Grill."
+		"When nothing is left to ask, record no Question: say so in one line and end your turn; the author finishes the Grill in the TUI. " +
+		"Never record a Question that only asks whether to go on or finish: it would stay open and block approval."
 	switch r.turn.Kind {
 	case tui.TurnSummary:
 		p := "Finish the Grill of " + id + " now: write a short summary of what was decided and what is still open. Ask no new Question."

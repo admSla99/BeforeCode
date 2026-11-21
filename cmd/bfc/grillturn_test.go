@@ -149,6 +149,23 @@ func TestGrillTurnStartsAndResumesTheSession(t *testing.T) {
 	}
 }
 
+// #92: when nothing is left to ask, the agent records no Question, which
+// would stay open and block approval; the author finishes in the TUI.
+func TestGrillTurnRecordsNoQuestionWhenNothingIsLeft(t *testing.T) {
+	t.Parallel()
+	dir, short, _, argsFile := grillRepo(t)
+	g := grillIn(t, dir)
+	for _, turn := range []tui.GrillTurn{{Kind: tui.TurnAsk}, {Kind: tui.TurnAsk, Answer: "Only 3-D Secure cards."}} {
+		if _, err := runTurn(t, g, short, turn); err != nil {
+			t.Fatal(err)
+		}
+		_, prompt := claudeArgs(t, argsFile)
+		if !strings.Contains(prompt, "When nothing is left to ask, record no Question") || strings.Contains(prompt, "wants to finish") {
+			t.Errorf("prompt = %q", prompt)
+		}
+	}
+}
+
 // AC-5: when --resume fails, the turn starts a new session from bfc prime
 // grill, so nothing is lost.
 func TestGrillTurnStartsAgainWhenTheSessionIsLost(t *testing.T) {

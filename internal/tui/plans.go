@@ -51,6 +51,9 @@ type PlanDetail struct {
 	Intent, Plan      []byte   // nil when missing
 	// Actions are the review actions the current user may take now.
 	Actions []ReviewAction
+	// ApprovalWaitsOn is the number of open Questions that alone keep the
+	// current user from approving; 0 when they could not approve anyway.
+	ApprovalWaitsOn int
 	// Editable is true when the documents may be edited (not closed).
 	Editable bool
 }

@@ -33,6 +33,6 @@ The Grill round is done when `bfc reply` has stored the answer.
 
 ## When to stop
 
-Stop when each item under "What to probe" has a concrete answer, in the Intent or in the Grill, or when the author says to stop. Then post a short summary in the chat: what was decided, what is still open. Name the next step: writing `plan.md`, which starts with `bfc prime plan <id>`.
+Stop when each item under "What to probe" has a concrete answer, in the Intent or in the Grill, or when the author says to stop. Record no Question to stop: a Question that only asks whether to go on stays open and blocks approval. Then post a short summary in the chat: what was decided, what is still open. Name the next step: writing `plan.md`, which starts with `bfc prime plan <id>`.
 
 Submitting and approving the plan is for the author in the `bfc` TUI.
