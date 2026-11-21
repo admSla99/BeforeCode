@@ -52,7 +52,19 @@ git push -u origin bfc-5v7x-payments-via-stripe   # once, so that others' bfc st
 bfc show                        # without an ID: the Current plan, the one named in the branch
 ```
 
-**Use it from Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team.
+**With Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team. Then:
+
+```
+bfc setup claude                # once per repository; commit .claude
+bfc new "Payments via Stripe"   # the Intent
+bfc                             # the TUI: open the plan, g, then Enter, and Claude Code grills
+                                # the Intent; answer each Question, ctrl+f finishes, w has it
+                                # write plan.md; submit with s, and a teammate approves with a
+bfc start bfc-5v7x              # the approved plan becomes the Current plan
+claude                          # "implement the current plan": it runs bfc prime and may edit now
+```
+
+Until the Current plan is approved, the hook refuses Claude Code's edits and tells it to run `bfc prime`. The Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside Claude Code: they are yours, in the TUI or the CLI. A Question of the Grill left open blocks approval; answer it with `bfc reply` (#92).
 
 `bfc pull`, `bfc push` and `bfc sync` share plans; concurrent changes are merged, never force-pushed. `bfc` alone opens the TUI, which syncs in the background. `bfc doctor` checks the setup and says how to fix what is wrong; `bfc doctor --fix` applies the safe fixes.
 
