@@ -184,13 +184,55 @@ func TestAProcessThatExitsNonZeroWithoutAResultBecomesAnErrorWithItsStderr(t *te
 
 func TestALineThatIsNotJSONBecomesAnError(t *testing.T) {
 	t.Parallel()
-	bad := filepath.Join(t.TempDir(), "bad.jsonl")
-	if err := os.WriteFile(bad, []byte("Welcome to Claude Code\n"), 0o600); err != nil {
+	assertEvents(t, runLines(t, "Welcome to Claude Code\n"), []agent.Event{{Kind: agent.Error, Text: `claude printed a line that is not JSON: "Welcome to Claude Code"`}})
+}
+
+// runLines runs a turn of the fake whose standard output is lines.
+func runLines(t *testing.T, lines string) []agent.Event {
+	t.Helper()
+	file := filepath.Join(t.TempDir(), "lines.jsonl")
+	if err := os.WriteFile(file, []byte(lines), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + bad}})
-	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
-	assertEvents(t, got, []agent.Event{{Kind: agent.Error, Text: `claude printed a line that is not JSON: "Welcome to Claude Code"`}})
+	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + file}})
+	return collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
+}
+
+// #93: a line of a type the adapter does not read is ignored, even when
+// its fields have other types than in the lines it reads, and so is JSON
+// that is not an object or has no string type.
+func TestLinesOfOtherTypesAreIgnoredWhateverTheirFields(t *testing.T) {
+	t.Parallel()
+	hello, err := os.ReadFile(fixture(t, "hello.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const session = "af62e7a3-81bf-4feb-8823-550215fc2f29"
+	odd := []string{
+		`{"type":"system","subtype":"permission_denied","message":"Bash(cat greet.go) is not allowed","session_id":"` + session + `"}`,
+		`{"type":"system","subtype":"status","errors":[{"code":"denied"}],"result":{"ok":false},"is_error":"no","session_id":"` + session + `"}`,
+		`{"type":"rate_limit_event","message":["x"],"session_id":7}`,
+		`{"type":5}`, `[1]`, `"x"`, `42`, `null`,
+	}
+	// Between the lines of hello.jsonl: after its first line.
+	first, rest, _ := strings.Cut(string(hello), "\n")
+	got := runLines(t, first+"\n"+strings.Join(odd, "\n")+"\n"+rest)
+	assertEvents(t, got, []agent.Event{
+		{Kind: agent.Text, Text: "hi", Session: session},
+		{Kind: agent.Result, Text: "hi", Session: session},
+	})
+}
+
+// #93: an assistant or result line that bfc cannot read is an error that
+// says so, not "not JSON".
+func TestAnUnreadableAssistantOrResultLineBecomesAnError(t *testing.T) {
+	t.Parallel()
+	for line, want := range map[string]string{
+		`{"type":"result","result":{"text":"hi"}}`: `claude printed a "result" line that bfc cannot read: json: cannot unmarshal object into Go struct field line.result of type string: "{\"type\":\"result\",\"result\":{\"text\":\"hi\"}}"`,
+		`{"type":"assistant","session_id":5}`:      `claude printed a "assistant" line that bfc cannot read: json: cannot unmarshal number into Go struct field line.session_id of type string: "{\"type\":\"assistant\",\"session_id\":5}"`,
+	} {
+		assertEvents(t, runLines(t, line+"\n"), []agent.Event{{Kind: agent.Error, Text: want}})
+	}
 }
 
 func TestCancellingTheContextStopsTheProcess(t *testing.T) {

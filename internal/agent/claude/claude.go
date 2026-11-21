@@ -50,9 +50,10 @@ func (Agent) Capabilities() agent.Caps {
 //	<command> -p --output-format stream-json --verbose [--resume <session>] [--allowedTools <tool>...] -- <prompt>
 //
 // in t.Dir and sends one event for each assistant text, tool call and
-// result. A result that reports an error, a line that is not JSON and a
-// non-zero exit each become an error event; so does a cancelled ctx that
-// stopped the process. After cancelling, a caller may stop reading: Run
+// result; lines of other types are ignored. A result that reports an
+// error, a line that is not JSON, an assistant or result line it cannot
+// read and a non-zero exit each become an error event; so does a cancelled
+// ctx that stopped the process. After cancelling, a caller may stop reading: Run
 // then drops the remaining events and its goroutines end.
 func (a Agent) Run(ctx context.Context, t agent.Task) (<-chan agent.Event, error) {
 	cmd := exec.CommandContext(ctx, a.opts.Command, args(t)...)
@@ -181,7 +182,6 @@ func args(t agent.Task) []string {
 
 // line is the part of a stream-json line that bfc reads.
 type line struct {
-	Type      string `json:"type"`
 	SessionID string `json:"session_id"`
 	Message   struct {
 		Content []struct {
@@ -197,20 +197,43 @@ type line struct {
 	Errors  []string `json:"errors"`
 }
 
-// maxQuoted is how much of a line that is not JSON an Error quotes.
+// maxQuoted is how much of a line an Error quotes.
 const maxQuoted = 200
 
-// parse turns one stream-json line into Events.
+// quoted is the start of a line for an Error.
+func quoted(data []byte) []byte {
+	if len(data) > maxQuoted {
+		return data[:maxQuoted]
+	}
+	return data
+}
+
+// parse turns one stream-json line into Events. It reads only the type of
+// a line first: a line of a type bfc does not use is ignored whatever its
+// other fields hold, and so is JSON that is not an object with a string
+// type (#93).
 func parse(data []byte) []agent.Event {
+	if !json.Valid(data) {
+		return []agent.Event{errorEvent(fmt.Errorf("claude printed a line that is not JSON: %q", quoted(data)), "")}
+	}
+	var head struct {
+		Type json.RawMessage `json:"type"`
+	}
+	var lineType string
+	if json.Unmarshal(data, &head) != nil || json.Unmarshal(head.Type, &lineType) != nil {
+		return nil
+	}
+	switch lineType {
+	case "assistant", "result":
+	default:
+		return nil
+	}
 	var l line
 	if err := json.Unmarshal(data, &l); err != nil {
-		if len(data) > maxQuoted {
-			data = data[:maxQuoted]
-		}
-		return []agent.Event{errorEvent(fmt.Errorf("claude printed a line that is not JSON: %q", data), "")}
+		return []agent.Event{errorEvent(fmt.Errorf("claude printed a %q line that bfc cannot read: %v: %q", lineType, err, quoted(data)), "")}
 	}
 	var events []agent.Event
-	switch l.Type {
+	switch lineType {
 	case "assistant":
 		for _, c := range l.Message.Content {
 			switch c.Type {

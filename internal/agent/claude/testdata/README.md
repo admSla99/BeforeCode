@@ -24,8 +24,10 @@ recording machine:
   `partial_json` chunks of `tool.jsonl`.
 
 The recording environment emits `stream_event` lines (partial messages) and
-other line types such as `rate_limit_event`; the adapter ignores the types it
-does not use.
+other line types such as `rate_limit_event`; the adapter reads only the
+`type` of a line first and ignores the types it does not use, whatever their
+other fields hold (issue #93: a `system` line in which a field the adapter
+reads elsewhere had another type ended a turn as "not JSON").
 
 What the recording showed about the command line of Claude Code 2.1.328:
 
