@@ -178,12 +178,8 @@ func (m PlanDetailScreen) footer() []string {
 	case ActionClose:
 		lines = append(lines, "Close "+m.shortID+"? Reason (optional): "+m.reason+"▌  "+styleDim.Render("(enter: close, esc: cancel)"))
 	}
-	if n := m.detail.ApprovalWaitsOn; n > 0 && m.typing == "" {
-		questions := "Questions"
-		if n == 1 {
-			questions = "Question"
-		}
-		lines = append(lines, styleWarn.Render(fmt.Sprintf("Approval waits on %d open %s; answer in the Grill or with bfc reply.", n, questions)))
+	if n := m.detail.BlockingQuestions; n > 0 && m.typing == "" {
+		lines = append(lines, styleWarn.Render("Approval waits on "+plural(n, "open Question")+"; bfc show "+m.shortID+" lists them."))
 	}
 	if m.status != "" {
 		style := styleDim

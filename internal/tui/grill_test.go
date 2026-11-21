@@ -363,6 +363,31 @@ func TestGrillSyncBringsAnAnswerFromElsewhere(t *testing.T) {
 	finalGolden(t, tm)
 }
 
+// #92: a Question that sync brings while nothing was left to ask is shown
+// and waits for its answer.
+func TestGrillSyncBringsAQuestionAfterNothingWasLeft(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill()
+	base := g.script
+	g.script = func(turn GrillTurn) (string, string, error) {
+		if turn.Kind == TurnAsk {
+			return "Nothing is left to ask.", "", nil
+		}
+		return base(turn)
+	}
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "Enter starts the Grill")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "f finish")
+	g.mu.Lock()
+	g.snap.Questions = append(g.snap.Questions, GrillQuestion{ID: "01JD3K8Q2W5V7X9Y0Z1A2B3C9Z", Text: "Which currencies?", Open: true})
+	g.mu.Unlock()
+	tm.Send(reloadGrillMsg{})
+	waitFor(t, tm, "send answer")
+	waitFor(t, tm, "Which currencies?")
+	finalGolden(t, tm)
+}
+
 // AC-7: f asks for the summary; w writes plan.md and reports the edit.
 func TestGrillFinishAndWritePlan(t *testing.T) {
 	t.Parallel()

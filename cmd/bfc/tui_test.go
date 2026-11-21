@@ -253,11 +253,11 @@ func TestTUIAdapterHidesApproveWhileAQuestionIsOpen(t *testing.T) {
 		t.Errorf("reviewer's actions with an open Question = %v", d.Actions)
 	}
 	// #92: the detail says why approve is missing.
-	if d.ApprovalWaitsOn != 1 {
-		t.Errorf("ApprovalWaitsOn = %d, want 1", d.ApprovalWaitsOn)
+	if d.BlockingQuestions != 1 {
+		t.Errorf("BlockingQuestions = %d, want 1", d.BlockingQuestions)
 	}
 	as(t, dir, adaP)
-	if d, err := reviewAdapter(t, dir).Detail(context.Background(), short); err != nil || d.ApprovalWaitsOn != 0 {
-		t.Errorf("for the author, who may not approve anyway: ApprovalWaitsOn = %d, %v", d.ApprovalWaitsOn, err)
+	if d, err := reviewAdapter(t, dir).Detail(context.Background(), short); err != nil || d.BlockingQuestions != 0 {
+		t.Errorf("for the author, who may not approve anyway: BlockingQuestions = %d, %v", d.BlockingQuestions, err)
 	}
 }
