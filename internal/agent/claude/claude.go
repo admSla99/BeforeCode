@@ -182,7 +182,6 @@ func args(t agent.Task) []string {
 
 // line is the part of a stream-json line that bfc reads.
 type line struct {
-	Type      string `json:"type"`
 	SessionID string `json:"session_id"`
 	Message   struct {
 		Content []struct {
@@ -209,33 +208,32 @@ func quoted(data []byte) []byte {
 	return data
 }
 
-// article is "an" before assistant, "a" before result.
-func article(lineType string) string {
-	if lineType == "assistant" {
-		return "an"
-	}
-	return "a"
-}
-
-// parse turns one stream-json line into Events. Only the type of a line
-// is read first: a line of a type bfc does not use is ignored whatever its
-// other fields hold (#93).
+// parse turns one stream-json line into Events. It reads only the type of
+// a line first: a line of a type bfc does not use is ignored whatever its
+// other fields hold, and so is JSON that is not an object with a string
+// type (#93).
 func parse(data []byte) []agent.Event {
-	var head struct {
-		Type string `json:"type"`
-	}
-	if err := json.Unmarshal(data, &head); err != nil {
+	if !json.Valid(data) {
 		return []agent.Event{errorEvent(fmt.Errorf("claude printed a line that is not JSON: %q", quoted(data)), "")}
 	}
-	if head.Type != "assistant" && head.Type != "result" {
+	var head struct {
+		Type json.RawMessage `json:"type"`
+	}
+	var lineType string
+	if json.Unmarshal(data, &head) != nil || json.Unmarshal(head.Type, &lineType) != nil {
+		return nil
+	}
+	switch lineType {
+	case "assistant", "result":
+	default:
 		return nil
 	}
 	var l line
 	if err := json.Unmarshal(data, &l); err != nil {
-		return []agent.Event{errorEvent(fmt.Errorf("claude printed %s %s line that bfc cannot read: %v: %q", article(head.Type), head.Type, err, quoted(data)), "")}
+		return []agent.Event{errorEvent(fmt.Errorf("claude printed a %q line that bfc cannot read: %v: %q", lineType, err, quoted(data)), "")}
 	}
 	var events []agent.Event
-	switch l.Type {
+	switch lineType {
 	case "assistant":
 		for _, c := range l.Message.Content {
 			switch c.Type {
