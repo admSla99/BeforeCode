@@ -57,14 +57,14 @@ bfc show                        # without an ID: the Current plan, the one named
 ```
 bfc setup claude                # once per repository; commit .claude
 bfc new "Payments via Stripe"   # the Intent
-bfc                             # the TUI: open the plan, press g and Claude Code grills the
-                                # Intent; you answer, f finishes, w has it write plan.md;
-                                # submit with s, and a teammate approves with a
+bfc                             # the TUI: open the plan, g, then Enter, and Claude Code grills
+                                # the Intent; answer each Question, ctrl+f finishes, w has it
+                                # write plan.md; submit with s, and a teammate approves with a
 bfc start bfc-5v7x              # the approved plan becomes the Current plan
 claude                          # "implement the current plan": it runs bfc prime and may edit now
 ```
 
-Until the Current plan is approved, the hook refuses Claude Code's edits and tells it to run `bfc prime`. The Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside Claude Code: they are yours, in the TUI or the CLI.
+Until the Current plan is approved, the hook refuses Claude Code's edits and tells it to run `bfc prime`. The Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) refuse to run inside Claude Code: they are yours, in the TUI or the CLI. A Question of the Grill left open blocks approval; answer it with `bfc reply` (#92).
 
 `bfc pull`, `bfc push` and `bfc sync` share plans; concurrent changes are merged, never force-pushed. `bfc` alone opens the TUI, which syncs in the background. `bfc doctor` checks the setup and says how to fix what is wrong; `bfc doctor --fix` applies the safe fixes.
 

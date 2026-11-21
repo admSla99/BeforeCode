@@ -18,10 +18,10 @@ import (
 
 const plansRef = "refs/beforecode/plans"
 
-// bfcBin is the binary built once by TestMain.
-var bfcBin string
+// bfcBin and fakeClaude are the binaries built once by TestMain.
+var bfcBin, fakeClaude string
 
-// TestMain builds bfc and isolates every git subprocess from the
+// TestMain builds bfc and the fake Claude Code, and isolates every git subprocess from the
 // developer's own git configuration.
 func TestMain(m *testing.M) {
 	os.Exit(buildAndRun(m))
@@ -42,6 +42,16 @@ func buildAndRun(m *testing.M) int {
 	build := exec.Command("go", "build", "-o", bfcBin, "github.com/admSla99/BeforeCode/cmd/bfc")
 	if out, err := build.CombinedOutput(); err != nil {
 		fmt.Fprintf(os.Stderr, "go build bfc: %v\n%s", err, out)
+		return 1
+	}
+	// The fake Claude Code of claude_test.go, next to bfc.
+	fakeClaude = filepath.Join(dir, "claude")
+	if runtime.GOOS == "windows" {
+		fakeClaude += ".exe"
+	}
+	build = exec.Command("go", "build", "-o", fakeClaude, "github.com/admSla99/BeforeCode/internal/agent/claude/testdata/fakeclaude")
+	if out, err := build.CombinedOutput(); err != nil {
+		fmt.Fprintf(os.Stderr, "go build fakeclaude: %v\n%s", err, out)
 		return 1
 	}
 	// The same isolation as the TestMain of cmd/bfc, which is another
@@ -79,18 +89,36 @@ type dev struct {
 // own warnings go, is shown only on failure.
 func (d *dev) bfc(args ...string) string {
 	d.t.Helper()
-	cmd := exec.Command(bfcBin, args...)
+	r := d.run("", nil, bfcBin, args...)
+	if r.err != nil {
+		d.t.Fatalf("%s: bfc %s: %v\n%s%s", d.name, strings.Join(args, " "), r.err, r.stdout, r.stderr)
+	}
+	return r.stdout
+}
+
+// result is what one run of a program printed.
+type result struct {
+	stdout, stderr string
+	err            error
+}
+
+// run runs a program in the developer's clone with the developer's editor,
+// the extra variables and stdin, with the directory of bfc first on PATH,
+// as for an installed bfc.
+func (d *dev) run(stdin string, env []string, name string, args ...string) result {
+	d.t.Helper()
+	cmd := exec.Command(name, args...)
 	cmd.Dir = d.dir
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(bfcBin)+string(os.PathListSeparator)+os.Getenv("PATH"))
 	if d.editor != "" {
 		cmd.Env = append(cmd.Env, "GIT_EDITOR="+d.editor)
 	}
+	cmd.Env = append(cmd.Env, env...)
+	cmd.Stdin = strings.NewReader(stdin)
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	if err := cmd.Run(); err != nil {
-		d.t.Fatalf("%s: bfc %s: %v\n%s%s", d.name, strings.Join(args, " "), err, stdout.String(), stderr.String())
-	}
-	return stdout.String()
+	err := cmd.Run()
+	return result{stdout.String(), stderr.String(), err}
 }
 
 // newPlan runs bfc new --no-edit and returns the plan's Short ID, the first

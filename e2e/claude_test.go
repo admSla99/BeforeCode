@@ -1,12 +1,9 @@
 package e2e
 
 import (
-	"bytes"
 	"encoding/json"
 	"os"
-	"os/exec"
 	"path/filepath"
-	"runtime"
 	"strings"
 	"testing"
 )
@@ -21,47 +18,10 @@ import (
 // as tools, with CLAUDECODE set as Claude Code sets it, and replays a
 // recorded output. The hook gets PreToolUse inputs recorded from a real
 // Claude Code (testdata/README.md). The TUI Grill screen, which starts the
-// agent and stores the answers, has its own tests in internal/tui and
-// cmd/bfc; here the person's answer goes through bfc reply, which shares
-// its code.
-
-// fakeClaudeBin builds the fake Claude Code once per test binary.
-func fakeClaudeBin(t *testing.T) string {
-	t.Helper()
-	bin := filepath.Join(filepath.Dir(bfcBin), "claude")
-	if runtime.GOOS == "windows" {
-		bin += ".exe"
-	}
-	if _, err := os.Stat(bin); err == nil {
-		return bin
-	}
-	build := exec.Command("go", "build", "-o", bin, "github.com/admSla99/BeforeCode/internal/agent/claude/testdata/fakeclaude")
-	if out, err := build.CombinedOutput(); err != nil {
-		t.Fatalf("go build fakeclaude: %v\n%s", err, out)
-	}
-	return bin
-}
-
-// result is what one run of a program printed.
-type result struct {
-	stdout, stderr string
-	err            error
-}
-
-// run runs a program in the developer's clone with the extra variables and
-// stdin, with the directory of bfc first on PATH, as for an installed bfc.
-func (d *dev) run(stdin string, env []string, name string, args ...string) result {
-	d.t.Helper()
-	cmd := exec.Command(name, args...)
-	cmd.Dir = d.dir
-	cmd.Env = append(os.Environ(), "PATH="+filepath.Dir(bfcBin)+string(os.PathListSeparator)+os.Getenv("PATH"))
-	cmd.Env = append(cmd.Env, env...)
-	cmd.Stdin = strings.NewReader(stdin)
-	var stdout, stderr bytes.Buffer
-	cmd.Stdout, cmd.Stderr = &stdout, &stderr
-	err := cmd.Run()
-	return result{stdout.String(), stderr.String(), err}
-}
+// agent and stores the answers, needs a terminal and has its own tests in
+// internal/tui and cmd/bfc; here the person's answer goes through bfc reply,
+// which writes the same Message. docs/e2e/manual-run-2026-11-20.md is the
+// run through the TUI with a real Claude Code.
 
 // claude runs the fake Claude Code in the developer's clone. Its tool is
 // the shell command script, run with CLAUDECODE=1 like every command Claude
@@ -72,10 +32,17 @@ func (d *dev) claude(script string) {
 	if err != nil {
 		d.t.Fatal(err)
 	}
-	r := d.run("", []string{"CLAUDECODE=1", "FAKECLAUDE_EXEC=" + script, "FAKECLAUDE_FIXTURE=" + fixture}, fakeClaudeBin(d.t), "-p", "--output-format", "stream-json", "--verbose")
+	r := d.run("", []string{"CLAUDECODE=1", "FAKECLAUDE_EXEC=" + script, "FAKECLAUDE_FIXTURE=" + fixture}, fakeClaude, "-p", "--output-format", "stream-json", "--verbose")
 	if r.err != nil {
 		d.t.Fatalf("%s: claude ran %q: %v\n%s%s", d.name, script, r.err, r.stdout, r.stderr)
 	}
+}
+
+// agentBfc runs bfc in the developer's clone as Claude Code runs it, with
+// CLAUDECODE=1 and stdin.
+func (d *dev) agentBfc(stdin string, args ...string) result {
+	d.t.Helper()
+	return d.run(stdin, []string{"CLAUDECODE=1"}, bfcBin, args...)
 }
 
 // hook runs bfc hook pre-tool-use, as the settings that bfc setup claude
@@ -92,14 +59,19 @@ func (d *dev) hook(tool string) string {
 	if err := json.Unmarshal(data, &in); err != nil {
 		d.t.Fatal(err)
 	}
+	input, _ := in["tool_input"].(map[string]any)
+	path, _ := input["file_path"].(string)
+	rel, ok := strings.CutPrefix(path, "/work/")
+	if !ok {
+		d.t.Fatalf("testdata: the %s input has no file_path under /work: %s", tool, data)
+	}
 	in["cwd"] = d.dir
-	input := in["tool_input"].(map[string]any)
-	input["file_path"] = filepath.Join(d.dir, filepath.FromSlash(strings.TrimPrefix(input["file_path"].(string), "/work/")))
+	input["file_path"] = filepath.Join(d.dir, filepath.FromSlash(rel))
 	stdin, err := json.Marshal(in)
 	if err != nil {
 		d.t.Fatal(err)
 	}
-	r := d.run(string(stdin), []string{"CLAUDECODE=1"}, bfcBin, "hook", "pre-tool-use")
+	r := d.agentBfc(string(stdin), "hook", "pre-tool-use")
 	if r.err != nil {
 		d.t.Fatalf("%s: bfc hook pre-tool-use for %s: %v\n%s", d.name, tool, r.err, r.stderr)
 	}
@@ -139,16 +111,16 @@ func (d *dev) blocked(when string, want ...string) {
 	}
 }
 
-// sh quotes a path for the fake's shell; bfc starts it through sh, which on
-// Windows is the sh.exe of Git for Windows.
-func sh(path string) string {
-	return `'` + filepath.ToSlash(path) + `'`
+// shQuote quotes text for the shell of the fake Claude Code, which on
+// Windows is the sh.exe of Git for Windows. Paths get forward slashes.
+func shQuote(text string) string {
+	return `'` + strings.ReplaceAll(filepath.ToSlash(text), `'`, `'\''`) + `'`
 }
 
-// The Questions and answers of the Grill.
+// The Question of the Grill and Ana's answer.
 const (
-	question = "Which customers fail at checkout today?"
-	answer   = "EU customers whose bank asks for 3-D Secure."
+	grillQuestion = "Which customers fail at checkout today?"
+	grillAnswer   = "EU customers whose bank asks for 3-D Secure."
 )
 
 // AC-1, AC-2, AC-3: Ana sets up Claude Code, grills her Intent with it and
@@ -180,7 +152,7 @@ func TestFromAnIntentThroughAGrillToAnApprovedPlanThatClaudeCodeImplements(t *te
 	// AC-1: the Grill. Claude Code reads the Intent and asks; Ana answers.
 	qFile := filepath.Join(t.TempDir(), "question.json")
 	ana.claude("bfc prime grill " + short + " >/dev/null && bfc ask " + short +
-		" --to ana@example.com --ref intent.md --json -m '" + question + "' > " + sh(qFile))
+		" --to ana@example.com --ref intent.md --json -m " + shQuote(grillQuestion) + " > " + shQuote(qFile))
 	var q struct {
 		ID    string   `json:"id"`
 		Agent string   `json:"agent"`
@@ -193,9 +165,9 @@ func TestFromAnIntentThroughAGrillToAnApprovedPlanThatClaudeCodeImplements(t *te
 	if err := json.Unmarshal(data, &q); err != nil || q.Agent != "claude-code" || len(q.To) != 1 || q.To[0] != "ana@example.com" {
 		t.Fatalf("ana: the Grill's Question = %s (%v)", data, err)
 	}
-	ana.bfc("reply", q.ID, "-m", answer)
+	ana.bfc("reply", q.ID, "-m", grillAnswer)
 	grill := ana.bfc("prime", "grill", short)
-	for _, want := range []string{question, answer, "(answered)", "Reply", "by Ana"} {
+	for _, want := range []string{grillQuestion, grillAnswer, "(answered)", "Reply", "by Ana"} {
 		if !strings.Contains(grill, want) {
 			t.Errorf("ana: bfc prime grill lacks %q:\n%s", want, grill)
 		}
@@ -206,7 +178,7 @@ func TestFromAnIntentThroughAGrillToAnApprovedPlanThatClaudeCodeImplements(t *te
 	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	ana.claude("bfc prime plan " + short + " | grep -q '" + answer + "' && bfc edit " + short + " --stdin < " + sh(planFile))
+	ana.claude("bfc prime plan " + short + " | grep -qF " + shQuote(grillAnswer) + " && bfc edit " + short + " --stdin < " + shQuote(planFile))
 	var shown struct {
 		State              string   `json:"state"`
 		Plan               *string  `json:"plan"`
@@ -225,7 +197,7 @@ func TestFromAnIntentThroughAGrillToAnApprovedPlanThatClaudeCodeImplements(t *te
 	for _, gate := range [][]string{
 		{"submit", short}, {"approve", short}, {"request-changes", short, "-m", "no"}, {"withdraw", short}, {"close", short},
 	} {
-		r := ana.run("", []string{"CLAUDECODE=1"}, bfcBin, gate...)
+		r := ana.agentBfc("", gate...)
 		if r.err == nil || !strings.Contains(r.stderr, "for a person, not an agent") {
 			t.Errorf("ana: bfc %s inside Claude Code: err = %v\n%s%s", gate[0], r.err, r.stdout, r.stderr)
 		}
@@ -255,10 +227,13 @@ func TestFromAnIntentThroughAGrillToAnApprovedPlanThatClaudeCodeImplements(t *te
 	if branch := ana.git("branch", "--show-current"); branch != short+"-payments-via-stripe" {
 		t.Errorf("ana: after bfc start the branch is %s", branch)
 	}
-	prime := ana.run("", []string{"CLAUDECODE=1"}, bfcBin, "prime")
+	prime := ana.agentBfc("", "prime")
+	if prime.err != nil {
+		t.Fatalf("ana: bfc prime: %v\n%s", prime.err, prime.stderr)
+	}
 	for _, want := range []string{"Current plan: " + short + " Payments via Stripe", "State: approved", "AC-1: A card"} {
-		if prime.err != nil || !strings.Contains(prime.stdout, want) {
-			t.Errorf("ana: bfc prime lacks %q (%v):\n%s%s", want, prime.err, prime.stdout, prime.stderr)
+		if !strings.Contains(prime.stdout, want) {
+			t.Errorf("ana: bfc prime lacks %q:\n%s", want, prime.stdout)
 		}
 	}
 	for _, tool := range []string{"Edit", "Write"} {

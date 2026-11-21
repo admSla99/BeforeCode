@@ -11,8 +11,9 @@ input to a file. The recording repository held `notes.txt` with the word
 | `pretooluse-edit.json` | `claude -p "Use the Edit tool to change hello to bye in notes.txt" --permission-mode acceptEdits` |
 | `pretooluse-write.json` | `claude -p "Use the Write tool to create main.go containing exactly: package main" --permission-mode acceptEdits` |
 
-Changes made after recording, so that the files hold nothing from the
-recording machine: the recording directory is replaced by `/work` in `cwd`
-and `tool_input.file_path`, and by `-work` in `transcript_path` and
-`scratchpad_dir`. The test replaces `cwd` with the clone and moves
+Changes made after recording: the recording directory is replaced by `/work`
+in `cwd` and `tool_input.file_path`, and by `-work` in `transcript_path` and
+`scratchpad_dir`. The rest is as recorded, including the session, prompt and
+tool-use IDs and the `/root` and `/tmp/claude-0` prefixes of the recording
+container, which hold nothing personal. The test replaces `cwd` with the clone and moves
 `file_path` into it.
