@@ -1,6 +1,7 @@
 package core
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -126,5 +127,46 @@ func TestCheckApproveRefusesWhileAQuestionIsOpen(t *testing.T) {
 	wantErr(t, CheckOpenQuestions(status(StateInReview), open), "bfc-abcd", "1 open Question", open[0].ID.String(), "bfc reply")
 	if err := CheckOpenQuestions(status(StateInReview), nil); err != nil {
 		t.Errorf("no open Questions: %v", err)
+	}
+}
+
+// Issue #88: the Discussion lists every Thread in the order of its first
+// Message, each reply under the Message it replies to, and marks each
+// Question answered or open by the rule of ADR 0002 section 7.
+func TestDiscussionOrdersThreadsAndReplies(t *testing.T) {
+	msgs := []Message{
+		msg(1, ben, "claude-code", []string{"ada@example.com"}, 0), // a Grill Question
+		msg(2, ada, "", []string{"ben@example.com"}, 0),            // an open Question
+		msg(3, ada, "", nil, 1),                                    // answers 1
+		msg(4, ben, "", nil, 3),                                    // a reply to the answer
+		msg(5, jana, "", nil, 1),                                   // more discussion of 1
+		msg(6, jana, "", nil, 0),                                   // a Thread without a Question
+		msg(7, ben, "", nil, 99),                                   // replies to a missing Message
+	}
+	type line struct {
+		id, depth   byte
+		q, answered bool
+	}
+	want := []line{
+		{1, 0, true, true}, {3, 1, false, false}, {4, 2, false, false}, {5, 1, false, false},
+		{2, 0, true, false},
+		{6, 0, false, false},
+		{7, 0, false, false},
+	}
+	var got []line
+	for _, p := range Discussion(msgs) {
+		got = append(got, line{p.ID[15], byte(p.Depth), p.IsQuestion(), p.Answered})
+	}
+	if fmt.Sprint(got) != fmt.Sprint(want) {
+		t.Errorf("Discussion = %v, want %v", got, want)
+	}
+}
+
+// Issue #88: replies that point at each other form no Thread with a first
+// Message; they are still listed, so nothing in the plans ref is hidden.
+func TestDiscussionKeepsRepliesInACycle(t *testing.T) {
+	msgs := []Message{msg(1, ben, "", nil, 2), msg(2, ada, "", nil, 1)}
+	if got := len(Discussion(msgs)); got != 2 {
+		t.Errorf("Discussion has %d Messages, want 2", got)
 	}
 }

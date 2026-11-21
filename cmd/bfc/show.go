@@ -20,12 +20,14 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show [id]",
-		Short: "Print a plan: header, intent.md and plan.md",
-		Long: `Print a plan: a header with its IDs, state, author and approvals, then
-intent.md and, if it exists, plan.md. The ID is a Short ID (bfc-5v7x), a
-prefix of at least four characters, or the full ULID. Without an ID it prints
-the Current plan (bfc start, bfc use). --json prints one JSON object for
-scripts and agents, with the acceptance criteria IDs and the open Questions.`,
+		Short: "Print a plan: header, intent.md, plan.md and the discussion",
+		Long: `Print a plan: a header with its IDs, state, author, approvals and open
+Questions, then intent.md, plan.md if it exists, and the Discussion: every
+Thread with its replies, each Question marked open or answered. The ID is a
+Short ID (bfc-5v7x), a prefix of at least four characters, or the full ULID.
+Without an ID it prints the Current plan (bfc start, bfc use). --json prints
+one JSON object for scripts and agents, with the acceptance criteria IDs, the
+open Questions and every Message.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openPlans(cmd, forReading)
@@ -46,9 +48,9 @@ scripts and agents, with the acceptance criteria IDs and the open Questions.`,
 				return err
 			}
 			if asJSON {
-				return printPlanJSON(cmd, v, core.OpenQuestions(msgs))
+				return printPlanJSON(cmd, v, msgs)
 			}
-			return printPlan(cmd.OutOrStdout(), v, core.OpenQuestions(msgs))
+			return printPlan(cmd.OutOrStdout(), v, msgs)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
@@ -64,15 +66,25 @@ type showJSON struct {
 	Plan               *string       `json:"plan"`
 	AcceptanceCriteria []string      `json:"acceptance_criteria"`
 	OpenQuestions      []messageJSON `json:"open_questions"`
+	Messages           []postJSON    `json:"messages"`
 }
 
-func printPlanJSON(cmd *cobra.Command, v index.Plan, open []core.Message) error {
+// postJSON is a Message in the messages of bfc show --json: the shape of
+// open_questions, and answered for a Question.
+type postJSON struct {
+	messageJSON
+	Answered *bool `json:"answered,omitempty"`
+}
+
+func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message) error {
+	open := core.OpenQuestions(msgs)
 	out := showJSON{
 		planJSON:           toPlanJSON(v),
 		Approvers:          append([]string{}, v.Status.Approvers...),
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
 		OpenQuestions:      make([]messageJSON, 0, len(open)),
+		Messages:           make([]postJSON, 0, len(msgs)),
 	}
 	if v.Plan != nil {
 		plan := string(v.Plan)
@@ -80,6 +92,18 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, open []core.Message) error 
 	}
 	for _, q := range open {
 		out.OpenQuestions = append(out.OpenQuestions, toMessageJSON(v, q))
+	}
+	answered := map[ulid.ULID]bool{}
+	for _, p := range core.Discussion(msgs) {
+		answered[p.ID] = p.Answered
+	}
+	for _, m := range msgs {
+		p := postJSON{messageJSON: toMessageJSON(v, m)}
+		if m.IsQuestion() {
+			a := answered[m.ID]
+			p.Answered = &a
+		}
+		out.Messages = append(out.Messages, p)
 	}
 	enc := json.NewEncoder(cmd.OutOrStdout())
 	enc.SetIndent("", "  ")
@@ -150,8 +174,9 @@ func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) strin
 }
 
 // printPlan prints the header of the plan with its open Questions, then its
-// documents.
-func printPlan(w io.Writer, v index.Plan, open []core.Message) error {
+// documents and the Discussion of msgs, the plan's Messages.
+func printPlan(w io.Writer, v index.Plan, msgs []core.Message) error {
+	open := core.OpenQuestions(msgs)
 	approvals := "-"
 	if v.Status.RequiredApprovals > 0 {
 		approvals = fmt.Sprintf("%d/%d", len(v.Status.Approvers), v.Status.RequiredApprovals)
@@ -195,6 +220,52 @@ func printPlan(w io.Writer, v index.Plan, open []core.Message) error {
 			b.WriteString("\n")
 		}
 	}
+	writeDiscussion(&b, msgs)
 	_, err := io.WriteString(w, b.String())
 	return err
+}
+
+// throughAgent is the author by, with the harness when an AI wrote the
+// Message.
+func throughAgent(by, agent string) string {
+	if agent == "" {
+		return by
+	}
+	return by + " (through " + agent + ")"
+}
+
+// writeDiscussion prints every Message of msgs as the Threads read (see
+// core.Discussion): a line with its ULID, author and time, a line with its
+// addressees, ref and, for a Question, whether it is open, then its text.
+// Each reply is indented under the Message it replies to.
+func writeDiscussion(b *strings.Builder, msgs []core.Message) {
+	if len(msgs) == 0 {
+		return
+	}
+	b.WriteString("\n--- Discussion ---\n")
+	for _, p := range core.Discussion(msgs) {
+		pad := strings.Repeat("  ", p.Depth)
+		by := orDash(p.Author.Name)
+		if p.Author.Email != "" {
+			by += " <" + p.Author.Email + ">"
+		}
+		fmt.Fprintf(b, "\n%s%s  %s  %s\n", pad, p.ID, throughAgent(by, p.Agent), formatTime(p.At))
+		var fields []string
+		if p.Ref != "" {
+			fields = append(fields, p.Ref)
+		}
+		if p.IsQuestion() {
+			status := "Question, open"
+			if p.Answered {
+				status = "Question, answered"
+			}
+			fields = append([]string{"to " + strings.Join(p.To, ", ")}, append(fields, status)...)
+		}
+		if len(fields) > 0 {
+			fmt.Fprintf(b, "%s  %s\n", pad, strings.Join(fields, "  "))
+		}
+		for _, line := range strings.Split(p.Body, "\n") {
+			fmt.Fprintf(b, "%s  %s\n", pad, line)
+		}
+	}
 }
