@@ -193,6 +193,45 @@ func TestALineThatIsNotJSONBecomesAnError(t *testing.T) {
 	assertEvents(t, got, []agent.Event{{Kind: agent.Error, Text: `claude printed a line that is not JSON: "Welcome to Claude Code"`}})
 }
 
+// #93: a line of a type the adapter does not read is ignored, even when
+// its fields have other types than in the lines it reads.
+func TestLinesOfOtherTypesAreIgnoredWhateverTheirFields(t *testing.T) {
+	t.Parallel()
+	hello, err := os.ReadFile(fixture(t, "hello.jsonl"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	const session = "af62e7a3-81bf-4feb-8823-550215fc2f29"
+	odd := `{"type":"system","subtype":"permission_denied","message":"Bash(cat greet.go) is not allowed","session_id":"` + session + `"}` + "\n" +
+		`{"type":"system","subtype":"status","errors":[{"code":"denied"}],"result":{"ok":false},"is_error":"no","session_id":"` + session + `"}` + "\n" +
+		`{"type":"rate_limit_event","message":["x"],"session_id":7}` + "\n"
+	mixed := filepath.Join(t.TempDir(), "mixed.jsonl")
+	if err := os.WriteFile(mixed, append([]byte(odd), hello...), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + mixed}})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "Reply with exactly: hi", Dir: t.TempDir()})
+	assertEvents(t, got, []agent.Event{
+		{Kind: agent.Text, Text: "hi", Session: session},
+		{Kind: agent.Result, Text: "hi", Session: session},
+	})
+}
+
+// #93: an assistant or result line that bfc cannot read is an error that
+// says so, not "not JSON".
+func TestAnUnreadableResultLineBecomesAnError(t *testing.T) {
+	t.Parallel()
+	bad := filepath.Join(t.TempDir(), "bad.jsonl")
+	if err := os.WriteFile(bad, []byte(`{"type":"result","result":{"text":"hi"}}`+"\n"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{"FAKECLAUDE_FIXTURE=" + bad}})
+	got := collect(t.Context(), t, a, agent.Task{Prompt: "hi", Dir: t.TempDir()})
+	if len(got) != 1 || got[0].Kind != agent.Error || !strings.HasPrefix(got[0].Text, "claude printed a result line that bfc cannot read: ") {
+		t.Errorf("events = %+v", got)
+	}
+}
+
 func TestCancellingTheContextStopsTheProcess(t *testing.T) {
 	t.Parallel()
 	a := claude.New(claude.Options{Command: fakeClaude, Env: []string{
