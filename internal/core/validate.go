@@ -45,8 +45,9 @@ type itemKind struct {
 }
 
 const (
-	criteriaSection = "acceptance criteria"
-	tasksSection    = "tasks"
+	outOfScopeSection = "out of scope"
+	criteriaSection   = "acceptance criteria"
+	tasksSection      = "tasks"
 )
 
 // itemSections maps the lower-case heading of a section to its kind.
@@ -97,12 +98,16 @@ type item struct {
 type scanned struct {
 	problems []Problem
 	items    map[string][]item // section → its items, the first of each ID
+	// text holds each section's lines without HTML comments; a heading
+	// that appears twice gets the lines of both.
+	text map[string]string
 }
 
 // scanPlan returns the problems of plan.md and its items with IDs.
 func scanPlan(plan []byte) scanned {
-	r := scanned{items: map[string][]item{}}
+	r := scanned{items: map[string][]item{}, text: map[string]string{}}
 	sections := map[string]bool{}
+	current := "" // the current section
 	section := "" // the current section, when it has items with IDs
 	inComment, inFence := false, false
 	seen := map[string]int{} // item ID → line
@@ -123,6 +128,11 @@ func scanPlan(plan []byte) scanned {
 		n := i + 1
 		trimmed := strings.TrimSpace(line)
 		isFence := strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
+		isHeading := !inFence && !inComment && headingPattern.MatchString(line)
+		isComment := inComment || (!inFence && strings.HasPrefix(trimmed, "<!--"))
+		if current != "" && !isHeading && !isComment {
+			r.text[current] += line + "\n"
+		}
 		if cur != nil {
 			indented := strings.HasPrefix(line, "  ")
 			switch {
@@ -157,6 +167,7 @@ func scanPlan(plan []byte) scanned {
 		if m := headingPattern.FindStringSubmatch(line); m != nil {
 			name := strings.ToLower(m[1])
 			sections[name] = true
+			current = name
 			section = ""
 			if _, ok := itemSections[name]; ok {
 				section = name
@@ -193,4 +204,27 @@ func scanPlan(plan []byte) scanned {
 		r.problems = append(r.problems, Problem{0, "no acceptance criteria; add \"- AC-1: <text>\""})
 	}
 	return r
+}
+
+// Criterion is an acceptance criterion of plan.md with its text,
+// continuation lines included and joined by newlines.
+type Criterion struct {
+	ID   string
+	Text string
+}
+
+// Criteria returns the acceptance criteria of plan.md with their text, in
+// the order of AcceptanceCriteria.
+func Criteria(plan []byte) []Criterion {
+	var out []Criterion
+	for _, c := range scanPlan(plan).items[criteriaSection] {
+		out = append(out, Criterion{ID: c.id, Text: c.text})
+	}
+	return out
+}
+
+// OutOfScope returns the text of the Out of scope section of plan.md,
+// trimmed and without HTML comments; "" when there is none.
+func OutOfScope(plan []byte) string {
+	return strings.TrimSpace(scanPlan(plan).text[outOfScopeSection])
 }

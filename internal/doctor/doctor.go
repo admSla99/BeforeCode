@@ -10,9 +10,11 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -288,8 +290,9 @@ func checkClaude(_ context.Context, e *env) Result {
 	return pass("%s is %s", command, path)
 }
 
-// checkSkills reports the repository's skills. A missing directory is a
-// warning: bfc then uses the skills built into it.
+// checkSkills reports the repository's skills. A missing directory, or a
+// built-in skill the directory lacks (a repository set up by an older bfc),
+// is a warning: bfc then uses the skill built into it.
 func checkSkills(_ context.Context, e *env) Result {
 	if e.s == nil || !e.cfgFound {
 		return skip("needs " + config.Path)
@@ -308,8 +311,16 @@ func checkSkills(_ context.Context, e *env) Result {
 			names = append(names, d.Name())
 		}
 	}
-	if len(names) == 0 {
-		return pass("%s has no skills; the ones built into bfc are used", beforecode.SkillsDir)
+	var missing []string
+	builtIn, _ := fs.ReadDir(beforecode.Skills, beforecode.SkillsDir) // embedded, always readable
+	for _, d := range builtIn {
+		if d.IsDir() && !slices.Contains(names, d.Name()) {
+			missing = append(missing, d.Name())
+		}
+	}
+	if len(missing) > 0 {
+		return warn("%s is missing from %s, so the one built into bfc is used; bfc init writes it, then commit %s",
+			strings.Join(missing, ", "), beforecode.SkillsDir, beforecode.SkillsDir)
 	}
 	return pass("%s: %s", beforecode.SkillsDir, strings.Join(names, ", "))
 }

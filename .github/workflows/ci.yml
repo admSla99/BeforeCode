@@ -46,8 +46,9 @@ jobs:
       - run: go build ./...
       # No -race: it needs cgo. Tests that need a POSIX shell skip themselves.
       # Starting git is slow on Windows; the tests run in parallel and share
-      # their setup (#72) to stay well under the default timeout.
-      - run: go test ./...
+      # their setup (#72). cmd/bfc still takes 7 to 10 minutes there, as
+      # long as Go's default timeout, so the timeout is set explicitly.
+      - run: go test -timeout 30m ./...
 
   lint:
     name: Lint

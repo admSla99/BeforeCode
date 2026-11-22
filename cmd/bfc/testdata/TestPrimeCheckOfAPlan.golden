@@ -1,0 +1,62 @@
+# Check a pull request
+
+Read only.
+
+## Plan: bfc-5v7x Payments via Stripe
+
+- State: approved
+
+### Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+- AC-2: A successful payment sends one email,
+  even when the webhook is delivered twice.
+
+### Out of scope
+
+Refunds and currencies other than EUR.
+
+### plan.md
+
+```markdown
+## Context
+
+Cards fail.
+
+## Approach
+
+Stripe.
+
+## Affected areas
+
+payments/
+
+## Out of scope
+
+Refunds and currencies other than EUR.
+
+## Tasks
+
+- T-1: Add the client.
+
+## Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+- AC-2: A successful payment sends one email,
+  even when the webhook is delivered twice.
+```
+
+### Result
+
+End with this JSON object in a `json` fence, and nothing after it. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
+
+```json
+{
+  "criteria": {
+    "AC-1": "<status>",
+    "AC-2": "<status>"
+  },
+  "out_of_scope": ["<one sentence per out-of-scope change>"],
+  "summary": "<the Markdown summary for the pull request>"
+}
+```

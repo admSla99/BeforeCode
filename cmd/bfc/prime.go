@@ -21,6 +21,7 @@ import (
 var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
 	"grill": runPrimeGrill,
 	"plan":  runPrimePlan,
+	"check": runPrimeCheck,
 }
 
 func newPrimeCmd() *cobra.Command {
@@ -227,20 +228,40 @@ func renderPrime(w io.Writer, v primeView) error {
 		doc, name = v.Plan.Intent, "intent.md"
 	}
 	writePlanHeader(&head, v, name)
+	_, err := io.WriteString(w, fitDoc(head.String(), doc, "", name, v.Plan.ShortID))
+	return err
+}
+
+// fitDoc returns head, then doc in a Markdown fence, then tail, within
+// primeLimit bytes. doc is cut at a line first, with a note naming it (name)
+// and bfc show <short>; when head and tail alone do not fit, head is cut
+// at a line too and doc is left out. tail is never cut.
+func fitDoc(head string, doc []byte, tail, name, short string) string {
 	body := string(doc)
 	if !strings.HasSuffix(body, "\n") {
 		body += "\n"
 	}
 	fence := fenceFor(body)
 	opening, closing := fence+"markdown\n", fence+"\n"
-	if room := primeLimit - head.Len() - len(opening) - len(closing); len(body) > room {
-		cut := fmt.Sprintf("\n%s is cut here; run `bfc show %s` for all of it.\n", name, v.Plan.ShortID)
-		room -= len(cut)
-		body = body[:strings.LastIndex(body[:max(room, 0)], "\n")+1]
-		closing += cut
+	room := primeLimit - len(head) - len(opening) - len(closing) - len(tail)
+	if len(body) <= room {
+		return head + opening + body + closing + tail
 	}
-	_, err := io.WriteString(w, head.String()+opening+body+closing)
-	return err
+	cut := fmt.Sprintf("\n%s is cut here; run `bfc show %s` for all of it.\n", name, short)
+	if room-len(cut) > 0 {
+		return head + opening + cutAtLine(body, room-len(cut)) + closing + cut + tail
+	}
+	cut = fmt.Sprintf("\nThe rest is cut here; run `bfc show %s` for all of it.\n", short)
+	return cutAtLine(head, primeLimit-len(tail)-len(cut)) + cut + tail
+}
+
+// cutAtLine returns the longest prefix of s of at most n bytes that ends
+// at a line end.
+func cutAtLine(s string, n int) string {
+	if n >= len(s) {
+		return s
+	}
+	return s[:strings.LastIndex(s[:max(n, 0)], "\n")+1]
 }
 
 // writeWaiting prints what waits on the user whose git identity bfc uses.
