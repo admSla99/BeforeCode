@@ -24,7 +24,7 @@ func newHookCmd() *cobra.Command {
 	}
 	hook.AddCommand(&cobra.Command{
 		Use:   "pre-tool-use",
-		Short: "Claude Code PreToolUse hook: no edits without an approved Current plan",
+		Short: "Claude Code PreToolUse hook: no edits unless the Current plan is approved or in-progress",
 		Args:  cobra.NoArgs,
 		RunE:  runPreToolUse,
 	})
@@ -102,7 +102,7 @@ func runPreToolUse(cmd *cobra.Command, _ []string) error {
 
 // checkEdit is the full check of an edit of path. It writes the decision
 // that blocks the edit, if any, and reports whether it allowed it because
-// the Current plan is approved.
+// the Current plan is approved or in-progress (ADR 0011, ADR 0013).
 func checkEdit(cmd *cobra.Command, cwd, path string) (approved bool, err error) {
 	s, err := openStore(cmd)
 	if err != nil {
@@ -132,13 +132,13 @@ func checkEdit(cmd *cobra.Command, cwd, path string) (approved bool, err error) 
 		return false, deny(cmd, planErr.Error()+"; bfc prime says more")
 	case err != nil:
 		return false, denyBroken(cmd, err)
-	case p.Status.State != core.StateApproved:
-		return false, deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved plan: get it approved (run bfc pull if it was approved elsewhere), or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
+	case !core.HasWork(p.Status.State):
+		return false, deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved or in-progress plan: get it approved (run bfc pull if it was approved elsewhere), then take a Task with bfc claim, or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
 	}
 	return true, nil
 }
 
-// The hook remembers that it found the Current plan approved in
+// The hook remembers that it found the Current plan approved or in-progress in
 // .git/beforecode/hook-approved, a disposable cache like the index. The file
 // holds what the decision depended on: this bfc, the plans ref tip, the
 // branch and the plan set with bfc use. Any change of them makes the hook
@@ -158,7 +158,7 @@ func approvedFile(loc store.Location) string {
 	return filepath.Join(loc.GitDir, "beforecode", "hook-approved")
 }
 
-// remembered reports whether the hook found the Current plan approved
+// remembered reports whether the hook found the Current plan approved or in-progress
 // under key.
 func remembered(loc store.Location, key string) bool {
 	data, err := os.ReadFile(approvedFile(loc))
