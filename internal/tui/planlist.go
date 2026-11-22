@@ -156,6 +156,8 @@ func (m PlanList) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		m.cursor = 0
 	case key.Matches(msg, m.keys.New):
 		m.typing, m.status = typingTitle, ""
+	case key.Matches(msg, m.keys.Inbox):
+		return m, func() tea.Msg { return switchScreenMsg{} }
 	}
 	return m, nil
 }

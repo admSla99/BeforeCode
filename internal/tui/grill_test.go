@@ -442,7 +442,7 @@ func openGrill(t *testing.T, f *fakeTeam, g *fakeGrill) *teatest.TestModel {
 	app := NewApp(f, f, AppOptions{Interval: time.Hour, Grill: g})
 	app.now = func() time.Time { return t0 }
 	tm := newTestModel(t, app, 80, 24)
-	waitFor(t, tm, "IN-REVIEW")
+	toPlanList(t, tm)
 	send(tm, "enter")
 	waitFor(t, tm, "g grill")
 	send(tm, "g")
@@ -469,7 +469,7 @@ func TestAppNoGrillForAClosedPlan(t *testing.T) {
 	f.details["bfc-5v7x"] = d
 	app := NewApp(f, f, AppOptions{Interval: time.Hour, Grill: newFakeGrill()})
 	tm := newTestModel(t, app, 80, 24)
-	waitFor(t, tm, "IN-REVIEW")
+	toPlanList(t, tm)
 	send(tm, "enter")
 	waitFor(t, tm, "Affected areas")
 	send(tm, "g", "tab")

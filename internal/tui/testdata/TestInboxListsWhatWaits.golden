@@ -1,0 +1,24 @@
+BeforeCode · inbox   what waits on you
+
+Findings (2) ───────────────────────────────────────────────────────────────────
+  bfc-5v7x  PR #42  AC-2 not met
+  bfc-5v7x  PR #42  out of scope: Changes the retry policy of the email worker.
+
+Reviews (1) ────────────────────────────────────────────────────────────────────
+▶ bfc-k2m9  Rate-limit the public API
+
+Questions (1) ──────────────────────────────────────────────────────────────────
+  bfc-5v7x  from ben@example.com: Which cards fail?
+
+
+
+
+
+
+
+
+
+
+
+
+↑/k up • ↓/j down • enter open • tab plans • q quit

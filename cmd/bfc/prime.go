@@ -112,27 +112,12 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 			v.Open = core.OpenQuestions(msgs)
 		}
 	}
+	if v.Waiting, err = gatherWaiting(ctx, s, v.Identity, views); err != nil {
+		return primeView{Setup: err.Error()}
+	}
 	for _, pv := range views {
-		if pv.Status.State == core.StateClosed || pv.Status.State == core.StateInvalid {
-			continue
-		}
-		msgs, err := readMessages(ctx, s, pv.ID)
-		if err != nil {
-			continue
-		}
-		open := core.OpenQuestions(msgs)
-		// The same rules as the TUI's approve key.
-		if pv.Status.State == core.StateInReview && core.CheckApprove(pv.Status, v.Identity) == nil &&
-			core.CheckOpenQuestions(pv.Status, open) == nil {
-			v.Reviews = append(v.Reviews, planRef{pv.ShortID, pv.Title})
-		}
-		for _, q := range open {
-			if slices.ContainsFunc(q.To, func(to string) bool { return strings.EqualFold(to, v.Identity.Email) }) {
-				v.Questions = append(v.Questions, waitingQuestion{pv.ShortID, q})
-			}
-		}
 		if v.Plan == nil && pv.Status.State == core.StateApproved {
-			v.Approved = append(v.Approved, planRef{pv.ShortID, pv.Title})
+			v.Approved = append(v.Approved, core.PlanRef{ID: pv.ID, ShortID: pv.ShortID, Title: pv.Title})
 		}
 	}
 	return v
@@ -184,10 +169,8 @@ type primeView struct {
 	// then nothing else is known.
 	Setup    string
 	Identity core.Person
-	// Reviews are the plans in review this user may approve now, and
-	// Questions the open Questions addressed to this user.
-	Reviews   []planRef
-	Questions []waitingQuestion
+	// Waiting is what waits on this user (core.WaitingOn).
+	Waiting core.Waiting
 	// Plan is the Current plan (Current) or the one given, with its open
 	// Questions; nil when there is none.
 	Plan    *index.Plan
@@ -196,15 +179,7 @@ type primeView struct {
 	// Note says why the plan asked for could not be shown.
 	Note string
 	// Approved are the approved plans, listed when there is no plan.
-	Approved []planRef
-}
-
-type planRef struct{ ShortID, Title string }
-
-// waitingQuestion is an open Question and the Short ID of its plan.
-type waitingQuestion struct {
-	ShortID string
-	Message core.Message
+	Approved []core.PlanRef
 }
 
 // renderPrime prints v as Markdown for an agent, at most primeLimit bytes:
@@ -267,17 +242,24 @@ func cutAtLine(s string, n int) string {
 // writeWaiting prints what waits on the user whose git identity bfc uses.
 func writeWaiting(b *strings.Builder, v primeView) {
 	fmt.Fprintf(b, "\n## Waiting on you\n\nFor %s <%s>, the git author of this clone, who runs you:\n\n", orDash(v.Identity.Name), orDash(v.Identity.Email))
-	if len(v.Reviews) == 0 && len(v.Questions) == 0 {
+	w := v.Waiting
+	if w.Empty() {
 		b.WriteString("Nothing waits on you.\n")
 		return
 	}
-	writeList(b, v.Reviews, func(r planRef) string {
+	writeList(b, w.Findings, func(f core.WaitingFinding) string {
+		return fmt.Sprintf("- Finding in %s %s, pull request #%d: %s (check %s).", f.ShortID, f.Title, f.Finding.PR, findingText(f.Finding), f.Finding.Check)
+	}, "`bfc inbox --json`")
+	if len(w.Findings) > 0 {
+		b.WriteString("\nA Finding is where a pull request departs from its plan. Tell the user: they fix the code, update the plan, or accept it on purpose with `bfc acknowledge <check> -m <reason>`, which is for people.\n\n")
+	}
+	writeList(b, w.Reviews, func(r core.PlanRef) string {
 		return fmt.Sprintf("- Review %s %s: tell the user to open `bfc`, select it and press `a` to approve.", r.ShortID, r.Title)
 	}, "`bfc list --state in-review --json`")
-	writeList(b, v.Questions, func(q waitingQuestion) string {
+	writeList(b, w.Questions, func(q core.WaitingQuestion) string {
 		return fmt.Sprintf("- Question %s in %s from %s%s: %s", q.Message.ID, q.ShortID, q.Message.Author.Email, refSuffix(q.Message.Ref), firstLine(q.Message.Body))
 	}, "`bfc show <id> --json` lists the open Questions of a plan")
-	if len(v.Questions) > 0 {
+	if len(w.Questions) > 0 {
 		b.WriteString("\nAsk the user and record the answer with `bfc reply <ULID> --verbatim -m <their words>`.\n")
 	}
 }
@@ -293,7 +275,7 @@ func writeNoPlan(b *strings.Builder, v primeView) {
 		b.WriteString("No plan is approved yet.\n")
 	} else {
 		b.WriteString("Approved plans:\n\n")
-		writeList(b, v.Approved, func(p planRef) string {
+		writeList(b, v.Approved, func(p core.PlanRef) string {
 			return fmt.Sprintf("- %s %s", p.ShortID, p.Title)
 		}, "`bfc list --state approved --json`")
 	}

@@ -5,7 +5,7 @@ import "charm.land/bubbles/v2/key"
 // listKeys are the keys of the plan list. Every screen keeps its keys in one
 // such map; the help line is generated from it.
 type listKeys struct {
-	Up, Down, Open, Search, ClearSearch, StateFilter, New, Quit key.Binding
+	Up, Down, Open, Search, ClearSearch, StateFilter, New, Inbox, Quit key.Binding
 }
 
 func newListKeys() listKeys {
@@ -17,17 +17,42 @@ func newListKeys() listKeys {
 		ClearSearch: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "clear search")),
 		StateFilter: key.NewBinding(key.WithKeys("s"), key.WithHelp("s", "state")),
 		New:         key.NewBinding(key.WithKeys("n"), key.WithHelp("n", "new")),
-		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q/ctrl+c", "quit")),
+		Inbox:       key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "inbox")),
+		Quit:        key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
 	}
 }
 
 // ShortHelp lists the keys shown in the help line.
 func (k listKeys) ShortHelp() []key.Binding {
-	return []key.Binding{k.Up, k.Down, k.Open, k.Search, k.StateFilter, k.New, k.Quit}
+	return []key.Binding{k.Up, k.Down, k.Open, k.Search, k.StateFilter, k.New, k.Inbox, k.Quit}
 }
 
 // FullHelp is the same as ShortHelp; the list has no long help.
 func (k listKeys) FullHelp() [][]key.Binding { return [][]key.Binding{k.ShortHelp()} }
+
+// inboxKeys are the keys of the Inbox. Tab switches to the plan list, as
+// the same key in the plan list switches back.
+type inboxKeys struct {
+	Up, Down, Open, Plans, Quit key.Binding
+}
+
+func newInboxKeys() inboxKeys {
+	return inboxKeys{
+		Up:    key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑/k", "up")),
+		Down:  key.NewBinding(key.WithKeys("down", "j"), key.WithHelp("↓/j", "down")),
+		Open:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "open")),
+		Plans: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "plans")),
+		Quit:  key.NewBinding(key.WithKeys("q", "ctrl+c"), key.WithHelp("q", "quit")),
+	}
+}
+
+// ShortHelp lists the keys shown in the help line.
+func (k inboxKeys) ShortHelp() []key.Binding {
+	return []key.Binding{k.Up, k.Down, k.Open, k.Plans, k.Quit}
+}
+
+// FullHelp is the same as ShortHelp.
+func (k inboxKeys) FullHelp() [][]key.Binding { return [][]key.Binding{k.ShortHelp()} }
 
 // detailKeys are the keys of the plan detail. The review keys are shown and
 // accepted only when the plan allows the action for the current user.

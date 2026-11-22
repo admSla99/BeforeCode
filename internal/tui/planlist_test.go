@@ -60,9 +60,12 @@ type fakePlans struct {
 	plans   []PlanRow
 	err     error
 	created []string // titles passed to NewPlan
+	waiting core.Waiting
 }
 
 func (f *fakePlans) Load(context.Context) ([]PlanRow, error) { return f.plans, f.err }
+
+func (f *fakePlans) Inbox(context.Context) (core.Waiting, error) { return f.waiting, f.err }
 
 func (f *fakePlans) NewPlan(title string) tea.Cmd {
 	return func() tea.Msg {

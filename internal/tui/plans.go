@@ -29,6 +29,9 @@ type Plans interface {
 	// of the same name does. reason is used by ActionRequestChanges and
 	// ActionClose only; for ActionClose it may be empty.
 	Review(ctx context.Context, shortID string, a ReviewAction, reason string) error
+	// Inbox returns what waits on the current user, as bfc inbox does. It
+	// returns a *NotSetUpError when the repository has no Plans ref.
+	Inbox(ctx context.Context) (core.Waiting, error)
 }
 
 // PlanRow is what the plan list shows of one Plan.

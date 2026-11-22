@@ -73,9 +73,13 @@ func TestPrimeWithACurrentPlan(t *testing.T) {
 	golden(t, renderPrimeString(t, primeView{
 		Identity: adaP,
 		Plan:     paymentsPlan(core.StateApproved), Current: true,
-		Open:      []core.Message{question},
-		Reviews:   []planRef{{ShortID: "bfc-9k2m", Title: "Refunds"}},
-		Questions: []waitingQuestion{{ShortID: "bfc-5v7x", Message: question}},
+		Open: []core.Message{question},
+		Waiting: core.Waiting{
+			Findings: []core.WaitingFinding{{PlanRef: core.PlanRef{ShortID: "bfc-5v7x", Title: "Payments via Stripe"},
+				Finding: core.Finding{PR: 42, Check: question.ID, Criterion: "AC-2"}}},
+			Reviews:   []core.PlanRef{{ShortID: "bfc-9k2m", Title: "Refunds"}},
+			Questions: []core.WaitingQuestion{{PlanRef: core.PlanRef{ShortID: "bfc-5v7x"}, Message: question}},
+		},
 	}))
 }
 
@@ -84,7 +88,7 @@ func TestPrimeWithoutACurrentPlan(t *testing.T) {
 	t.Parallel()
 	golden(t, renderPrimeString(t, primeView{
 		Identity: adaP,
-		Approved: []planRef{{ShortID: "bfc-5v7x", Title: "Payments via Stripe"}, {ShortID: "bfc-9k2m", Title: "Refunds"}},
+		Approved: []core.PlanRef{{ShortID: "bfc-5v7x", Title: "Payments via Stripe"}, {ShortID: "bfc-9k2m", Title: "Refunds"}},
 	}))
 }
 
@@ -208,11 +212,11 @@ func TestPrimeCommandRefusesAnUnknownTopic(t *testing.T) {
 // are, so that many waiting Questions cannot break the cap.
 func TestPrimeCapsTheLists(t *testing.T) {
 	t.Parallel()
-	var qs []waitingQuestion
+	var qs []core.WaitingQuestion
 	for range 200 {
-		qs = append(qs, waitingQuestion{ShortID: "bfc-5v7x", Message: question})
+		qs = append(qs, core.WaitingQuestion{PlanRef: core.PlanRef{ShortID: "bfc-5v7x"}, Message: question})
 	}
-	out := renderPrimeString(t, primeView{Identity: adaP, Questions: qs})
+	out := renderPrimeString(t, primeView{Identity: adaP, Waiting: core.Waiting{Questions: qs}})
 	if len(out) > primeLimit {
 		t.Errorf("output is %d bytes, more than %d", len(out), primeLimit)
 	}
