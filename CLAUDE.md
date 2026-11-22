@@ -47,7 +47,7 @@ go build -ldflags "-X main.version=v0.1.0" ./cmd/bfc      # inject the version
 
 The CLI uses Cobra (`github.com/spf13/cobra`). Commands live in `cmd/bfc/`.
 
-CI (`.github/workflows/ci.yml`) runs build (also with `CGO_ENABLED=0`) and `go test -race` on Linux and macOS, build and `go test` on Windows, and `golangci-lint` with the linter set in `.golangci.yml` on every pull request and push to `main`. `.github/workflows/release-config.yml` runs `goreleaser check` on `.goreleaser.yaml`, only when `.goreleaser.yaml`, `go.mod`, `cmd/bfc/**` or that workflow change. `.github/workflows/bfc-plan-check.yml` runs the plan check on every pull request with the `bfc` built from it (ADR 0014); a branch without a plan ends green with a notice. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the release binaries with GoReleaser (the tag becomes `main.version`). `.gitattributes` keeps LF line endings on Windows so gofmt passes there too.
+CI (`.github/workflows/ci.yml`) runs build (also with `CGO_ENABLED=0`) and `go test -race` on Linux and macOS, build and `go test` on Windows, and `golangci-lint` with the linter set in `.golangci.yml` on every pull request and push to `main`. `.github/workflows/release-config.yml` runs `goreleaser check` on `.goreleaser.yaml`, only when `.goreleaser.yaml`, `go.mod`, `cmd/bfc/**` or that workflow change. `.github/workflows/bfc-plan-check.yml` runs the plan check on every pull request with the `bfc` built from it (ADR 0014); a branch without a plan ends green with a notice. It is generated from `internal/github/bfc-plan-check.yml.tmpl`, the template `bfc setup github` writes: edit the template, then `go test ./internal/github -update`. Pushing a `v*` tag runs `.github/workflows/release.yml`, which builds the release binaries with GoReleaser (the tag becomes `main.version`). `.gitattributes` keeps LF line endings on Windows so gofmt passes there too.
 
 ## Package layout (target)
 
@@ -59,6 +59,7 @@ internal/core/    plan lifecycle, events, approval policy (no I/O)
 internal/store/   hidden-ref storage through git plumbing
 internal/index/   SQLite cache rebuilt from the ref
 internal/doctor/  bfc doctor: setup checks and safe fixes (ADR 0006, 0007)
+internal/github/  the plan check workflow bfc setup github writes (ADR 0014)
 internal/agent/   Agent interface and harness adapters
 internal/tui/     Bubble Tea screens
 e2e/              end-to-end test: the bfc binary in two clones of one bare remote

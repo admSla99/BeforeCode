@@ -59,6 +59,15 @@ git push -u origin bfc-5v7x-payments-via-stripe   # once, so that others' bfc st
 bfc show                        # without an ID: the Current plan, the one named in the branch
 ```
 
+**Check pull requests against their plans.** With a released `bfc`:
+
+```
+bfc setup github                # writes .github/workflows/bfc-plan-check.yml; commit it through a pull request
+gh secret set ANTHROPIC_API_KEY # the plan check runs Claude Code in GitHub Actions
+```
+
+A pull request names its plan by the Short ID in its branch (as `bfc start` makes it) or a line `Plan: bfc-5v7x` in its description. When it departs from the plan it gets the `plan-mismatch` label and a comment, and the plan author sees the Finding in the Inbox.
+
 **With Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team. Then:
 
 ```
