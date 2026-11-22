@@ -36,6 +36,17 @@ func loadPlans(ctx context.Context, s *store.Store) ([]index.Plan, error) {
 	return plans, err
 }
 
+// loadPlansWithDocuments is loadPlans with each plan's intent.md and
+// plan.md.
+func loadPlansWithDocuments(ctx context.Context, s *store.Store) ([]index.Plan, error) {
+	var plans []index.Plan
+	err := withIndex(ctx, s, func(ix *index.Index) (err error) {
+		plans, err = ix.PlansWithDocuments(ctx)
+		return err
+	})
+	return plans, err
+}
+
 // loadPlan returns one plan as it is now in the plans ref.
 func loadPlan(ctx context.Context, s *store.Store, id ulid.ULID) (index.Plan, error) {
 	var p index.Plan

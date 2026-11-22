@@ -18,13 +18,26 @@ type Status struct {
 	// Approvers are the emails of the valid Approvals in the open review
 	// round, in the order they were given.
 	Approvers []string
+	// Claims are the valid Claims by Task ID (ADR 0013 section 4): a Task
+	// without one is open. They are derived without reading plan.md, so a
+	// Task removed from plan.md keeps its Claim.
+	Claims map[string]Claim
+}
+
+// Claim is the valid claimed Event of a Task: who holds it.
+type Claim struct {
+	Event  ulid.ULID `json:"event"`
+	Holder Person    `json:"holder"`
+	Agent  string    `json:"agent,omitempty"` // the harness, when an agent claimed it
 }
 
 // Derive computes a plan's Status from its Events, sorted by ULID, and the
 // git object ID of its current plan.md ("" when there is none), following
-// ADR 0002 section 4. Events that are not allowed for their author, belong
-// to another plan, do not fit the state at their point, or have an unknown
-// type are skipped.
+// ADR 0002 section 4 and ADR 0013 section 4. Events that are not allowed for
+// their author, belong to another plan, do not fit the state at their point,
+// or have an unknown type are skipped. A claimed Event counts after the first
+// valid submitted, for a Task nobody holds: of two Claims on one Task the
+// earlier ULID wins. An approved plan with a Claim is in-progress.
 func Derive(plan ulid.ULID, events []Event, planBlob string) Status {
 	st, _ := derive(plan, events, planBlob)
 	return st
@@ -56,7 +69,7 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 	st := Status{State: StateDraft, ShortID: created.ShortID, Author: created.Author}
 	isAuthor := func(p Person) bool { return strings.EqualFold(p.Email, created.Author.Email) }
 
-	inRound := false
+	inRound, submitted := false, false
 	var round []Event // approved events of the open review round
 	for i, e := range events[start+1:] {
 		valid := false
@@ -66,6 +79,15 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 				if valid = isAuthor(e.Author) && !inRound; valid {
 					// A missing count means the policy default of 1 (ADR 0002 §4).
 					inRound, round, st.RequiredApprovals = true, nil, max(e.RequiredApprovals, 1)
+					submitted = true
+				}
+			case Claimed:
+				_, held := st.Claims[e.Task]
+				if valid = submitted && taskID.MatchString(e.Task) && !held; valid {
+					if st.Claims == nil {
+						st.Claims = map[string]Claim{}
+					}
+					st.Claims[e.Task] = Claim{Event: e.ID, Holder: e.Author, Agent: e.Agent}
 				}
 			case Withdrawn:
 				if valid = isAuthor(e.Author) && inRound; valid {
@@ -101,6 +123,9 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 	st.State = StateInReview
 	if len(st.Approvers) >= st.RequiredApprovals {
 		st.State = StateApproved
+		if len(st.Claims) > 0 {
+			st.State = StateInProgress
+		}
 	}
 	return st, skipped
 }

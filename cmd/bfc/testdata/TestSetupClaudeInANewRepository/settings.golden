@@ -20,7 +20,9 @@
       "Bash(bfc ask:*)",
       "Bash(bfc reply:*)",
       "Bash(bfc edit:*)",
-      "Bash(bfc start:*)"
+      "Bash(bfc start:*)",
+      "Bash(bfc ready:*)",
+      "Bash(bfc claim:*)"
     ],
     "deny": [
       "Bash(bfc submit:*)",

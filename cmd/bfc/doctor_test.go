@@ -464,14 +464,14 @@ func TestDoctorDoesNotAddAFormatVersionOverUnknownEventTypes(t *testing.T) {
 	dir := newLocalRepo(t)
 	_, id := newPlan(t, dir, "Solo plan")
 	unknown := core.PlanDir(id) + "/events/01JD3K8Q2X0000000000000009.yaml"
-	writeRef(t, dir, "from the future", map[string][]byte{unknown: []byte("type: claimed\nplan: " + id.String() +
+	writeRef(t, dir, "from the future", map[string][]byte{unknown: []byte("type: archived\nplan: " + id.String() +
 		"\nauthor: {name: Ana, email: ana@example.com}\nat: 2026-11-16T21:30:00Z\n")})
 	dropFromRef(t, dir, "format-version")
 	before := gitIn(t, dir, "rev-parse", plansRef)
 
 	out, _ := bfcIn(t, dir, "doctor", "--fix")
 	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
-	for _, want := range []string{unknown + " (claimed)", "fix: update bfc"} {
+	for _, want := range []string{unknown + " (archived)", "fix: update bfc"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
 		}

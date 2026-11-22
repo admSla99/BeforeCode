@@ -45,7 +45,11 @@ closed or --all.`,
 			if err != nil {
 				return err
 			}
-			views, err := loadPlans(cmd.Context(), s)
+			load := loadPlans
+			if asJSON {
+				load = loadPlansWithDocuments // for the Tasks
+			}
+			views, err := load(cmd.Context(), s)
 			if err != nil {
 				return err
 			}
@@ -82,6 +86,7 @@ type planJSON struct {
 	LastActivity      string      `json:"last_activity"`
 	Approvals         int         `json:"approvals"`
 	RequiredApprovals int         `json:"required_approvals"`
+	Tasks             []taskJSON  `json:"tasks"`
 }
 
 func printJSON(cmd *cobra.Command, views []index.Plan) error {
@@ -101,6 +106,7 @@ func toPlanJSON(v index.Plan) planJSON {
 		Title: v.Title, Labels: v.Labels, Author: v.Status.Author,
 		LastActivity: v.LastActivity.UTC().Format(time.RFC3339),
 		Approvals:    len(v.Status.Approvers), RequiredApprovals: v.Status.RequiredApprovals,
+		Tasks: toTasksJSON(v),
 	}
 }
 

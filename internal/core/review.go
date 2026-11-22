@@ -17,9 +17,10 @@ func stateError(st Status, what string) error {
 }
 
 // inReviewRound reports whether the plan has an open review round, which
-// changes-requested and withdrawn end.
+// changes-requested and withdrawn end. An in-progress plan is approved, so
+// its round is open too.
 func inReviewRound(st Status) bool {
-	return st.State == StateInReview || st.State == StateApproved
+	return st.State == StateInReview || st.State == StateApproved || st.State == StateInProgress
 }
 
 func samePerson(a, b Person) bool {

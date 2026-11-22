@@ -182,7 +182,7 @@ func TestPlanListEscClearsTheSearch(t *testing.T) {
 // AC-2: s cycles the state filter: open, in-review, approved, draft,
 // closed, all.
 func TestPlanListStateFilter(t *testing.T) {
-	for n, name := range []string{"in-review", "approved", "draft", "closed", "all", "open"} {
+	for n, name := range []string{"in-review", "approved", "in-progress", "draft", "closed", "all", "open"} {
 		t.Run(name, func(t *testing.T) {
 			var keys []string
 			for range n + 1 {
@@ -337,5 +337,16 @@ func TestPlanListCutsLongLines(t *testing.T) {
 				}
 			}
 		})
+	}
+}
+
+// Issue #108: a plan whose Task is claimed is in-progress and listed in its
+// own group, after the approved plans.
+func TestPlanListShowsInProgressPlans(t *testing.T) {
+	f := team()
+	f.plans = append(f.plans, PlanRow{"bfc-w0rk", core.StateInProgress, "Stripe in progress", "ada@example.com", at(17, 10)})
+	out := run(t, f, 80, 40, "IN-PROGRESS (1)")
+	if !strings.Contains(out, "Stripe in progress") || strings.Index(out, "APPROVED") > strings.Index(out, "IN-PROGRESS") {
+		t.Errorf("in-progress plan not listed after the approved ones:\n%s", out)
 	}
 }
