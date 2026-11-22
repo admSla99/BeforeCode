@@ -21,6 +21,7 @@ import (
 var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
 	"grill": runPrimeGrill,
 	"plan":  runPrimePlan,
+	"check": runPrimeCheck,
 }
 
 func newPrimeCmd() *cobra.Command {

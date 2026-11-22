@@ -222,3 +222,25 @@ func TestTaskTextFromContinuationLinesAndIndentedCode(t *testing.T) {
 		t.Errorf("tasks = %q", got)
 	}
 }
+
+// Issue #102 AC-3: the acceptance criteria with their text, for the plan
+// check.
+func TestCriteriaHaveTheirText(t *testing.T) {
+	got := core.Criteria([]byte(goodPlan))
+	if len(got) != 2 || got[0] != (core.Criterion{ID: "AC-1", Text: "With an invalid card the API returns 402."}) ||
+		got[1] != (core.Criterion{ID: "AC-3", Text: "A successful payment sends exactly one email,\neven when the webhook is delivered twice."}) {
+		t.Errorf("Criteria = %q", got)
+	}
+}
+
+// Issue #102 AC-3: the text of one section, found by its heading without
+// regard to case, ignoring headings inside code fences.
+func TestPlanSection(t *testing.T) {
+	plan := "## Context\n\n```\n## Out of scope\nin a fence\n```\n\n## out of scope\n\nRefunds.\n\nCurrencies.\n\n## Tasks\n\n- T-1: x\n"
+	if got := core.PlanSection([]byte(plan), "Out of scope"); got != "Refunds.\n\nCurrencies." {
+		t.Errorf("PlanSection = %q", got)
+	}
+	if got := core.PlanSection([]byte(plan), "Approach"); got != "" {
+		t.Errorf("missing section = %q", got)
+	}
+}

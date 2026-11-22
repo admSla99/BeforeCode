@@ -194,3 +194,46 @@ func scanPlan(plan []byte) scanned {
 	}
 	return r
 }
+
+// Criterion is an acceptance criterion of plan.md with its text,
+// continuation lines included and joined by newlines.
+type Criterion struct {
+	ID   string
+	Text string
+}
+
+// Criteria returns the acceptance criteria of plan.md with their text, in
+// the order of AcceptanceCriteria.
+func Criteria(plan []byte) []Criterion {
+	var out []Criterion
+	for _, c := range scanPlan(plan).items[criteriaSection] {
+		out = append(out, Criterion{ID: c.id, Text: c.text})
+	}
+	return out
+}
+
+// PlanSection returns the text under the level-2 heading of plan.md named
+// heading (without regard to case) up to the next level-2 heading, trimmed;
+// "" when there is no such section. Headings in fenced code blocks do not
+// count.
+func PlanSection(plan []byte, heading string) string {
+	var b strings.Builder
+	in, inFence := false, false
+	for _, line := range strings.Split(strings.ReplaceAll(string(plan), "\r\n", "\n"), "\n") {
+		trimmed := strings.TrimSpace(line)
+		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
+			inFence = !inFence
+		}
+		if m := headingPattern.FindStringSubmatch(line); m != nil && !inFence {
+			if in {
+				break
+			}
+			in = strings.EqualFold(m[1], heading)
+			continue
+		}
+		if in {
+			b.WriteString(line + "\n")
+		}
+	}
+	return strings.TrimSpace(b.String())
+}

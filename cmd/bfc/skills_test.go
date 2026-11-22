@@ -91,3 +91,19 @@ func TestDoctorReportsAMissingSkillDirectory(t *testing.T) {
 	// A warning: bfc falls back to the skills built into it.
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "skills", ".beforecode/skills is missing", "built into bfc", "bfc init")
 }
+
+// Issue #102 AC-1, AC-5: bfc init writes plan-check, and bfc doctor warns
+// when a repository set up before it lacks a built-in skill.
+func TestDoctorCoversThePlanCheckSkill(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	if _, err := os.Stat(filepath.Join(repo, ".beforecode", "skills", "plan-check", "SKILL.md")); err != nil {
+		t.Fatalf("bfc init did not write plan-check: %v", err)
+	}
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "skills", "grill-intent, plan-check, write-plan")
+
+	if err := os.RemoveAll(filepath.Join(repo, ".beforecode", "skills", "plan-check")); err != nil {
+		t.Fatal(err)
+	}
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "skills", "plan-check is missing", "built into bfc", "bfc init")
+}
