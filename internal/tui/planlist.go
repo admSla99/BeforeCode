@@ -22,17 +22,17 @@ type stateFilter struct {
 }
 
 var stateFilters = []stateFilter{
-	{"open", func(s core.State) bool { return s != core.StateClosed }},
+	{"open", func(s core.State) bool { return s != core.StateClosed && s != core.StateDone }},
 	{"in-review", func(s core.State) bool { return s == core.StateInReview }},
 	{"approved", func(s core.State) bool { return s == core.StateApproved }},
 	{"in-progress", func(s core.State) bool { return s == core.StateInProgress }},
 	{"draft", func(s core.State) bool { return s == core.StateDraft }},
-	{"closed", func(s core.State) bool { return s == core.StateClosed }},
+	{"closed", func(s core.State) bool { return s == core.StateClosed || s == core.StateDone }},
 	{"all", func(core.State) bool { return true }},
 }
 
-// groupOrder is the order of the state groups on the screen. done comes
-// with bfc done (#111).
+// groupOrder is the order of the state groups on the screen. A done plan
+// is in the closed group (groupOf): both are final.
 var groupOrder = []core.State{
 	core.StateInReview, core.StateApproved, core.StateInProgress, core.StateDraft, core.StateClosed, core.StateInvalid,
 }
@@ -163,6 +163,15 @@ func (m PlanList) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	return m, nil
 }
 
+// groupOf is the state group a plan in state s is listed in: a done plan
+// with the closed ones.
+func groupOf(s core.State) core.State {
+	if s == core.StateDone {
+		return core.StateClosed
+	}
+	return s
+}
+
 // editLine applies a key press to a line being typed. Enter finishes it;
 // esc finishes it and clears it, which also reports cancelled.
 func editLine(line *string, msg tea.KeyPressMsg) (done, cancelled bool) {
@@ -189,7 +198,7 @@ func (m PlanList) visible() []PlanRow {
 	q := strings.ToLower(m.search)
 	for _, st := range groupOrder {
 		for _, p := range m.all {
-			if p.State != st || !stateFilters[m.filterAt].match(p.State) {
+			if groupOf(p.State) != st || !stateFilters[m.filterAt].match(p.State) {
 				continue
 			}
 			if q != "" && !strings.Contains(strings.ToLower(p.Title+" "+p.ShortID+" "+p.Author), q) {
@@ -286,15 +295,20 @@ func (m PlanList) body() ([]string, int) {
 	var lines []string
 	focus := 0
 	for i := 0; i < len(vis); {
-		st := vis[i].State
-		n := 0
-		for i+n < len(vis) && vis[i+n].State == st {
+		st := groupOf(vis[i].State)
+		n, done := 0, false
+		for i+n < len(vis) && groupOf(vis[i+n].State) == st {
+			done = done || vis[i+n].State == core.StateDone
 			n++
 		}
 		if len(lines) > 0 {
 			lines = append(lines, "")
 		}
-		lines = append(lines, stateStyle(st).Bold(true).Render(fmt.Sprintf("%s (%d)", strings.ToUpper(string(st)), n)))
+		name := strings.ToUpper(string(st))
+		if done {
+			name = "CLOSED OR DONE"
+		}
+		lines = append(lines, stateStyle(st).Bold(true).Render(fmt.Sprintf("%s (%d)", name, n)))
 		for _, p := range vis[i : i+n] {
 			title := "  " + p.Title
 			if i == m.cursor {

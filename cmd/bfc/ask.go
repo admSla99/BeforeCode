@@ -180,8 +180,8 @@ func messageText(cmd *cobra.Command, text string) (string, error) {
 func writeMessage(cmd *cobra.Command, s *store.Store, v index.Plan, command string, m core.Message, verbatim bool) (core.Message, error) {
 	ctx := cmd.Context()
 	short := v.ShortID
-	if v.Status.State == core.StateClosed {
-		return core.Message{}, fmt.Errorf("%s is closed; closed is final", short)
+	if err := core.CheckWritable(v.Status); err != nil {
+		return core.Message{}, err
 	}
 	actor, err := currentUser(ctx, s)
 	if err != nil {

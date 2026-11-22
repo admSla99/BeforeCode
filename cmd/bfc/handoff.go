@@ -68,8 +68,8 @@ func runHandoff(cmd *cobra.Command, query, task, note string, done, asJSON bool)
 	if err != nil {
 		return err
 	}
-	if v.Status.State == core.StateClosed {
-		return fmt.Errorf("%s is closed; closed is final", v.ShortID)
+	if err := core.CheckWritable(v.Status); err != nil {
+		return err
 	}
 	actor, err := currentUser(ctx, s)
 	if err != nil {

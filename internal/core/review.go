@@ -101,11 +101,37 @@ func CheckWithdraw(st Status, actor Person) error {
 // if they can. Anyone may close a plan in any state (ADR 0002 section 4);
 // closed is final.
 func CheckClose(st Status, _ Person) error {
+	if err := CheckWritable(st); err != nil {
+		return err
+	}
+	switch st.State {
+	case StateInvalid:
+		return stateError(st, "it has no valid created event to close; see bfc doctor")
+	}
+	return nil
+}
+
+// CheckWritable reports why nothing may be written to the plan with Status
+// st any more: closed and done are final.
+func CheckWritable(st Status) error {
 	switch st.State {
 	case StateClosed:
 		return stateError(st, "closed is final")
-	case StateInvalid:
-		return stateError(st, "it has no valid created event to close; see bfc doctor")
+	case StateDone:
+		return stateError(st, "done is final")
+	}
+	return nil
+}
+
+// CheckDone reports why the plan with Status st cannot be marked done now:
+// only an in-progress plan is (ADR 0013 section 4). Whether a person runs
+// it is CheckPerson's.
+func CheckDone(st Status) error {
+	if err := CheckWritable(st); err != nil {
+		return err
+	}
+	if st.State != StateInProgress {
+		return stateError(st, "only an in-progress plan is marked done")
 	}
 	return nil
 }

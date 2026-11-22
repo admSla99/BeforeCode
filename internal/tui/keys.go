@@ -75,6 +75,7 @@ func newDetailKeys() detailKeys {
 			ActionApprove:        key.NewBinding(key.WithKeys("a"), key.WithHelp("a", "approve")),
 			ActionRequestChanges: key.NewBinding(key.WithKeys("r"), key.WithHelp("r", "changes")),
 			ActionClose:          key.NewBinding(key.WithKeys("c"), key.WithHelp("c", "close")),
+			ActionDone:           key.NewBinding(key.WithKeys("d"), key.WithHelp("d", "done")),
 		},
 	}
 }

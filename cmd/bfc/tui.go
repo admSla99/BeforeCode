@@ -188,6 +188,7 @@ var reviewEvents = map[tui.ReviewAction]core.EventType{
 	tui.ActionApprove:        core.Approved,
 	tui.ActionRequestChanges: core.ChangesRequested,
 	tui.ActionClose:          core.Closed,
+	tui.ActionDone:           core.Done,
 }
 
 // Detail returns one plan with the review actions the current user may
@@ -208,7 +209,7 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 	d := tui.PlanDetail{
 		ShortID: v.ShortID, Title: v.Title, State: v.Status.State, Author: v.Status.Author.Email,
 		RequiredApprovals: v.Status.RequiredApprovals, Approvers: v.Status.Approvers,
-		Intent: v.Intent, Plan: v.Plan, Editable: v.Status.State != core.StateClosed,
+		Intent: v.Intent, Plan: v.Plan, Editable: core.CheckWritable(v.Status) == nil,
 	}
 	// The review actions are Gates, for people only (ADR 0011).
 	if checkPerson(p.cmd) != nil {
@@ -234,6 +235,9 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 	}
 	if core.CheckClose(v.Status, actor) == nil {
 		d.Actions = append(d.Actions, tui.ActionClose)
+	}
+	if core.CheckDone(v.Status) == nil {
+		d.Actions = append(d.Actions, tui.ActionDone)
 	}
 	return d, nil
 }

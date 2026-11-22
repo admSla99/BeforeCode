@@ -31,8 +31,8 @@ func newListCmd() *cobra.Command {
 		Short: "List plans, newest activity first",
 		Long: `List plans, one per line: Short ID, state, title, author and last activity,
 newest activity first. Last activity is the time of the newest change to any
-file of the plan. Closed plans are left out unless asked for with --state
-closed or --all.`,
+file of the plan. Closed and done plans are left out unless asked for with
+--state closed, --state done or --all.`,
 		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			if state != "" && !slices.Contains(listedStates, core.State(state)) {
@@ -57,7 +57,7 @@ closed or --all.`,
 			case state != "":
 				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State != core.State(state) })
 			case !all:
-				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State == core.StateClosed })
+				views = slices.DeleteFunc(views, func(v index.Plan) bool { return core.CheckWritable(v.Status) != nil })
 			}
 			if asJSON {
 				return printJSON(cmd, views)

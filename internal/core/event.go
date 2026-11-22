@@ -133,8 +133,7 @@ const (
 	StateInvalid    State = "invalid"
 )
 
-// The Event types format version 2 adds (ADR 0013 section 4). done comes
-// with bfc done (#111).
+// The Event types format version 2 adds (ADR 0013 section 4).
 const (
 	Claimed   EventType = "claimed"
 	Released  EventType = "released"
@@ -150,7 +149,7 @@ const Checked EventType = "checked"
 // Any other type may belong to a later format version.
 func KnownEventType(t EventType) bool {
 	switch t {
-	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed, Released, Completed:
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed, Released, Completed, Done:
 		return true
 	}
 	return false
@@ -204,7 +203,7 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if !objectIDPattern.MatchString(e.PlanBlob) {
 			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
 		}
-	case Withdrawn, Closed:
+	case Withdrawn, Closed, Done:
 	case Claimed, Released, Completed:
 		if !taskID.MatchString(e.Task) {
 			return fmt.Errorf("event %s: task %q is not a Task ID such as T-1", id, e.Task)
@@ -218,7 +217,7 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if h, err := ulid.ParseStrict(e.Handoff); err != nil || h.String() != e.Handoff {
 			return fmt.Errorf("event %s: handoff %q is not the ULID of a Handoff", id, e.Handoff)
 		}
-	case Checked, Done:
+	case Checked:
 		return fmt.Errorf("event %s: type %q is not written by this bfc", id, e.Type)
 	default:
 		return fmt.Errorf("event %s: unknown type %q", id, e.Type)
