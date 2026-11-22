@@ -83,7 +83,13 @@ func newFakeTeam() *fakeTeam {
 }
 
 func (f *fakeTeam) Load(ctx context.Context) ([]PlanRow, error) { return f.plans.Load(ctx) }
-func (f *fakeTeam) NewPlan(title string) tea.Cmd                { return f.plans.NewPlan(title) }
+
+func (f *fakeTeam) Inbox(ctx context.Context) (core.Waiting, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.plans.Inbox(ctx)
+}
+func (f *fakeTeam) NewPlan(title string) tea.Cmd { return f.plans.NewPlan(title) }
 
 func (f *fakeTeam) Detail(_ context.Context, shortID string) (PlanDetail, error) {
 	f.mu.Lock()
@@ -142,8 +148,17 @@ func startApp(t *testing.T, f *fakeTeam) *teatest.TestModel {
 	app := NewApp(f, f, AppOptions{Interval: time.Hour})
 	app.now = func() time.Time { return t0 }
 	tm := newTestModel(t, app, 80, 24)
-	waitFor(t, tm, "IN-REVIEW")
+	toPlanList(t, tm)
 	return tm
+}
+
+// toPlanList waits for the Inbox, the start screen, and switches to the
+// plan list.
+func toPlanList(t *testing.T, tm *teatest.TestModel) {
+	t.Helper()
+	waitFor(t, tm, "what waits on you")
+	send(tm, "tab")
+	waitFor(t, tm, "IN-REVIEW")
 }
 
 func send(tm *teatest.TestModel, keys ...string) {
@@ -321,7 +336,7 @@ func startAppWith(t *testing.T, f *fakeTeam, opts AppOptions) *teatest.TestModel
 	app := NewApp(f, f, opts)
 	app.now = func() time.Time { return t0 }
 	tm := newTestModel(t, app, 80, 24)
-	waitFor(t, tm, "IN-REVIEW")
+	toPlanList(t, tm)
 	send(tm, "enter")
 	waitFor(t, tm, "Affected areas")
 	return tm
@@ -405,7 +420,7 @@ func TestAppStaysUsableDuringASlowSync(t *testing.T) {
 	app.now = func() time.Time { return t0 }
 	tm := newTestModel(t, app, 80, 24)
 	defer close(release)
-	waitFor(t, tm, "IN-REVIEW")
+	toPlanList(t, tm)
 	send(tm, "enter")
 	// The list already shows the sync status, so wait for the detail first.
 	waitFor(t, tm, "Affected areas")
@@ -469,8 +484,25 @@ func TestAppListShowsTheSyncStatus(t *testing.T) {
 	app := NewApp(f, f, AppOptions{Interval: time.Hour})
 	app.now = func() time.Time { return t0 }
 	tm := newTestModel(t, app, 80, 24)
+	toPlanList(t, tm)
 	waitFor(t, tm, "Could not resolve")
 	golden(t, screen(t, tm))
+}
+
+// Issue #106: the Inbox shows the sync status too.
+func TestAppInboxShowsTheSyncStatus(t *testing.T) {
+	f := newFakeTeam()
+	f.syncFn = func() SyncResult {
+		return SyncResult{Outcome: SyncOffline, Message: "Could not resolve host: github.com"}
+	}
+	app := NewApp(f, f, AppOptions{Interval: time.Hour})
+	app.now = func() time.Time { return t0 }
+	tm := newTestModel(t, app, 80, 24)
+	waitFor(t, tm, "Could not resolve")
+	out := screen(t, tm)
+	if !strings.Contains(out, "BeforeCode · inbox") || !strings.Contains(out, "offline") {
+		t.Errorf("the Inbox lacks the sync status:\n%s", out)
+	}
 }
 
 // openDetailWith opens the detail of bfc-5v7x with these actions, in local

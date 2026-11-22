@@ -20,6 +20,10 @@ This repository plans its work with BeforeCode (`bfc`). Every change is made aga
 
 For Ada Lovelace <ada@example.com>, the git author of this clone, who runs you:
 
+- Finding in bfc-5v7x Payments via Stripe, pull request #42: AC-2 is not met (check 01JD3K8Q2W5V7X9Y0Z1A2B3C4E).
+
+A Finding is where a pull request departs from its plan. Tell the user: they fix the code, update the plan, or accept it on purpose with `bfc acknowledge <check> -m <reason>`, which is for people.
+
 - Review bfc-9k2m Refunds: tell the user to open `bfc`, select it and press `a` to approve.
 - Question 01JD3K8Q2W5V7X9Y0Z1A2B3C4E in bfc-5v7x from ben@example.com about plan.md#AC-1: Which card?
 

@@ -261,3 +261,25 @@ func TestTUIAdapterHidesApproveWhileAQuestionIsOpen(t *testing.T) {
 		t.Errorf("for the author, who may not approve anyway: BlockingQuestions = %d, %v", d.BlockingQuestions, err)
 	}
 }
+
+// Issue #106 AC-1: the Inbox gets what bfc inbox lists.
+func TestTUIAdapterInboxIsWhatBfcInboxLists(t *testing.T) {
+	t.Parallel()
+	dir, mine, theirs, _, question := inboxFixture(t)
+	w, err := adapterIn(t, dir).Inbox(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(w.Findings) != 2 || w.Findings[0].ShortID != mine || len(w.Reviews) != 1 || w.Reviews[0].ShortID != theirs ||
+		len(w.Questions) != 1 || w.Questions[0].Message.ID.String() != question {
+		t.Errorf("waiting = %+v", w)
+	}
+
+	empty := t.TempDir()
+	gitIn(t, empty, "init", "-q", "-b", "main")
+	_, err = adapterIn(t, empty).Inbox(context.Background())
+	var nse *tui.NotSetUpError
+	if !errors.As(err, &nse) {
+		t.Errorf("err = %#v, want NotSetUpError", err)
+	}
+}

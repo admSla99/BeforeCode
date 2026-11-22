@@ -79,8 +79,9 @@ type tuiPlans struct {
 	cmd *cobra.Command
 }
 
-// Load returns every plan, newest activity first, or a *tui.NotSetUpError.
-func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
+// open opens the plans for reading, with a missing Plans ref as a
+// *tui.NotSetUpError.
+func (p *tuiPlans) open() (*store.Store, error) {
 	s, err := openPlans(p.cmd, forReading)
 	var nse *notSetUpError
 	switch {
@@ -88,7 +89,14 @@ func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
 		return nil, &tui.NotSetUpError{Advice: nse.Error()}
 	case errors.As(err, &nse):
 		return nil, &tui.NotSetUpError{}
-	case err != nil:
+	}
+	return s, err
+}
+
+// Load returns every plan, newest activity first, or a *tui.NotSetUpError.
+func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
+	s, err := p.open()
+	if err != nil {
 		return nil, err
 	}
 	views, err := loadPlans(ctx, s)
@@ -103,6 +111,17 @@ func (p *tuiPlans) Load(ctx context.Context) ([]tui.PlanRow, error) {
 		}
 	}
 	return plans, nil
+}
+
+// Inbox returns what waits on the current user, as bfc inbox lists it, or
+// a *tui.NotSetUpError.
+func (p *tuiPlans) Inbox(ctx context.Context) (core.Waiting, error) {
+	s, err := p.open()
+	if err != nil {
+		return core.Waiting{}, err
+	}
+	_, w, err := loadWaiting(ctx, s)
+	return w, err
 }
 
 // NewPlan runs bfc new with the title, which opens the editor on intent.md
