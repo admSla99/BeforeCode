@@ -27,8 +27,8 @@ func newSetupCmd() *cobra.Command {
 It writes .claude/skills/beforecode/SKILL.md, the skill that sends Claude Code
 to bfc prime whenever plans come up; the text ships in bfc and is rewritten on
 every run. It adds to .claude/settings.json the PreToolUse hook that blocks
-edits unless the Current plan is approved or in-progress (bfc hook
-pre-tool-use), allows the
+edits unless the Current plan is approved or in-progress (bfc hook pre-tool-use),
+allows the
 bfc commands agents use and denies the Gates. Everything else in
 .claude/settings.json is kept, and running it again changes nothing.
 

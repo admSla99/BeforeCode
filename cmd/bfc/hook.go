@@ -132,7 +132,7 @@ func checkEdit(cmd *cobra.Command, cwd, path string) (approved bool, err error) 
 		return false, deny(cmd, planErr.Error()+"; bfc prime says more")
 	case err != nil:
 		return false, denyBroken(cmd, err)
-	case !core.HasWork(p.Status.State):
+	case !core.EditsAllowed(p.Status.State):
 		return false, deny(cmd, fmt.Sprintf("the Current plan %s  %s is %s, and code is edited only for an approved or in-progress plan: get it approved (run bfc pull if it was approved elsewhere), then take a Task with bfc claim, or bfc start <id> to work on another plan; bfc prime says more", p.ShortID, p.Title, p.Status.State))
 	}
 	return true, nil
@@ -171,7 +171,7 @@ func denyBroken(cmd *cobra.Command, err error) error {
 	if !strings.Contains(reason, "bfc doctor") {
 		reason += "; run bfc doctor"
 	}
-	return deny(cmd, "bfc hook pre-tool-use cannot tell whether the Current plan is approved: "+reason)
+	return deny(cmd, "bfc hook pre-tool-use cannot tell whether the Current plan is approved or in-progress: "+reason)
 }
 
 // deny writes the Claude Code decision that blocks the tool call.
@@ -185,7 +185,8 @@ func deny(cmd *cobra.Command, reason string) error {
 	}})
 }
 
-// needsPlan reports whether editing path needs an approved plan: it is in
+// needsPlan reports whether editing path needs an approved or in-progress
+// plan: it is in
 // the repository at root and not under one of exemptDirs. A relative path
 // is relative to cwd, the session's directory.
 func needsPlan(root, cwd, path string) bool {

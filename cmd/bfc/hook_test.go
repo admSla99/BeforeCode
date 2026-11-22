@@ -476,7 +476,12 @@ func TestHookAllowsEditsWhileThePlanIsInProgress(t *testing.T) {
 	if got := state(t, dir, short); got != "in-progress" {
 		t.Fatalf("state = %s", got)
 	}
+	cache := filepath.Join(gitIn(t, dir, "rev-parse", "--path-format=absolute", "--git-dir"), "beforecode", "hook-approved")
 	for _, tool := range []string{"Edit", "Write", "MultiEdit", "NotebookEdit"} {
+		// Each tool gets the full check, not the answer the cache kept.
+		if err := os.Remove(cache); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
 		input := abs(dir, map[string]any{"file_path": "main.go", "notebook_path": "a.ipynb", "content": "x"})
 		if r := runHook(t, dir, tool, input); r.err != nil || r.stdout != "" {
 			t.Errorf("%s while in-progress: err = %v, stdout = %s", tool, r.err, r.stdout)

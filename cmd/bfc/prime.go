@@ -139,7 +139,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
 	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent, and so does `acknowledge`. " +
 	"When a plan needs one, tell the user to open `bfc` and take it there.\n" +
-	"- Edit code only for an `approved` or `in-progress` Current plan, after you take a Task with `bfc claim`: a hook blocks file edits in every other state.\n" +
+	"- Edit code while the Current plan is `approved` or `in-progress`; a hook blocks file edits in its other states.\n" +
 	"- Implement `plan.md` as approved. When the work must depart from it, record the deviation with " +
 	"`bfc ask <id> --to <plan author email> --ref plan.md#AC-n -m <what and why>` and tell the user.\n"
 
