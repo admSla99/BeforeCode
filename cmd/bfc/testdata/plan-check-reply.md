@@ -1,15 +1,5 @@
 I compared `git diff 1a7e...9f2c` with `plan.md` of bfc-5v7x.
 
-**1 of 1 acceptance criteria met, 1 out-of-scope change.**
-
-| Criterion | Status | Reason |
-| --- | --- | --- |
-| AC-1 | met | `payments/charge.go` returns 402 for an invalid card, tested in `charge_test.go`. |
-
-Out of scope:
-
-- Adds a retry loop to `mail/worker.go`.
-
 ```json
 {
   "criteria": {"AC-1": "met"},

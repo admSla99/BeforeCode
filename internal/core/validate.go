@@ -45,8 +45,9 @@ type itemKind struct {
 }
 
 const (
-	criteriaSection = "acceptance criteria"
-	tasksSection    = "tasks"
+	outOfScopeSection = "out of scope"
+	criteriaSection   = "acceptance criteria"
+	tasksSection      = "tasks"
 )
 
 // itemSections maps the lower-case heading of a section to its kind.
@@ -97,12 +98,16 @@ type item struct {
 type scanned struct {
 	problems []Problem
 	items    map[string][]item // section → its items, the first of each ID
+	// text holds each section's lines without HTML comments; a heading
+	// that appears twice gets the lines of both.
+	text map[string]string
 }
 
 // scanPlan returns the problems of plan.md and its items with IDs.
 func scanPlan(plan []byte) scanned {
-	r := scanned{items: map[string][]item{}}
+	r := scanned{items: map[string][]item{}, text: map[string]string{}}
 	sections := map[string]bool{}
+	current := "" // the current section
 	section := "" // the current section, when it has items with IDs
 	inComment, inFence := false, false
 	seen := map[string]int{} // item ID → line
@@ -123,6 +128,11 @@ func scanPlan(plan []byte) scanned {
 		n := i + 1
 		trimmed := strings.TrimSpace(line)
 		isFence := strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~")
+		isHeading := !inFence && !inComment && headingPattern.MatchString(line)
+		isComment := inComment || (!inFence && strings.HasPrefix(trimmed, "<!--"))
+		if current != "" && !isHeading && !isComment {
+			r.text[current] += line + "\n"
+		}
 		if cur != nil {
 			indented := strings.HasPrefix(line, "  ")
 			switch {
@@ -157,6 +167,7 @@ func scanPlan(plan []byte) scanned {
 		if m := headingPattern.FindStringSubmatch(line); m != nil {
 			name := strings.ToLower(m[1])
 			sections[name] = true
+			current = name
 			section = ""
 			if _, ok := itemSections[name]; ok {
 				section = name
@@ -212,28 +223,8 @@ func Criteria(plan []byte) []Criterion {
 	return out
 }
 
-// PlanSection returns the text under the level-2 heading of plan.md named
-// heading (without regard to case) up to the next level-2 heading, trimmed;
-// "" when there is no such section. Headings in fenced code blocks do not
-// count.
-func PlanSection(plan []byte, heading string) string {
-	var b strings.Builder
-	in, inFence := false, false
-	for _, line := range strings.Split(strings.ReplaceAll(string(plan), "\r\n", "\n"), "\n") {
-		trimmed := strings.TrimSpace(line)
-		if strings.HasPrefix(trimmed, "```") || strings.HasPrefix(trimmed, "~~~") {
-			inFence = !inFence
-		}
-		if m := headingPattern.FindStringSubmatch(line); m != nil && !inFence {
-			if in {
-				break
-			}
-			in = strings.EqualFold(m[1], heading)
-			continue
-		}
-		if in {
-			b.WriteString(line + "\n")
-		}
-	}
-	return strings.TrimSpace(b.String())
+// OutOfScope returns the text of the Out of scope section of plan.md,
+// trimmed and without HTML comments; "" when there is none.
+func OutOfScope(plan []byte) string {
+	return strings.TrimSpace(scanPlan(plan).text[outOfScopeSection])
 }

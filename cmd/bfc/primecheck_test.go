@@ -2,9 +2,8 @@ package main
 
 import (
 	"bytes"
-	"encoding/json"
 	"path/filepath"
-	"regexp"
+	"strconv"
 	"strings"
 	"testing"
 
@@ -68,7 +67,8 @@ func TestPrimeCheckOfAPlan(t *testing.T) {
 		"- AC-2: A successful payment sends one email,\n  even when the webhook is delivered twice.",
 		"Refunds and currencies other than EUR.",
 		`"criteria": {`,
-		`"AC-1": "met | not-met | cannot-verify"`,
+		`"AC-1": "<status>"`,
+		"each `met`, `not-met` or `cannot-verify`",
 		`"out_of_scope": [`,
 		`"summary": `,
 	} {
@@ -124,22 +124,15 @@ func TestPrimeCheckCommand(t *testing.T) {
 	}
 }
 
-// Issue #102 AC-4: a recorded agent result, the JSON fence at the end of
-// the agent's last message, goes through bfc check record end to end.
+// Issue #102 AC-4: a recorded agent reply, ending with the result in a
+// json fence, goes through bfc check record end to end: record takes the
+// last json fence of the reply.
 func TestARecordedAgentResultIsRecorded(t *testing.T) {
 	t.Parallel()
 	dir, short, id := draftWithPlan(t)
 	reply := readFile(t, filepath.Join("testdata", "plan-check-reply.md"))
-	m := regexp.MustCompile("(?s)```json\n(.*?)\n```\\s*$").FindStringSubmatch(reply)
-	if m == nil {
-		t.Fatalf("the recorded reply does not end with a json fence:\n%s", reply)
-	}
-	var shape map[string]json.RawMessage
-	if err := json.Unmarshal([]byte(m[1]), &shape); err != nil {
-		t.Fatal(err)
-	}
 
-	out := strings.TrimSpace(mustStdin(t, dir, m[1], "check", "record", short, "--pr", "3", "--head", "9f2c", "--base", "1a7e"))
+	out := strings.TrimSpace(mustStdin(t, dir, reply, "check", "record", short, "--pr", "3", "--head", "9f2c", "--base", "1a7e"))
 
 	show := mustBfc(t, dir, "show", short)
 	for _, want := range []string{"PR #3  " + out, "out of scope: Adds a retry loop to `mail/worker.go`."} {
@@ -149,5 +142,39 @@ func TestARecordedAgentResultIsRecorded(t *testing.T) {
 	}
 	if got := gitIn(t, dir, "ls-tree", "--name-only", plansRef+":"+core.PlanDir(id)+"/checks"); got != out+".md" {
 		t.Errorf("checks/ = %q", got)
+	}
+}
+
+// A reply without a json fence, or whose last one is not the result, is
+// refused.
+func TestCheckRecordNeedsTheResultAtTheEnd(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	for name, reply := range map[string]string{
+		"no fence":         "All criteria met.\n",
+		"broken last json": "```json\n{\"criteria\": {\"AC-1\": \"met\"}, \"summary\": \"x\"}\n```\n\n```json\n{oops\n```\n",
+	} {
+		if out, err := bfcStdin(t, dir, reply, "check", "record", short, "--pr", "1", "--head", "h", "--base", "b"); err == nil {
+			t.Errorf("%s: recorded:\n%s", name, out)
+		}
+	}
+}
+
+// Issue #102 AC-3: the output stays within 8 kB even when the skill, the
+// criteria and Out of scope alone are long.
+func TestPrimeCheckStaysWithin8kB(t *testing.T) {
+	t.Parallel()
+	p := paymentsPlan(core.StateApproved)
+	var criteria strings.Builder
+	for i := 1; i <= 120; i++ {
+		criteria.WriteString("- AC-" + strconv.Itoa(i) + ": " + strings.Repeat("The API answers within the time limit. ", 2) + "\n")
+	}
+	p.Plan = []byte(strings.Replace(checkFixturePlan, "- AC-1: An invalid card returns 402.\n", criteria.String(), 1))
+	out := renderCheckTopicString(t, topicView{Skill: testCheckSkill, Plan: p})
+	if len(out) > primeLimit {
+		t.Errorf("output is %d bytes, more than %d", len(out), primeLimit)
+	}
+	if !strings.Contains(out, "is cut here; run `bfc show bfc-5v7x` for all of it.") {
+		t.Errorf("no cut note")
 	}
 }

@@ -28,7 +28,8 @@ func runPrimeCheck(cmd *cobra.Command, args []string) error {
 }
 
 // renderCheckTopic prints v as Markdown for an agent, at most primeLimit
-// bytes: plan.md is cut to fit, the result shape always ends the output.
+// bytes (see fitDoc): plan.md is cut to fit, and the result shape always
+// ends the output.
 func renderCheckTopic(w io.Writer, v topicView) error {
 	var b strings.Builder
 	if !writeTopicHead(&b, v, "check") {
@@ -50,26 +51,13 @@ func renderCheckTopic(w io.Writer, v topicView) error {
 		fmt.Fprintf(&b, "- %s: %s\n", c.ID, strings.ReplaceAll(c.Text, "\n", "\n  "))
 	}
 	b.WriteString("\n### Out of scope\n\n")
-	if out := core.PlanSection(p.Plan, "Out of scope"); out != "" {
+	if out := core.OutOfScope(p.Plan); out != "" {
 		b.WriteString(out + "\n")
 	} else {
-		b.WriteString("plan.md has no `## Out of scope` section.\n")
+		b.WriteString("plan.md says nothing under `## Out of scope`.\n")
 	}
-
-	shape := resultShape(criteria)
-	body := string(p.Plan)
-	if !strings.HasSuffix(body, "\n") {
-		body += "\n"
-	}
-	fence := fenceFor(body)
-	opening, closing := "\n### plan.md\n\n"+fence+"markdown\n", fence+"\n"
-	if room := primeLimit - b.Len() - len(opening) - len(closing) - len(shape); len(body) > room {
-		cut := fmt.Sprintf("\nplan.md is cut here; run `bfc show %s` for all of it.\n", p.ShortID)
-		room -= len(cut)
-		body = body[:strings.LastIndex(body[:max(room, 0)], "\n")+1]
-		closing += cut
-	}
-	_, err := io.WriteString(w, b.String()+opening+body+closing+shape)
+	b.WriteString("\n### plan.md\n\n")
+	_, err := io.WriteString(w, fitDoc(b.String(), p.Plan, resultShape(criteria), "plan.md", p.ShortID))
 	return err
 }
 
@@ -77,13 +65,13 @@ func renderCheckTopic(w io.Writer, v topicView) error {
 // of plan.md, as bfc check record reads it.
 func resultShape(criteria []core.Criterion) string {
 	var b strings.Builder
-	b.WriteString("\n### Result\n\nEnd with exactly this JSON object in a `json` fence, every criterion above once, and nothing after it:\n\n```json\n{\n  \"criteria\": {")
+	b.WriteString("\n### Result\n\nEnd with this JSON object in a `json` fence, and nothing after it. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.\n\n```json\n{\n  \"criteria\": {")
 	for i, c := range criteria {
 		if i > 0 {
 			b.WriteString(",")
 		}
-		fmt.Fprintf(&b, "\n    %q: \"met | not-met | cannot-verify\"", c.ID)
+		fmt.Fprintf(&b, "\n    %q: \"<status>\"", c.ID)
 	}
-	b.WriteString("\n  },\n  \"out_of_scope\": [\"<one sentence per out-of-scope change>\"],\n  \"summary\": \"<the Markdown summary for the pull request>\"\n}\n```\n\n`out_of_scope` is `[]` when there are none.\n")
+	b.WriteString("\n  },\n  \"out_of_scope\": [\"<one sentence per out-of-scope change>\"],\n  \"summary\": \"<the Markdown summary for the pull request>\"\n}\n```\n")
 	return b.String()
 }

@@ -8,6 +8,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"regexp"
 	"strings"
 	"time"
 
@@ -94,12 +95,23 @@ type checkResult struct {
 	Summary    string            `json:"summary"`
 }
 
+// lastJSONFence finds the last ```json fence of a reply and its content.
+var lastJSONFence = regexp.MustCompile("(?s).*```json[ \t]*\r?\n(.*?)\r?\n[ \t]*```")
+
 // readCheckResult parses the result on r, refusing unknown fields and an
-// empty summary.
+// empty summary. r holds the JSON object itself, or the agent's whole
+// reply, whose last json fence holds it (the plan-check skill).
 func readCheckResult(r io.Reader) (checkResult, error) {
 	data, err := io.ReadAll(r)
 	if err != nil {
 		return checkResult{}, err
+	}
+	if !bytes.HasPrefix(bytes.TrimSpace(data), []byte("{")) {
+		m := lastJSONFence.FindSubmatch(data)
+		if m == nil {
+			return checkResult{}, errors.New("the check result on stdin is neither a JSON object nor a reply that ends with one in a ```json fence")
+		}
+		data = m[1]
 	}
 	dec := json.NewDecoder(bytes.NewReader(data))
 	dec.DisallowUnknownFields()

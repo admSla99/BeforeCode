@@ -48,17 +48,15 @@ Refunds and currencies other than EUR.
 
 ### Result
 
-End with exactly this JSON object in a `json` fence, every criterion above once, and nothing after it:
+End with this JSON object in a `json` fence, and nothing after it. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
 
 ```json
 {
   "criteria": {
-    "AC-1": "met | not-met | cannot-verify",
-    "AC-2": "met | not-met | cannot-verify"
+    "AC-1": "<status>",
+    "AC-2": "<status>"
   },
   "out_of_scope": ["<one sentence per out-of-scope change>"],
   "summary": "<the Markdown summary for the pull request>"
 }
 ```
-
-`out_of_scope` is `[]` when there are none.

@@ -233,14 +233,18 @@ func TestCriteriaHaveTheirText(t *testing.T) {
 	}
 }
 
-// Issue #102 AC-3: the text of one section, found by its heading without
-// regard to case, ignoring headings inside code fences.
-func TestPlanSection(t *testing.T) {
-	plan := "## Context\n\n```\n## Out of scope\nin a fence\n```\n\n## out of scope\n\nRefunds.\n\nCurrencies.\n\n## Tasks\n\n- T-1: x\n"
-	if got := core.PlanSection([]byte(plan), "Out of scope"); got != "Refunds.\n\nCurrencies." {
-		t.Errorf("PlanSection = %q", got)
+// Issue #102 AC-3: the text of Out of scope, without HTML comments, its
+// heading matched without regard to case, headings in fences ignored.
+func TestOutOfScope(t *testing.T) {
+	plan := "## Context\n\n```\n## Out of scope\nin a fence\n```\n\n## out of scope\n\n<!-- What must not change. -->\n\nRefunds.\n\n```\n## not a heading\n```\n\nCurrencies.\n\n## Tasks\n\n- T-1: x\n"
+	if got := core.OutOfScope([]byte(plan)); got != "Refunds.\n\n```\n## not a heading\n```\n\nCurrencies." {
+		t.Errorf("OutOfScope = %q", got)
 	}
-	if got := core.PlanSection([]byte(plan), "Approach"); got != "" {
-		t.Errorf("missing section = %q", got)
+	tpl, err := os.ReadFile(filepath.Join("..", "..", ".beforecode", "templates", "plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := core.OutOfScope(tpl); got != "" {
+		t.Errorf("the template's comment counts as Out of scope: %q", got)
 	}
 }
