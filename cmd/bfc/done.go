@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"context"
 	"errors"
 	"fmt"
 	"os"
@@ -11,6 +12,8 @@ import (
 	"github.com/spf13/cobra"
 
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
+	"github.com/admSla99/BeforeCode/internal/store"
 )
 
 func newDoneCmd() *cobra.Command {
@@ -30,9 +33,20 @@ terminal it asks before it writes (--yes does not ask). It is a Gate: a
 person runs it, not an agent.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
-			warnings, err := doneWarnings(cmd, args[0])
+			s, err := openPlans(cmd, forReading)
 			if err != nil {
 				return err
+			}
+			v, err := resolvePlan(cmd.Context(), s, args[0])
+			if err != nil {
+				return err
+			}
+			// A plan that cannot be done gets the refusal, not the warnings.
+			var warnings []string
+			if core.CheckDone(v.Status) == nil {
+				if warnings, err = doneWarnings(cmd.Context(), s, v); err != nil {
+					return err
+				}
 			}
 			w := cmd.ErrOrStderr()
 			for _, warning := range warnings {
@@ -55,19 +69,9 @@ person runs it, not an agent.`,
 	return cmd
 }
 
-// doneWarnings says what is unfinished in the plan: Tasks that are not
-// completed and Findings of the newest checks that wait. Refusals are left
-// to runReview, so a plan that cannot be done gets no warnings.
-func doneWarnings(cmd *cobra.Command, query string) ([]string, error) {
-	ctx := cmd.Context()
-	s, err := openPlans(cmd, forReading)
-	if err != nil {
-		return nil, err
-	}
-	v, err := resolvePlan(ctx, s, query)
-	if err != nil || core.CheckDone(v.Status) != nil {
-		return nil, nil
-	}
+// doneWarnings says what is unfinished in the plan v: Tasks that are not
+// completed and Findings of the newest checks that wait.
+func doneWarnings(ctx context.Context, s *store.Store, v index.Plan) ([]string, error) {
 	var out []string
 	for _, t := range core.TaskViews(v.Status, v.Plan) {
 		if t.State != core.TaskCompleted {

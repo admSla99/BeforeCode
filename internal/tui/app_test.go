@@ -568,9 +568,13 @@ func TestAppDetailSaysWhyApprovalWaits(t *testing.T) {
 // with an optional note, and only when the action is offered.
 func TestAppDoneAsksToConfirm(t *testing.T) {
 	f := newFakeTeam()
+	d := f.details["bfc-5v7x"]
+	d.DoneWarnings = []string{"T-2 is open, not completed"}
+	f.details["bfc-5v7x"] = d
 	tm := openDetailWith(t, f, ActionClose, ActionDone)
 	send(tm, "d")
 	waitFor(t, tm, "Mark bfc-5v7x done? It is final. Note (optional):")
+	waitFor(t, tm, "warning: T-2 is open, not completed")
 	send(tm, "esc", "d")
 	send(tm, strings.Split("Shipped", "")...)
 	send(tm, "enter")

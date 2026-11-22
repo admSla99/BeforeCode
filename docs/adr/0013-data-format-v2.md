@@ -52,7 +52,7 @@ A Task is a top-level list item in the `## Tasks` section, in the form `- T-<n>:
 | `claimed` | `task` (`T-<n>`) | anyone, agents included | The writer holds the Task |
 | `released` | `task`, `handoff` (ULID) | the holder of the Task | The Task is Paused; anyone may claim it again |
 | `completed` | `task`, `handoff` (ULID) | the holder of the Task | The Task is done |
-| `done` | `message` (optional) | anyone, never with `agent` (a Gate) | `in-progress` → `done`, which is final |
+| `done` | `message` (optional), `plan_blob` | anyone, never with `agent` (a Gate) | `in-progress` → `done`, which is final |
 
 The reserved `checked` is dropped: a plan check does not change plan state, so its result is a file in `checks/` and not an Event.
 
@@ -69,7 +69,7 @@ The reserved `checked` is dropped: a plan check does not change plan state, so i
 
 - A plan whose state is `approved` is `in-progress` when at least one Task has a valid `claimed`.
 - Editing `plan.md` still makes the Approvals stale, so an `in-progress` plan returns to `in-review` like an `approved` one. Its Claims stay and the plan is `in-progress` again once the new version is approved.
-- A valid `done` (one that finds the plan `in-progress`) makes the state `done`. Like `closed` it is final: every later Event is skipped, `closed` included, and every command that writes refuses the plan.
+- A valid `done` (one that finds the plan `in-progress`) makes the state `done`. It records the `plan_blob` of the `plan.md` it finished, and the Approvals of the open review round count for that version (added by issue #111), so a `plan.md` changed in another clone before the `done` reached it does not undo the `done`. Like `closed` it is final: every later Event is skipped, `closed` included, and every command that writes refuses the plan.
 
 ### 5. Handoffs
 

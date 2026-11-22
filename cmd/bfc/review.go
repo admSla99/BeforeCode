@@ -145,15 +145,15 @@ var reviewActions = map[core.EventType]reviewAction{
 		detail:  func(core.Status) string { return "final" },
 	},
 	core.Done: {
-		command: "done",
-		check:   func(v index.Plan, _ core.Person, _ string) error { return core.CheckDone(v.Status) },
-		detail:  func(core.Status) string { return "final" },
+		command: "done", planBlob: true,
+		check:  func(v index.Plan, _ core.Person, _ string) error { return core.CheckDone(v.Status) },
+		detail: func(core.Status) string { return "final" },
 	},
 }
 
 // runReview checks that the event fits the plan and its author, writes it
-// (with the reason as a Message for changes-requested, and for closed when
-// one is given) as one commit, and prints the new state.
+// (with the reason as a Message for changes-requested, and for closed and
+// done when one is given) as one commit, and prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {

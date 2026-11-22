@@ -57,7 +57,7 @@ file of the plan. Closed and done plans are left out unless asked for with
 			case state != "":
 				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State != core.State(state) })
 			case !all:
-				views = slices.DeleteFunc(views, func(v index.Plan) bool { return core.CheckWritable(v.Status) != nil })
+				views = slices.DeleteFunc(views, func(v index.Plan) bool { return v.Status.State.Final() })
 			}
 			if asJSON {
 				return printJSON(cmd, views)

@@ -238,6 +238,9 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 	}
 	if core.CheckDone(v.Status) == nil {
 		d.Actions = append(d.Actions, tui.ActionDone)
+		if d.DoneWarnings, err = doneWarnings(ctx, s, v); err != nil {
+			return tui.PlanDetail{}, err
+		}
 	}
 	return d, nil
 }

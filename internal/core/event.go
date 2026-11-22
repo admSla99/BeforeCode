@@ -44,7 +44,7 @@ type Event struct {
 	Agent  string // set when an AI wrote the event through a harness
 
 	ShortID           string // created
-	PlanBlob          string // submitted, approved, changes-requested
+	PlanBlob          string // submitted, approved, changes-requested, done
 	RequiredApprovals int    // submitted
 	Message           string // changes-requested, closed: ULID of a Message
 	Task              string // claimed, released, completed: T-<n> (ADR 0013 section 4)
@@ -133,6 +133,10 @@ const (
 	StateInvalid    State = "invalid"
 )
 
+// Final reports whether a plan in state s takes no more writes: closed and
+// done are final.
+func (s State) Final() bool { return s == StateClosed || s == StateDone }
+
 // The Event types format version 2 adds (ADR 0013 section 4).
 const (
 	Claimed   EventType = "claimed"
@@ -199,11 +203,11 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if n < minShortIDLen || n > maxShortIDLen || e.ShortID != ShortIDPrefix+own[:n] {
 			return fmt.Errorf("event %s: short_id %q is not %s and the first 4 to 16 characters of %s", id, e.ShortID, ShortIDPrefix, own)
 		}
-	case Submitted, Approved, ChangesRequested:
+	case Submitted, Approved, ChangesRequested, Done:
 		if !objectIDPattern.MatchString(e.PlanBlob) {
 			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
 		}
-	case Withdrawn, Closed, Done:
+	case Withdrawn, Closed:
 	case Claimed, Released, Completed:
 		if !taskID.MatchString(e.Task) {
 			return fmt.Errorf("event %s: task %q is not a Task ID such as T-1", id, e.Task)

@@ -22,12 +22,12 @@ type stateFilter struct {
 }
 
 var stateFilters = []stateFilter{
-	{"open", func(s core.State) bool { return s != core.StateClosed && s != core.StateDone }},
+	{"open", func(s core.State) bool { return !s.Final() }},
 	{"in-review", func(s core.State) bool { return s == core.StateInReview }},
 	{"approved", func(s core.State) bool { return s == core.StateApproved }},
 	{"in-progress", func(s core.State) bool { return s == core.StateInProgress }},
 	{"draft", func(s core.State) bool { return s == core.StateDraft }},
-	{"closed", func(s core.State) bool { return s == core.StateClosed || s == core.StateDone }},
+	{"closed", func(s core.State) bool { return s.Final() }},
 	{"all", func(core.State) bool { return true }},
 }
 
@@ -166,7 +166,7 @@ func (m PlanList) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 // groupOf is the state group a plan in state s is listed in: a done plan
 // with the closed ones.
 func groupOf(s core.State) core.State {
-	if s == core.StateDone {
+	if s.Final() {
 		return core.StateClosed
 	}
 	return s

@@ -158,9 +158,11 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 					round = append(round, e)
 				}
 			case Done:
-				// Valid only while the plan is in-progress: approved by the
-				// current plan.md, with a Claim (ADR 0013 section 4).
-				inProgress := inRound && len(st.Tasks) > 0 && len(validApprovers(round, planBlob)) >= st.RequiredApprovals
+				// Valid only while the plan is in-progress: approved, with a
+				// Claim (ADR 0013 section 4). The Approvals count for the
+				// plan.md the done names, not the current one, so a plan.md
+				// changed elsewhere before the done arrived does not undo it.
+				inProgress := inRound && len(st.Tasks) > 0 && len(validApprovers(round, e.PlanBlob)) >= st.RequiredApprovals
 				if valid = e.Agent == "" && inProgress; valid {
 					st.State, st.RequiredApprovals, st.Approvers = StateDone, 0, nil
 					skip(events[start+2+i:]...)

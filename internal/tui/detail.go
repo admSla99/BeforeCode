@@ -178,6 +178,9 @@ func (m PlanDetailScreen) footer() []string {
 	case ActionClose:
 		lines = append(lines, "Close "+m.shortID+"? Reason (optional): "+m.reason+"▌  "+styleDim.Render("(enter: close, esc: cancel)"))
 	case ActionDone:
+		for _, w := range m.detail.DoneWarnings {
+			lines = append(lines, styleWarn.Render("warning: "+w))
+		}
 		lines = append(lines, "Mark "+m.shortID+" done? It is final. Note (optional): "+m.reason+"▌  "+styleDim.Render("(enter: done, esc: cancel)"))
 	}
 	if n := m.detail.BlockingQuestions; n > 0 && m.typing == "" {

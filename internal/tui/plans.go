@@ -57,8 +57,12 @@ type PlanDetail struct {
 	// BlockingQuestions is the number of open Questions that alone keep the
 	// current user from approving; 0 when they could not approve anyway.
 	BlockingQuestions int
-	// Editable is true when the documents may be edited (not closed).
+	// Editable is true when the documents may be edited (not closed or
+	// done).
 	Editable bool
+	// DoneWarnings are what is unfinished when the plan is marked done:
+	// Tasks not completed, Findings nobody acknowledged.
+	DoneWarnings []string
 }
 
 // Doc names one of the two documents of a Plan.
