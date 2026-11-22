@@ -47,6 +47,7 @@ type Event struct {
 	PlanBlob          string // submitted, approved, changes-requested
 	RequiredApprovals int    // submitted
 	Message           string // changes-requested, closed: ULID of a Message
+	Task              string // claimed: T-<n> (ADR 0013 section 4)
 }
 
 // eventFile is the YAML layout: common fields first, then the fields of the
@@ -61,6 +62,7 @@ type eventFile struct {
 	PlanBlob          string    `yaml:"plan_blob,omitempty"`
 	RequiredApprovals int       `yaml:"required_approvals,omitempty"`
 	Message           string    `yaml:"message,omitempty"`
+	Task              string    `yaml:"task,omitempty"`
 }
 
 // EncodeEvent returns the file content of e.
@@ -78,6 +80,7 @@ func EncodeEvent(e Event) []byte {
 		PlanBlob:          e.PlanBlob,
 		RequiredApprovals: e.RequiredApprovals,
 		Message:           e.Message,
+		Task:              e.Task,
 	})
 	if err != nil {
 		panic(err) // plain strings and ints always encode
@@ -108,6 +111,7 @@ func ParseEvent(id ulid.ULID, data []byte) (Event, error) {
 	return Event{
 		ID: id, Type: f.Type, Plan: plan, Author: f.Author, At: f.At.UTC(), Agent: f.Agent,
 		ShortID: f.ShortID, PlanBlob: f.PlanBlob, RequiredApprovals: f.RequiredApprovals, Message: f.Message,
+		Task: f.Task,
 	}, nil
 }
 
@@ -126,24 +130,29 @@ const (
 	StateInvalid    State = "invalid"
 )
 
-// Reserved Event types (ADR 0002 section 4): a format version 1 binary never
-// writes them.
+// The Event types format version 2 adds (ADR 0013 section 4). Claimed is
+// written from issue #108; done comes with bfc done (#111).
 const (
 	Claimed EventType = "claimed"
-	Checked EventType = "checked"
 	Done    EventType = "done"
 )
 
-// KnownEventType reports whether t is an Event type that format version 1
-// writes. The reserved claimed, checked and done are not: they belong to a
-// later format version, as may any type this binary does not know.
+// Checked was reserved by format version 1 and dropped by format version 2:
+// a plan check result is a file in checks/, not an Event (ADR 0013).
+const Checked EventType = "checked"
+
+// KnownEventType reports whether t is an Event type this binary writes.
+// Any other type may belong to a later format version.
 func KnownEventType(t EventType) bool {
 	switch t {
-	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed:
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed:
 		return true
 	}
 	return false
 }
+
+// taskID is the ID of a Task: T-<n> without leading zeros.
+var taskID = regexp.MustCompile(`^T-[1-9][0-9]*$`)
 
 // objectIDPattern matches a git object ID: SHA-1 or SHA-256 in hex.
 var objectIDPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
@@ -151,7 +160,7 @@ var objectIDPattern = regexp.MustCompile(`^(?:[0-9a-f]{40}|[0-9a-f]{64})$`)
 // ValidateEvent checks the event file name in the events directory of plan
 // against the data format (ADR 0002 sections 1, 3 and 4): a name of an
 // upper-case ULID and ".yaml", the common fields, a plan field equal to the
-// plan, a type of format version 1 and the fields that type requires.
+// plan, a type this bfc writes and the fields that type requires.
 // Unknown fields are allowed. It does not check whether the event is allowed
 // for its author or fits the plan state; SkippedEvents reports those.
 func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
@@ -191,8 +200,12 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
 		}
 	case Withdrawn, Closed:
-	case Claimed, Checked, Done:
-		return fmt.Errorf("event %s: type %q is reserved for a later format version", id, e.Type)
+	case Claimed:
+		if !taskID.MatchString(e.Task) {
+			return fmt.Errorf("event %s: task %q is not a Task ID such as T-1", id, e.Task)
+		}
+	case Checked, Done:
+		return fmt.Errorf("event %s: type %q is not written by this bfc", id, e.Type)
 	default:
 		return fmt.Errorf("event %s: unknown type %q", id, e.Type)
 	}

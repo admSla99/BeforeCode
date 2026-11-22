@@ -27,7 +27,7 @@ import (
 // meaning of a column changes, and whenever reading a plan gives another
 // result for the same files (core.Derive, core.ParseIntent, searchText):
 // plans whose directory did not change are not read again.
-const schemaVersion = 2
+const schemaVersion = 3
 
 // File is where the index lives, relative to the git common directory.
 const File = "beforecode/index.db"
@@ -131,21 +131,35 @@ func (ix *Index) Update(ctx context.Context) (Updated, error) {
 	return u, err
 }
 
-// Plans returns every plan, newest activity first.
+// Plans returns every plan, newest activity first, without its documents.
 func (ix *Index) Plans(ctx context.Context) ([]Plan, error) {
+	return ix.plans(ctx, false)
+}
+
+// PlansWithDocuments is Plans with intent.md and plan.md, for readers of
+// every plan's Tasks.
+func (ix *Index) PlansWithDocuments(ctx context.Context) ([]Plan, error) {
+	return ix.plans(ctx, true)
+}
+
+func (ix *Index) plans(ctx context.Context, docs bool) ([]Plan, error) {
+	columns := headerColumns
+	if docs {
+		columns = docColumns
+	}
 	var plans []Plan
 	err := ix.retry(ctx, func() error {
 		if _, err := ix.update(ctx); err != nil {
 			return err
 		}
-		rows, err := ix.db.QueryContext(ctx, `SELECT `+headerColumns+` FROM plans p ORDER BY p.last_activity DESC, p.id DESC`)
+		rows, err := ix.db.QueryContext(ctx, `SELECT `+columns+` FROM plans p ORDER BY p.last_activity DESC, p.id DESC`)
 		if err != nil {
 			return err
 		}
 		defer func() { _ = rows.Close() }()
 		plans = nil
 		for rows.Next() {
-			p, err := scanPlan(rows, false)
+			p, err := scanPlan(rows, docs)
 			if err != nil {
 				return err
 			}
@@ -271,6 +285,7 @@ CREATE TABLE plans (
 	author_email       TEXT NOT NULL,
 	required_approvals INTEGER NOT NULL,
 	approvers          TEXT NOT NULL,    -- JSON array
+	claims             TEXT NOT NULL,    -- JSON object: Task ID -> core.Claim
 	last_activity      INTEGER NOT NULL, -- Unix seconds; 0 when unknown
 	intent             TEXT,             -- NULL when missing
 	plan               TEXT              -- NULL when missing
@@ -282,7 +297,7 @@ CREATE VIRTUAL TABLE plan_text USING fts5(title, intent, plan, tokenize = 'unico
 // documents, which only Plan returns.
 const (
 	headerColumns = `p.id, p.short_id, p.state, p.title, p.labels, p.author_name, p.author_email,
-	p.required_approvals, p.approvers, p.last_activity`
+	p.required_approvals, p.approvers, p.claims, p.last_activity`
 	docColumns = headerColumns + `, p.intent, p.plan`
 )
 
@@ -573,19 +588,28 @@ func upsert(ctx context.Context, tx *sql.Tx, p Plan, tree string) error {
 	if err != nil {
 		return err
 	}
+	claims := p.Status.Claims
+	if claims == nil {
+		claims = map[string]core.Claim{}
+	}
+	cl, err := json.Marshal(claims)
+	if err != nil {
+		return err
+	}
 	var rowid int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO plans (id, tree, short_id, state, title, labels, author_name, author_email,
-			required_approvals, approvers, last_activity, intent, plan)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+			required_approvals, approvers, claims, last_activity, intent, plan)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET tree = excluded.tree, short_id = excluded.short_id,
 			state = excluded.state, title = excluded.title, labels = excluded.labels,
 			author_name = excluded.author_name, author_email = excluded.author_email,
 			required_approvals = excluded.required_approvals, approvers = excluded.approvers,
+			claims = excluded.claims,
 			intent = excluded.intent, plan = excluded.plan
 		RETURNING rowid`,
 		p.ID.String(), tree, p.Status.ShortID, string(p.Status.State), p.Title, string(labels),
-		p.Status.Author.Name, p.Status.Author.Email, p.Status.RequiredApprovals, string(appr),
+		p.Status.Author.Name, p.Status.Author.Email, p.Status.RequiredApprovals, string(appr), string(cl),
 		nullable(p.Intent), nullable(p.Plan)).Scan(&rowid)
 	if err != nil {
 		return err
@@ -618,11 +642,11 @@ func nullable(b []byte) any {
 // followed by the columns in extra.
 func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	var p Plan
-	var id, state, labels, approvers string
+	var id, state, labels, approvers, claims string
 	var lastActivity int64
 	var intent, plan sql.NullString
 	dest := []any{&id, &p.Status.ShortID, &state, &p.Title, &labels, &p.Status.Author.Name,
-		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &lastActivity}
+		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &claims, &lastActivity}
 	if docs {
 		dest = append(dest, &intent, &plan)
 	}
@@ -643,6 +667,12 @@ func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	}
 	if len(p.Status.Approvers) == 0 {
 		p.Status.Approvers = nil // as core.Derive leaves it
+	}
+	if err := json.Unmarshal([]byte(claims), &p.Status.Claims); err != nil {
+		return p, err
+	}
+	if len(p.Status.Claims) == 0 {
+		p.Status.Claims = nil // as core.Derive leaves it
 	}
 	if lastActivity != 0 {
 		p.LastActivity = time.Unix(lastActivity, 0).UTC()
