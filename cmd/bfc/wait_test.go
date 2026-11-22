@@ -14,14 +14,17 @@ type waitResult struct {
 	err error
 }
 
-// runAsync runs bfc in dir in the background.
+// runAsync runs bfc in dir in the background. The test does not end
+// before the run does.
 func runAsync(t *testing.T, dir string, args ...string) <-chan waitResult {
 	t.Helper()
-	done := make(chan waitResult, 1)
+	done, finished := make(chan waitResult, 1), make(chan struct{})
 	go func() {
+		defer close(finished)
 		out, err := bfcIn(t, dir, args...)
 		done <- waitResult{out, err}
 	}()
+	t.Cleanup(func() { <-finished })
 	return done
 }
 
@@ -122,5 +125,15 @@ func TestWaitInLocalMode(t *testing.T) {
 	}
 	if out, err := bfcIn(t, dir, "wait", "01JD3K8Q2W5V7X9Y0Z1A2B3C4E"); err == nil || !strings.Contains(out, "no Message") {
 		t.Errorf("wait on an unknown Message: %v\n%s", err, out)
+	}
+	note := strings.TrimSpace(mustBfc(t, dir, "reply", q, "-m", "A note, no Question."))
+	if out, err := bfcIn(t, dir, "wait", note); err == nil || !strings.Contains(out, "is not a Question") {
+		t.Errorf("wait on a Message that is no Question: %v\n%s", err, out)
+	}
+	// A timeout shorter than the interval still reads at the deadline.
+	q2 := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "-m", "And GBP?"))
+	mustBfc(t, dir, "reply", q2, "-m", "No.")
+	if out := mustBfc(t, dir, "wait", q2, "--timeout", "1ms", "--interval", "1h"); !strings.Contains(out, "No.") {
+		t.Errorf("wait with a short timeout:\n%s", out)
 	}
 }

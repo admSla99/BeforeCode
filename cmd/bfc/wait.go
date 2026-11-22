@@ -2,6 +2,7 @@ package main
 
 import (
 	"fmt"
+	"slices"
 	"time"
 
 	"github.com/oklog/ulid/v2"
@@ -15,15 +16,6 @@ import (
 // defaultWaitTimeout keeps a wait inside one call of Claude Code's Bash
 // tool, which allows at most 10 minutes (docs/design.md section 3).
 const defaultWaitTimeout = 9 * time.Minute
-
-// exitCodeError ends bfc with its own exit code instead of 1.
-type exitCodeError struct {
-	code int
-	err  error
-}
-
-func (e *exitCodeError) Error() string { return e.err.Error() }
-func (e *exitCodeError) Unwrap() error { return e.err }
 
 // waitFlags are the flags of bfc wait and bfc ask --wait.
 type waitFlags struct {
@@ -66,6 +58,13 @@ keep waiting; any other error exits with code 1.`,
 			if err != nil {
 				return err
 			}
+			msgs, err := readMessages(cmd.Context(), s, plan)
+			if err != nil {
+				return err
+			}
+			if !slices.ContainsFunc(msgs, func(m core.Message) bool { return m.ID == id && m.IsQuestion() }) {
+				return fmt.Errorf("the Message %s is not a Question, so no answer comes; bfc show %s lists the open Questions", id, v.ShortID)
+			}
 			return waitForAnswer(cmd, s, v, id, f, asJSON)
 		},
 	}
@@ -74,9 +73,11 @@ keep waiting; any other error exits with code 1.`,
 	return cmd
 }
 
-// waitForAnswer pulls every interval until the Question q of the plan v is
-// answered, then prints the answer. Outside local mode it pulls first; a
-// failed pull is tried again at the next interval.
+// waitForAnswer pulls and reads until the Question q of the plan v is
+// answered, then prints the answer: at once, every interval, and once more
+// at the deadline. In local mode it only reads. A failed pull is tried again
+// at the next interval; when the last pull before the deadline failed too,
+// that error is the result (exit 1), not the timeout (exit 2).
 func waitForAnswer(cmd *cobra.Command, s *store.Store, v index.Plan, q ulid.ULID, f waitFlags, asJSON bool) error {
 	ctx := cmd.Context()
 	set, err := syncSettings(s)
@@ -89,6 +90,10 @@ func waitForAnswer(cmd *cobra.Command, s *store.Store, v index.Plan, q ulid.ULID
 	}
 	deadline := time.Now().Add(f.timeout)
 	for {
+		var pullErr error
+		if !set.local {
+			_, pullErr = s.Pull(ctx, set.remote, store.KeepNeither)
+		}
 		msgs, err := readMessages(ctx, s, v.ID)
 		if err != nil {
 			return err
@@ -96,16 +101,17 @@ func waitForAnswer(cmd *cobra.Command, s *store.Store, v index.Plan, q ulid.ULID
 		if answer, ok := core.AnswerOf(msgs, q); ok {
 			return printAnswer(cmd, v, answer, asJSON)
 		}
-		if !time.Now().Add(interval).Before(deadline) {
+		left := time.Until(deadline)
+		switch {
+		case left <= 0 && pullErr != nil:
+			return fmt.Errorf("waiting for the answer to %s: %w", q, syncError(cmd, s, pullErr))
+		case left <= 0:
 			return &exitCodeError{code: 2, err: fmt.Errorf("the Question %s is not answered after %s; keep waiting with bfc wait %s", q, f.timeout, q)}
 		}
 		select {
 		case <-ctx.Done():
 			return ctx.Err()
-		case <-time.After(interval):
-		}
-		if !set.local {
-			_, _ = s.Pull(ctx, set.remote, store.KeepNeither) // offline: try again later
+		case <-time.After(min(interval, left)):
 		}
 	}
 }
