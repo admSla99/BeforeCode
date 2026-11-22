@@ -45,3 +45,10 @@ Why: an agent runs `bfc` under the developer's git identity. Without this check 
 - Because `.beforecode/` and `.claude/` are exempt, an agent could also turn the hook off (`claude.enforce: false`) or remove it from `.claude/settings.json`. Like the Gate check, the hook guards against mistakes, not against a hostile agent; such a change is a diff on a normal branch that review sees.
 - An agent can still change files through Bash without an approved plan. That is a known gap, closed at pull request time by the Plan check, not by the hook.
 - A new harness in phase 4 needs its own detection variable and, if it has hooks, its own hook command.
+
+## Amendment (2026-11-22, issue #99)
+
+Phase 3 settles the two open points above (ADR 0013):
+
+- **The hook allows edits while the Current plan is `approved` or `in-progress`**, whoever holds a Claim. A Claim coordinates who works on a Task; it does not lock the code, and requiring one would block ordinary work on an approved plan. Editing `plan.md` returns the plan to `in-review`, so the next edit is blocked again. The cache in `hook-approved` covers `in-progress` the same way.
+- **`done` is a Gate**, and **`bfc acknowledge`** (accepting a plan check Finding on purpose) is for people too. Both refuse inside an agent and `bfc setup claude` denies them.
