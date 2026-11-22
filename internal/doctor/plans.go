@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"slices"
 	"sort"
-	"strconv"
 	"strings"
 
 	"github.com/oklog/ulid/v2"
@@ -33,15 +32,17 @@ func checkFormatVersion(ctx context.Context, e *env) Result {
 	if err != nil {
 		return fail(noRepair+"see it with git show "+store.Ref+":format-version", "cannot read format-version: %v", err)
 	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	v, err := core.ParseFormatVersion(data)
 	switch {
 	case err != nil:
-		return fail(noRepair+"see it with git show "+store.Ref+":format-version", "format-version %q is not a number", data)
+		return fail(noRepair+"see it with git show "+store.Ref+":format-version", "%v", err)
 	case v > core.FormatVersion:
 		return fail(update, "format-version %d is newer than this bfc supports (%d)", v, core.FormatVersion)
-	case v < core.FormatVersion:
-		return fail("this bfc cannot migrate it yet; use the bfc release that wrote it",
+	case v == core.MigratesFrom:
+		return fail("bfc migrate; bfc doctor --fix leaves this to you, because once the migration is pushed older bfc versions stop writing",
 			"format-version %d is older than this bfc writes (%d) and needs a migration", v, core.FormatVersion)
+	case v != core.FormatVersion:
+		return fail(noRepair+"see it with git show "+store.Ref+":format-version", "format-version %d is not supported by this bfc (%d)", v, core.FormatVersion)
 	}
 	return pass("%d", v)
 }

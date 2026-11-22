@@ -16,9 +16,12 @@
 
 ## Tasks
 
-<!-- A list of units of work, in order. -->
+<!--
+One unit of work per item, in the order of the work: "- T-<n>: <text>". Indent continuation lines.
+IDs are never reused or renumbered; leave a gap when you remove one.
+-->
 
--
+- T-1:
 
 ## Acceptance criteria
 

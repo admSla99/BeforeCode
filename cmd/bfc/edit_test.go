@@ -27,7 +27,7 @@ Refunds.
 
 ## Tasks
 
-- Add the client.
+- T-1: Add the client.
 
 ## Acceptance criteria
 

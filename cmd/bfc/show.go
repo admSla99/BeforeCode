@@ -65,8 +65,15 @@ type showJSON struct {
 	Intent             string        `json:"intent"`
 	Plan               *string       `json:"plan"`
 	AcceptanceCriteria []string      `json:"acceptance_criteria"`
+	Tasks              []taskJSON    `json:"tasks"`
 	OpenQuestions      []messageJSON `json:"open_questions"`
 	Messages           []postJSON    `json:"messages"`
+}
+
+// taskJSON is a Task of plan.md in bfc show --json (ADR 0013 section 3).
+type taskJSON struct {
+	ID   string `json:"id"`
+	Text string `json:"text"`
 }
 
 // postJSON is a Message in the messages of bfc show --json: the shape of
@@ -83,12 +90,16 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message) error 
 		Approvers:          append([]string{}, v.Status.Approvers...),
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
+		Tasks:              []taskJSON{},
 		OpenQuestions:      make([]messageJSON, 0, len(open)),
 		Messages:           make([]postJSON, 0, len(msgs)),
 	}
 	if v.Plan != nil {
 		plan := string(v.Plan)
 		out.Plan = &plan
+	}
+	for _, task := range core.Tasks(v.Plan) {
+		out.Tasks = append(out.Tasks, taskJSON{ID: task.ID, Text: task.Text})
 	}
 	for _, q := range open {
 		out.OpenQuestions = append(out.OpenQuestions, toMessageJSON(v, q))

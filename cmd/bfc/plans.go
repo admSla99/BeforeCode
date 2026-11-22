@@ -4,8 +4,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 	"time"
 
 	"github.com/spf13/cobra"
@@ -99,18 +97,20 @@ func checkPlansRef(cmd *cobra.Command, s *store.Store, mode access) error {
 	case err != nil:
 		return err
 	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	v, err := core.ParseFormatVersion(data)
 	switch {
 	case err != nil:
-		return fmt.Errorf("the plans ref has an unreadable format-version %q", data)
+		return fmt.Errorf("the plans ref has an unreadable %w; run bfc doctor", err)
 	case v < core.FormatVersion && mode == forReading:
 		// An older format reads the same way; only writing needs a migration.
 	case v > core.FormatVersion && mode == forReading:
 		_, _ = fmt.Fprintf(cmd.ErrOrStderr(), "warning: the plans ref has format-version %d, newer than this bfc (%d); update bfc\n", v, core.FormatVersion)
 	case v > core.FormatVersion:
 		return fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
+	case v == core.MigratesFrom:
+		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; run bfc migrate to upgrade it", v, core.FormatVersion)
 	case v != core.FormatVersion:
-		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; it needs a migration", v, core.FormatVersion)
+		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not support; run bfc doctor", v, core.FormatVersion)
 	}
 	return nil
 }

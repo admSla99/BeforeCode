@@ -200,8 +200,8 @@ func TestInitCreatesConfigTemplatesAndPlansRefWithoutCommitting(t *testing.T) {
 			t.Errorf("template %s differs from the default:\n%s", name, got)
 		}
 	}
-	if got := gitIn(t, clone, "show", plansRef+":format-version"); got != "1" {
-		t.Errorf("format-version = %q, want %q", got, "1")
+	if got := gitIn(t, clone, "show", plansRef+":format-version"); got != "2" {
+		t.Errorf("format-version = %q, want %q", got, "2")
 	}
 	if got := gitIn(t, clone, "rev-parse", "HEAD"); got != head {
 		t.Errorf("HEAD moved from %s to %s: init must not commit", head, got)
@@ -385,7 +385,7 @@ func TestInitLocalSkipsRemoteAndRecordsSyncOff(t *testing.T) {
 	if want := (config.Config{RequiredApprovals: 1, ClaudeCommand: "claude"}); cfg != want {
 		t.Errorf("config = %+v, want %+v", cfg, want)
 	}
-	if got := gitIn(t, dir, "show", plansRef+":format-version"); got != "1" {
+	if got := gitIn(t, dir, "show", plansRef+":format-version"); got != "2" {
 		t.Errorf("format-version = %q", got)
 	}
 	if got, _ := gitTry(dir, "config", "--get-regexp", `^remote\.`); got != "" {

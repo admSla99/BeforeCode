@@ -43,6 +43,13 @@ bfc approve bfc-5v7x            # someone other than the plan author approves
 bfc push
 ```
 
+**Upgrade the plans of an older bfc.** A plans ref written before phase 3 has `format-version` 1. This `bfc` reads it but writes only after one person migrates it:
+
+```
+bfc migrate                     # rewrites format-version 1 to 2 in one commit
+bfc push                        # then everyone who writes plans needs this bfc or newer
+```
+
 **Work on an approved plan.** `bfc start` puts everyone who works on a plan on the same branch:
 
 ```

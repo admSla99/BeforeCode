@@ -16,7 +16,7 @@ You turn a plan's Intent and the answers from its Grill into `plan.md`: the docu
    - **Approach**: how the change is made, and why this way.
    - **Affected areas**: the packages, files, APIs or data that change.
    - **Out of scope**: from the Intent and the Grill, stated plainly.
-   - **Tasks**: units of work, in order.
+   - **Tasks**: one item each, `- T-1: <text>`, `- T-2: <text>`, … in the order of the work. Each is a unit one agent can claim and finish on its own, then hand off; there are no dependencies, so the list order is the plan.
    - **Acceptance criteria**: one item each, `- AC-1: <text>`, `- AC-2: <text>`, … Each is a single observable result that a test or a person can check: an input and the expected outcome, a number, a state. Together they cover the Intent's "how we know it worked" and every decision from the Grill that changes behaviour.
 4. **Check it** with `bfc edit <id> --stdin --check`, the document on stdin:
 
@@ -36,7 +36,7 @@ You turn a plan's Intent and the answers from its Grill into `plan.md`: the docu
 `bfc edit --stdin` stores `plan.md` only while it is still the template. When `plan.md` already has content, `bfc prime plan` shows it, and changing it is the author's call:
 
 1. Ask the author whether to revise it, and wait for a yes. If the plan is approved, say that a new version makes its Approvals stale and returns it to review.
-2. Build on that text. Keep every existing ID: `AC-3` stays `AC-3`, a removed criterion leaves a gap, and a new one takes the next unused number.
+2. Build on that text. Keep every existing ID: `AC-3` stays `AC-3` and `T-2` stays `T-2`, a removed criterion or Task leaves a gap, and a new one takes the next unused number. Claims and Handoffs refer to Task IDs.
 3. Check the revision with `--check` as above, then store it with `bfc edit <id> --stdin --force`.
 
 Submitting, approving and the other Gates are for the author in the `bfc` TUI.

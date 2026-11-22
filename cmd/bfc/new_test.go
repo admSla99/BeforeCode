@@ -211,17 +211,17 @@ func TestNewBeforeInitPointsToInitAndBootstrap(t *testing.T) {
 func TestNewRefusesToWriteAnotherFormatVersion(t *testing.T) {
 	t.Parallel()
 	dir := newLocalRepo(t)
-	// Rewrite format-version to 2 through plumbing, as a newer bfc would.
-	tree := gitInStdin(t, dir, "100644 blob "+gitInStdin(t, dir, "2\n", "hash-object", "-w", "--stdin")+"\tformat-version\n", "mktree")
+	// Rewrite format-version to 3 through plumbing, as a newer bfc would.
+	tree := gitInStdin(t, dir, "100644 blob "+gitInStdin(t, dir, "3\n", "hash-object", "-w", "--stdin")+"\tformat-version\n", "mktree")
 	commit := gitIn(t, dir, "commit-tree", tree, "-p", plansRef, "-m", "newer bfc")
 	gitIn(t, dir, "update-ref", plansRef, commit)
 
 	out, err := bfcIn(t, dir, "new", "--no-edit", "Payments")
 
 	if err == nil {
-		t.Fatalf("bfc new wrote to a format-version 2 ref:\n%s", out)
+		t.Fatalf("bfc new wrote to a format-version 3 ref:\n%s", out)
 	}
-	if !strings.Contains(out, "format-version 2") || !strings.Contains(out, "update bfc") {
+	if !strings.Contains(out, "format-version 3") || !strings.Contains(out, "update bfc") {
 		t.Errorf("output does not explain:\n%s", out)
 	}
 }
