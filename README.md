@@ -2,7 +2,7 @@
 
 **Plan before code.** BeforeCode (`bfc`) is an open source terminal app where a team writes, challenges, approves and shares plans for AI coding agents. Agents then implement only against an approved plan.
 
-Status: early development (phase 1 of [docs/design.md](docs/design.md)). Plans can be written, shared, reviewed and approved from the command line and the TUI; the AI parts come in phase 2.
+Status: early development; phase 2 of [docs/design.md](docs/design.md) is done. Plans can be written, shared, reviewed and approved from the command line and the TUI, and an Intent becomes a plan through a Grill with Claude Code, which implements an approved plan while a hook blocks edits without one (`bfc setup claude`). Phase 3, team collaboration and the plan check, comes next.
 
 - Plans live in Git, in a hidden ref (`refs/beforecode/plans`), so they are shared with a plain `git push` and never touch your code branches.
 - Claude Code is the first supported agent harness. The design keeps the core independent of any one harness.
