@@ -96,3 +96,36 @@ func TestExportCommand(t *testing.T) {
 		t.Errorf("export wrote to the Plans ref")
 	}
 }
+
+// Issue #117 AC-2: every kind of heading moves one level down, except in
+// code fences and HTML comments.
+func TestShiftHeadings(t *testing.T) {
+	t.Parallel()
+	in := strings.Join([]string{
+		"Title", "=====", "",
+		"Section", "-------", "",
+		"  ## Indented", "",
+		"<!--", "# in a comment", "-->", "",
+		"~~~", "```", "# in a tilde fence", "~~~", "",
+		"````", "```", "# in a long fence", "```", "````", "",
+		"###### Six", "",
+		"Not a heading", "",
+		"- item", "",
+		"---",
+	}, "\n")
+	want := strings.Join([]string{
+		"## Title", "",
+		"### Section", "",
+		"  ### Indented", "",
+		"<!--", "# in a comment", "-->", "",
+		"~~~", "```", "# in a tilde fence", "~~~", "",
+		"````", "```", "# in a long fence", "```", "````", "",
+		"###### Six", "",
+		"Not a heading", "",
+		"- item", "",
+		"---",
+	}, "\n")
+	if got := shiftHeadings(in); got != want {
+		t.Errorf("got\n%s\nwant\n%s", got, want)
+	}
+}

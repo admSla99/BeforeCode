@@ -3,6 +3,7 @@ package main
 import (
 	"fmt"
 	"os"
+	"regexp"
 	"strings"
 	"time"
 
@@ -110,28 +111,70 @@ func writeExportDoc(b *strings.Builder, title string, doc []byte, name string) {
 	b.WriteString(text + "\n")
 }
 
-// shiftHeadings moves every ATX heading of a Markdown document one level
-// down, leaving fenced code blocks as they are.
+var (
+	// atxHeading is a heading line "# …" to "##### …", indented by up to
+	// three spaces; a level 6 heading stays as deep as Markdown goes.
+	atxHeading = regexp.MustCompile(`^( {0,3})(#{1,5})(\s|$)`)
+	// setextUnderline turns the paragraph line above it into a heading:
+	// "===" level 1, "---" level 2.
+	setextUnderline = regexp.MustCompile(`^ {0,3}(=+|-+)\s*$`)
+	// fenceOpen opens a code block, which only the same character, at
+	// least as many times, closes.
+	fenceOpen = regexp.MustCompile("^ {0,3}(`{3,}|~{3,})")
+)
+
+// shiftHeadings moves every heading of a Markdown document one level
+// down: ATX headings get one more #, setext headings become ATX headings
+// one level deeper. Code fences and HTML comments are left as they are.
 func shiftHeadings(doc string) string {
-	lines := strings.Split(doc, "\n")
-	inFence := false
-	for i, l := range lines {
-		t := strings.TrimSpace(l)
-		if strings.HasPrefix(t, "```") || strings.HasPrefix(t, "~~~") {
-			inFence = !inFence
+	in := strings.Split(doc, "\n")
+	out := make([]string, 0, len(in))
+	fence, inComment := "", false
+	for i, l := range in {
+		switch {
+		case fence != "":
+			if m := fenceOpen.FindStringSubmatch(l); m != nil && m[1][0] == fence[0] && len(m[1]) >= len(fence) && strings.TrimSpace(strings.TrimLeft(strings.TrimSpace(l), m[1][:1])) == "" {
+				fence = ""
+			}
+		case inComment:
+			inComment = !strings.Contains(l, "-->")
+		case strings.HasPrefix(strings.TrimSpace(l), "<!--"):
+			inComment = !strings.Contains(l, "-->")
+		case fenceOpen.MatchString(l):
+			fence = fenceOpen.FindStringSubmatch(l)[1]
+		case atxHeading.MatchString(l):
+			l = atxHeading.ReplaceAllString(l, "$1#$2$3")
+		case setextUnderline.MatchString(l) && len(out) > 0 && i > 0 && isParagraphLine(in[i-1]):
+			level := "## "
+			if strings.Contains(l, "-") {
+				level = "### "
+			}
+			out[len(out)-1] = level + strings.TrimSpace(out[len(out)-1])
 			continue
 		}
-		if !inFence && strings.HasPrefix(l, "#") && strings.HasPrefix(strings.TrimLeft(l, "#"), " ") && len(l)-len(strings.TrimLeft(l, "#")) < 6 {
-			lines[i] = "#" + l
-		}
+		out = append(out, l)
 	}
-	return strings.Join(lines, "\n")
+	return strings.Join(out, "\n")
 }
+
+// isParagraphLine reports whether a line can be the text of a setext
+// heading: not blank, not a list item, a heading, a quote or a fence.
+func isParagraphLine(l string) bool {
+	t := strings.TrimSpace(l)
+	return t != "" && !listItemStart.MatchString(t) && !strings.HasPrefix(t, "#") && !strings.HasPrefix(t, ">") && !fenceOpen.MatchString(l)
+}
+
+// listItemStart is the start of a Markdown list item.
+var listItemStart = regexp.MustCompile(`^(?:[-*+]|[0-9]+[.)])(?:\s|$)`)
 
 func writeExportTasks(b *strings.Builder, v exportView) {
 	tasks := core.TaskViews(v.Plan.Status, v.Plan.Plan)
-	if len(tasks) == 0 {
+	if len(tasks) == 0 && len(v.Handoffs) == 0 {
 		return
+	}
+	listed := map[string]bool{}
+	for _, t := range tasks {
+		listed[t.ID] = true
 	}
 	b.WriteString("\n## Tasks\n\n")
 	for _, t := range tasks {
@@ -141,17 +184,31 @@ func writeExportTasks(b *strings.Builder, v exportView) {
 		}
 		fmt.Fprintf(b, "- **%s** (%s): %s\n", t.ID, state, strings.ReplaceAll(t.Text, "\n", "\n  "))
 		for _, h := range v.Handoffs {
-			if h.Task != t.ID || v.HandoffEvents[h.ID] == "" {
-				continue
+			if h.Task == t.ID && v.HandoffEvents[h.ID] != "" {
+				writeExportHandoff(b, h)
 			}
-			what := "released"
-			if h.Done {
-				what = "completed"
-			}
-			fmt.Fprintf(b, "  - Handoff, %s by %s, %s:\n\n", what, throughAgent(orDash(h.Author.Name), h.Agent), utc(h.At))
-			b.WriteString(quote(shiftHeadings(h.Note), "    ") + "\n")
 		}
 	}
+	// Notes that change nothing, kept for the record.
+	for _, h := range v.Handoffs {
+		switch {
+		case v.HandoffEvents[h.ID] == "":
+			fmt.Fprintf(b, "- **%s**, a note without its Event:\n", h.Task)
+			writeExportHandoff(b, h)
+		case !listed[h.Task]:
+			fmt.Fprintf(b, "- **%s**, a Task plan.md no longer has:\n", h.Task)
+			writeExportHandoff(b, h)
+		}
+	}
+}
+
+func writeExportHandoff(b *strings.Builder, h core.Handoff) {
+	what := "released"
+	if h.Done {
+		what = "completed"
+	}
+	fmt.Fprintf(b, "  - Handoff `%s`, %s by %s, %s:\n\n", h.ID, what, throughAgent(orDash(h.Author.Name), h.Agent), utc(h.At))
+	b.WriteString(quote(shiftHeadings(h.Note), "    ") + "\n")
 }
 
 func writeExportChecks(b *strings.Builder, checks []core.PullRequestCheck) {
@@ -177,7 +234,7 @@ func writeExportChecks(b *strings.Builder, checks []core.PullRequestCheck) {
 			b.WriteString("- No Findings.\n")
 		}
 		if a := p.Acknowledgement; a != nil {
-			fmt.Fprintf(b, "\nAcknowledged by %s, %s:\n\n%s\n", orDash(a.Author.Name), utc(a.At), quote(a.Body, ""))
+			fmt.Fprintf(b, "\nAcknowledged by %s, %s:\n\n%s\n", orDash(a.Author.Name), utc(a.At), quote(shiftHeadings(a.Body), ""))
 		}
 	}
 }
@@ -189,7 +246,11 @@ func writeExportDiscussion(b *strings.Builder, msgs []core.Message) {
 	b.WriteString("\n## Discussion\n\n")
 	for _, m := range core.Discussion(msgs) {
 		pad := strings.Repeat("  ", m.Depth)
-		fields := []string{"**" + throughAgent(orDash(m.Author.Name), m.Agent) + "**", utc(m.At)}
+		by := orDash(m.Author.Name)
+		if m.Author.Email != "" {
+			by += " <" + m.Author.Email + ">"
+		}
+		fields := []string{"`" + m.ID.String() + "`", "**" + throughAgent(by, m.Agent) + "**", utc(m.At)}
 		if m.IsQuestion() {
 			status := "open Question"
 			if m.Answered {
@@ -200,7 +261,7 @@ func writeExportDiscussion(b *strings.Builder, msgs []core.Message) {
 		if m.Ref != "" {
 			fields = append(fields, "about `"+m.Ref+"`")
 		}
-		fmt.Fprintf(b, "%s- %s\n\n%s\n\n", pad, strings.Join(fields, " · "), quote(m.Body, pad+"  "))
+		fmt.Fprintf(b, "%s- %s\n\n%s\n\n", pad, strings.Join(fields, " · "), quote(shiftHeadings(m.Body), pad+"  "))
 	}
 }
 
