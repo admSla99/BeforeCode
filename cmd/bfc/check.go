@@ -26,7 +26,7 @@ func newCheckCmd() *cobra.Command {
 		Short: "Plan check results of pull requests",
 		Args:  cobra.NoArgs,
 	}
-	cmd.AddCommand(newCheckRecordCmd())
+	cmd.AddCommand(newCheckRecordCmd(), newCheckFindCmd())
 	return cmd
 }
 
