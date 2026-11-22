@@ -200,14 +200,14 @@ func TestInsideAnAgentMessagesCarryTheAgent(t *testing.T) {
 	if r := message(t, dir, id, rid); r.Agent != "claude-code" {
 		t.Errorf("the agent's own reply: %+v", r)
 	}
-	if !strings.Contains(mustBfc(t, dir, "show", short), qid) {
+	if !strings.Contains(openQuestions(mustBfc(t, dir, "show", short)), qid) {
 		t.Error("the agent's own reply answered a Question to ada")
 	}
 	vid := strings.TrimSpace(mustBfc(t, dir, "reply", "--verbatim", qid, "-m", "EUR only."))
 	if v := message(t, dir, id, vid); v.Agent != "" || v.Author != adaP {
 		t.Errorf("verbatim answer: %+v", v)
 	}
-	if strings.Contains(mustBfc(t, dir, "show", short), qid) {
+	if strings.Contains(openQuestions(mustBfc(t, dir, "show", short)), qid) {
 		t.Error("the verbatim answer did not answer the Question")
 	}
 }
@@ -224,7 +224,7 @@ func TestOpenQuestionsBlockApproval(t *testing.T) {
 
 	out := mustBfc(t, dir, "show", short)
 	want := "Open questions:\n  " + qid + "  to ada@example.com  plan.md#AC-1  Is AC-1 enough?\n"
-	if !strings.Contains(out, want) || strings.Count(out, "A note to myself") != 1 {
+	if !strings.Contains(out, want) || strings.Count(openQuestions(out), "A note to myself") != 1 {
 		t.Fatalf("bfc show lacks the open Questions:\n%s\nwant:\n%s", out, want)
 	}
 	out, err := bfcIn(t, dir, "approve", short)
@@ -237,7 +237,7 @@ func TestOpenQuestionsBlockApproval(t *testing.T) {
 
 	as(t, dir, adaP)
 	mustBfc(t, dir, "reply", qid, "-m", "Yes.")
-	if out := mustBfc(t, dir, "show", short); strings.Contains(out, qid) {
+	if out := mustBfc(t, dir, "show", short); strings.Contains(openQuestions(out), qid) {
 		t.Errorf("answered Question still listed:\n%s", out)
 	}
 	as(t, dir, benP)
@@ -318,4 +318,12 @@ func TestReplyFindsTheMessageAmongManyPlans(t *testing.T) {
 	if r := message(t, dir, id, rid); r.ReplyTo != qid {
 		t.Errorf("reply: %+v", r)
 	}
+}
+
+// openQuestions returns the list of open Questions at the top of the
+// output of bfc show, without the Discussion that follows the documents.
+func openQuestions(show string) string {
+	_, list, _ := strings.Cut(show, "\nOpen questions:\n")
+	list, _, _ = strings.Cut(list, "\n\n")
+	return list
 }

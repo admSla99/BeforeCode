@@ -165,11 +165,7 @@ func writeGrill(b *strings.Builder, msgs []core.Message) {
 			if r.ReplyTo != q.ID.String() {
 				continue
 			}
-			by := orDash(r.Author.Name)
-			if r.Agent != "" {
-				by += " (through " + r.Agent + ")"
-			}
-			fmt.Fprintf(b, "   Reply %s by %s:\n%s", r.ID, by, indent(r.Body))
+			fmt.Fprintf(b, "   Reply %s by %s:\n%s", r.ID, throughAgent(orDash(r.Author.Name), r.Agent), indent(r.Body))
 		}
 	}
 	if n == 0 {
