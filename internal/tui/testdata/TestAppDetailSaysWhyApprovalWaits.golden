@@ -1,4 +1,4 @@
-bfc-5v7x  Payments via Stripe   intent.md   plan.md   tasks
+bfc-5v7x  Payments via Stripe   plan.md   intent.md   tasks
   ## Context                                                                    
                                                                                 
   The checkout calls payments.Charge, which wraps the old provider.             

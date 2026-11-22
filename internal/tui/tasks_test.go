@@ -1,9 +1,12 @@
 package tui
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/charmbracelet/x/exp/teatest/v2"
 
 	"github.com/admSla99/BeforeCode/internal/core"
 )
@@ -15,6 +18,7 @@ func inProgressTeam() *fakeTeam {
 	d := f.details["bfc-5v7x"]
 	d.State = core.StateInProgress
 	d.RequiredApprovals, d.Approvers = 0, nil
+	d.Actions = []ReviewAction{ActionClose} // what anyone may do with an in-progress plan
 	d.Tasks = []TaskRow{
 		{ID: "T-1", Text: "Add the Stripe client.", State: core.TaskCompleted, Holder: "Jana Nováková", Latest: "Client in place, tested.",
 			Handoffs: []HandoffRow{{ID: "01JD3K8Q2W5V7X9Y0Z1A2B3C9A", By: "Jana Nováková", Done: true, Note: "Client in place, tested."}}},
@@ -44,6 +48,7 @@ func TestAppTasksTabShowsHandoffs(t *testing.T) {
 	waitFor(t, tm, "T-3")
 	send(tm, "down", "down", "enter")
 	waitFor(t, tm, "Next: the EU switch.")
+	golden(t, screenNow(t, tm))
 	send(tm, "esc")
 	waitFor(t, tm, "T-2")
 	out := screen(t, tm)
@@ -59,5 +64,36 @@ func TestAppTasksTabWithoutTasks(t *testing.T) {
 	waitFor(t, tm, "No Tasks")
 	if out := screen(t, tm); !strings.Contains(out, "## Tasks") {
 		t.Errorf("no hint where Tasks come from:\n%s", out)
+	}
+}
+
+// screenNow is the screen at this moment, without styling, while the
+// program keeps running.
+func screenNow(t *testing.T, tm *teatest.TestModel) string {
+	t.Helper()
+	v, ok := screens.Load(tm)
+	if !ok {
+		t.Fatal("screenNow: start the model with newTestModel")
+	}
+	return v.(*vscreen).String()
+}
+
+// Issue #112 AC-4: with more Tasks than lines, the selection stays in view.
+func TestAppTasksTabScrollsToTheSelection(t *testing.T) {
+	f := inProgressTeam()
+	d := f.details["bfc-5v7x"]
+	for i := 4; i <= 40; i++ {
+		d.Tasks = append(d.Tasks, TaskRow{ID: fmt.Sprintf("T-%d", i), Text: "More work.", State: core.TaskOpen})
+	}
+	f.details["bfc-5v7x"] = d
+	tm := startAppWith(t, f, AppOptions{Interval: time.Hour, Local: true})
+	send(tm, "tab", "tab")
+	waitFor(t, tm, "T-3")
+	for range 39 {
+		send(tm, "down")
+	}
+	waitFor(t, tm, "T-40")
+	if out := screen(t, tm); !strings.Contains(out, "▶ T-40") {
+		t.Errorf("the selected Task is not on the screen:\n%s", out)
 	}
 }

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"os/exec"
@@ -137,6 +138,9 @@ func (p *tuiPlans) NewPlan(title string) tea.Cmd {
 // Edit reports Changed when the Plans ref moved, so that an editor closed
 // without a change does not count as a local change.
 func (p *tuiPlans) Edit(shortID string, doc tui.Doc) tea.Cmd {
+	if !doc.Editable() {
+		return func() tea.Msg { return tui.PlanEditedMsg{Err: fmt.Errorf("%s is not a document to edit", doc)} }
+	}
 	args := []string{"edit", shortID}
 	if doc == tui.DocIntent {
 		args = append(args, "--intent")
@@ -264,7 +268,7 @@ func tuiTasks(ctx context.Context, s *store.Store, v index.Plan, me core.Person)
 	for _, t := range views {
 		r := tui.TaskRow{ID: t.ID, Text: t.Text, State: t.State}
 		if t.State != core.TaskOpen {
-			r.Holder = orDash(t.Holder.Name)
+			r.Holder = throughAgent(orDash(t.Holder.Name), t.Agent)
 			r.Mine = t.State == core.TaskClaimed && strings.EqualFold(t.Holder.Email, me.Email)
 		}
 		for _, h := range hs {

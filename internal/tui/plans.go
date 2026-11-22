@@ -109,6 +109,10 @@ func (d Doc) next() Doc {
 	return DocPlan
 }
 
+// Editable reports whether d is a document the editor opens; the tasks
+// tab is not.
+func (d Doc) Editable() bool { return d != DocTasks }
+
 func (d Doc) String() string {
 	switch d {
 	case DocIntent:

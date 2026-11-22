@@ -97,6 +97,7 @@ func (m PlanDetailScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 			if first && m.detail.Plan == nil {
 				m.doc = DocIntent
 			}
+			m.taskAt = min(m.taskAt, max(len(m.detail.Tasks)-1, 0))
 		}
 		m.refresh()
 	case reviewDoneMsg:
@@ -154,7 +155,7 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case key.Matches(msg, m.keys.Grill) && m.canGrill && m.detail.Editable && m.loadErr == nil:
 		return m, func() tea.Msg { return openGrillMsg{m.shortID} }
-	case key.Matches(msg, m.keys.Edit) && m.detail.Editable && m.loadErr == nil && m.doc != DocTasks:
+	case key.Matches(msg, m.keys.Edit) && m.detail.Editable && m.loadErr == nil && m.doc.Editable():
 		m.status = ""
 		return m, m.plans.Edit(m.shortID, m.doc)
 	}
@@ -196,8 +197,22 @@ func (m PlanDetailScreen) pressTasks(msg tea.KeyPressMsg) (_ tea.Model, _ tea.Cm
 	m.refresh()
 	if m.handoffs {
 		m.view.GotoTop()
+	} else {
+		m.followTask()
 	}
 	return m, nil, true
+}
+
+// followTask scrolls the list of Tasks just enough to show the selected
+// one: the list has one line per Task.
+func (m *PlanDetailScreen) followTask() {
+	h := m.view.Height()
+	switch off := m.view.YOffset(); {
+	case m.taskAt < off:
+		m.view.SetYOffset(m.taskAt)
+	case m.taskAt >= off+h:
+		m.view.SetYOffset(m.taskAt - h + 1)
+	}
 }
 
 func (m PlanDetailScreen) review(a ReviewAction, reason string) tea.Cmd {
@@ -243,7 +258,7 @@ func (m PlanDetailScreen) helpKeys() []key.Binding {
 	if m.doc == DocTasks && !m.handoffs && len(m.detail.Tasks) > 0 {
 		keys = append(keys, m.keys.TaskUp, m.keys.Handoffs)
 	}
-	if m.detail.Editable && m.doc != DocTasks {
+	if m.detail.Editable && m.doc.Editable() {
 		keys = append(keys, m.keys.Edit)
 		if m.canGrill {
 			keys = append(keys, m.keys.Grill)
@@ -295,8 +310,9 @@ func (m PlanDetailScreen) statusBar() string {
 }
 
 func (m PlanDetailScreen) header() string {
+	// In the order Tab goes through them.
 	tabs := make([]string, 3)
-	for i, d := range []Doc{DocIntent, DocPlan, DocTasks} {
+	for i, d := range []Doc{DocPlan, DocIntent, DocTasks} {
 		tabs[i] = styleDim.Render(d.String())
 		if d == m.doc {
 			tabs[i] = styleTab.Render(d.String())
@@ -358,7 +374,7 @@ func (m PlanDetailScreen) renderTasks() string {
 	at := min(m.taskAt, len(tasks)-1)
 	if m.handoffs {
 		t := tasks[at]
-		first, _, _ := strings.Cut(t.Text, "\n")
+		first := firstLine(t.Text)
 		lines := []string{styleTitle.Render(t.ID + "  " + first), ""}
 		if len(t.Handoffs) == 0 {
 			lines = append(lines, "  No Handoffs yet.")
@@ -378,7 +394,7 @@ func (m PlanDetailScreen) renderTasks() string {
 	}
 	var lines []string
 	for i, t := range tasks {
-		first, _, _ := strings.Cut(t.Text, "\n")
+		first := firstLine(t.Text)
 		holder := t.Holder
 		switch {
 		case holder == "":
@@ -386,7 +402,7 @@ func (m PlanDetailScreen) renderTasks() string {
 		case t.Mine:
 			holder += " (you)"
 		}
-		line := fmt.Sprintf("%s  %-9s  %s  %s", t.ID, t.State, holder, first)
+		line := fmt.Sprintf("%s  %s  %s  %s", t.ID, t.State, holder, first)
 		if t.Latest != "" {
 			line += "  · " + t.Latest
 		}
@@ -401,6 +417,12 @@ func (m PlanDetailScreen) renderTasks() string {
 		lines = append(lines, line)
 	}
 	return strings.Join(lines, "\n")
+}
+
+// firstLine is the first line of a text.
+func firstLine(s string) string {
+	line, _, _ := strings.Cut(strings.TrimSpace(s), "\n")
+	return line
 }
 
 // withoutFrontMatter drops the YAML front matter of intent.md; its title
