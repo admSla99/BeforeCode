@@ -34,8 +34,8 @@ type PlanDetailScreen struct {
 	status  string // the last action's result or refusal
 	failed  bool   // status is a refusal or error
 	// typing is the action whose reason is being typed on the line above
-	// the status bar, "" when none: request changes, or close, where the
-	// line is also the confirmation.
+	// the status bar, "" when none: request changes, or close and done,
+	// where the line is also the confirmation.
 	typing   ReviewAction
 	reason   string
 	syncText string // set by the app before each View
@@ -151,7 +151,7 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		if !key.Matches(msg, m.keys.Review[a]) {
 			continue
 		}
-		if a == ActionRequestChanges || a == ActionClose {
+		if a == ActionRequestChanges || a == ActionClose || a == ActionDone {
 			m.typing, m.status = a, ""
 			return m, nil
 		}
@@ -177,6 +177,11 @@ func (m PlanDetailScreen) footer() []string {
 		lines = append(lines, "Reason: "+m.reason+"▌  "+styleDim.Render("(enter: request changes, esc: cancel)"))
 	case ActionClose:
 		lines = append(lines, "Close "+m.shortID+"? Reason (optional): "+m.reason+"▌  "+styleDim.Render("(enter: close, esc: cancel)"))
+	case ActionDone:
+		for _, w := range m.detail.DoneWarnings {
+			lines = append(lines, styleWarn.Render("warning: "+w))
+		}
+		lines = append(lines, "Mark "+m.shortID+" done? It is final. Note (optional): "+m.reason+"▌  "+styleDim.Render("(enter: done, esc: cancel)"))
 	}
 	if n := m.detail.BlockingQuestions; n > 0 && m.typing == "" {
 		lines = append(lines, styleWarn.Render("Approval waits on "+plural(n, "open Question")+"; bfc show "+m.shortID+" lists them."))

@@ -54,7 +54,7 @@ func (w Waiting) Empty() bool {
 // Waits reports whether something on a plan in state st can wait on
 // someone: not when it is final (closed, done) or invalid.
 func Waits(st State) bool {
-	return st != StateClosed && st != StateDone && st != StateInvalid
+	return !st.Final() && st != StateInvalid
 }
 
 // WaitingOn returns what waits on p among plans, in their order:

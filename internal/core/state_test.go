@@ -377,3 +377,73 @@ func TestCheckHandoff(t *testing.T) {
 		t.Errorf("claim a Paused Task: %v", err)
 	}
 }
+
+// Issue #111 AC-1: done is valid only from in-progress and never from an
+// agent; it is final like closed, so every later Event is skipped.
+func TestDeriveDone(t *testing.T) {
+	inProgress := []string{"created ada", "submitted ada v1 1", "approved jana v1", "claimed jana T-1"}
+	cases := []struct {
+		name    string
+		events  []string
+		blob    string
+		state   core.State
+		skipped []string
+	}{
+		{"done from in-progress", append(inProgress, "done peter v1"), blobV1, core.StateDone, nil},
+		// A plan.md that another clone changed before it learnt of the done
+		// does not undo it: done records the plan.md it finished.
+		{"done stays done when plan.md changed after it", append(inProgress, "done peter v1"), blobV2, core.StateDone, nil},
+		{"done by an agent is skipped", append(inProgress, "done agent:jana v1"), blobV1, core.StateInProgress, []string{"done agent:jana v1"}},
+		{"done of an approved plan without Claims is skipped", []string{"created ada", "submitted ada v1 1", "approved jana v1", "done jana v1"}, blobV1, core.StateApproved, []string{"done jana v1"}},
+		{"done of a plan.md nobody approved is skipped", append(inProgress, "done jana v2"), blobV2, core.StateInReview, []string{"done jana v2"}},
+		{"done is final, closed included", append(inProgress, "done jana v1", "closed peter", "claimed peter T-2"), blobV1, core.StateDone, []string{"closed peter", "claimed peter T-2"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			events := ev(t, c.events...)
+			if got := core.Derive(planID, events, c.blob); got.State != c.state {
+				t.Errorf("state = %q, want %q", got.State, c.state)
+			}
+			var want []ulid.ULID
+			for _, spec := range c.skipped {
+				for i, s := range c.events {
+					if s == spec {
+						want = append(want, events[i].ID)
+					}
+				}
+			}
+			if got := core.SkippedEvents(planID, events, c.blob); fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("skipped = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// Issue #111 AC-1, AC-2: done is taken from in-progress; a done plan is
+// final for every write.
+func TestCheckDoneAndFinal(t *testing.T) {
+	inProgress := core.Derive(planID, ev(t, "created ada", "submitted ada v1 1", "approved jana v1", "claimed jana T-1"), blobV1)
+	if err := core.CheckDone(inProgress); err != nil {
+		t.Errorf("in-progress: %v", err)
+	}
+	approved := core.Derive(planID, ev(t, "created ada", "submitted ada v1 1", "approved jana v1"), blobV1)
+	if err := core.CheckDone(approved); err == nil || !strings.Contains(err.Error(), "only an in-progress plan") {
+		t.Errorf("approved: %v", err)
+	}
+	done := core.Derive(planID, ev(t, "created ada", "submitted ada v1 1", "approved jana v1", "claimed jana T-1", "done jana v1"), blobV1)
+	if !core.StateDone.Final() || !core.StateClosed.Final() || core.StateInProgress.Final() {
+		t.Errorf("Final is wrong")
+	}
+	for _, err := range []error{core.CheckDone(done), core.CheckClose(done, jana), core.CheckWritable(done)} {
+		if err == nil || !strings.Contains(err.Error(), "done is final") {
+			t.Errorf("done plan: %v", err)
+		}
+	}
+	closed := core.Derive(planID, ev(t, "created ada", "closed jana"), "")
+	if err := core.CheckWritable(closed); err == nil || !strings.Contains(err.Error(), "closed is final") {
+		t.Errorf("closed plan: %v", err)
+	}
+	if err := core.CheckWritable(inProgress); err != nil {
+		t.Errorf("in-progress plan: %v", err)
+	}
+}

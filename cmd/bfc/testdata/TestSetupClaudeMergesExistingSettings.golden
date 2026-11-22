@@ -16,6 +16,7 @@ added    permissions.deny Bash(bfc approve:*)
 added    permissions.deny Bash(bfc request-changes:*)
 added    permissions.deny Bash(bfc withdraw:*)
 added    permissions.deny Bash(bfc close:*)
+added    permissions.deny Bash(bfc done:*)
 added    permissions.deny Bash(bfc acknowledge:*)
 updated  .claude/skills/beforecode/SKILL.md
 

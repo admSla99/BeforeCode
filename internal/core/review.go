@@ -101,11 +101,34 @@ func CheckWithdraw(st Status, actor Person) error {
 // if they can. Anyone may close a plan in any state (ADR 0002 section 4);
 // closed is final.
 func CheckClose(st Status, _ Person) error {
+	if err := CheckWritable(st); err != nil {
+		return err
+	}
 	switch st.State {
-	case StateClosed:
-		return stateError(st, "closed is final")
 	case StateInvalid:
 		return stateError(st, "it has no valid created event to close; see bfc doctor")
+	}
+	return nil
+}
+
+// CheckWritable reports why nothing may be written to the plan with Status
+// st any more: closed and done are final.
+func CheckWritable(st Status) error {
+	if st.State.Final() {
+		return stateError(st, string(st.State)+" is final")
+	}
+	return nil
+}
+
+// CheckDone reports why the plan with Status st cannot be marked done now:
+// only an in-progress plan is (ADR 0013 section 4). Whether a person runs
+// it is CheckPerson's.
+func CheckDone(st Status) error {
+	if err := CheckWritable(st); err != nil {
+		return err
+	}
+	if st.State != StateInProgress {
+		return stateError(st, "only an in-progress plan is marked done")
 	}
 	return nil
 }
@@ -114,7 +137,7 @@ func CheckClose(st Status, _ Person) error {
 var ErrGateForPeople = errors.New("this action is for a person, not an agent; ask the person to run it")
 
 // CheckPerson reports why a Gate (submit, approve, request-changes,
-// withdraw, close) cannot run, or nil if it can: the Gates are for people,
+// withdraw, close, done) or acknowledge cannot run, or nil if it can: the Gates are for people,
 // so they refuse to run inside an agent. Which harness counts as an agent
 // is for the caller to decide.
 func CheckPerson(insideAgent bool) error {

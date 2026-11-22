@@ -563,3 +563,49 @@ func TestAppDetailSaysWhyApprovalWaits(t *testing.T) {
 	waitFor(t, tm, "open Questions")
 	golden(t, screen(t, tm))
 }
+
+// Issue #111 AC-5: d marks the plan done after a one-line confirmation,
+// with an optional note, and only when the action is offered.
+func TestAppDoneAsksToConfirm(t *testing.T) {
+	f := newFakeTeam()
+	d := f.details["bfc-5v7x"]
+	d.DoneWarnings = []string{"T-2 is open, not completed"}
+	f.details["bfc-5v7x"] = d
+	tm := openDetailWith(t, f, ActionClose, ActionDone)
+	send(tm, "d")
+	waitFor(t, tm, "Mark bfc-5v7x done? It is final. Note (optional):")
+	waitFor(t, tm, "warning: T-2 is open, not completed")
+	send(tm, "esc", "d")
+	send(tm, strings.Split("Shipped", "")...)
+	send(tm, "enter")
+	waitFor(t, tm, "done: done")
+	screen(t, tm)
+	if got := f.count(&f.reviews); len(got) != 1 || got[0] != "done bfc-5v7x Shipped" {
+		t.Errorf("reviews = %q", got)
+	}
+}
+
+func TestAppDoneIsOfferedOnlyWhenAllowed(t *testing.T) {
+	f := newFakeTeam()
+	tm := openDetailWith(t, f, ActionClose)
+	send(tm, "d", "c")
+	waitFor(t, tm, "Close bfc-5v7x?")
+	out := screen(t, tm)
+	if strings.Contains(out, "d done") || len(f.count(&f.reviews)) != 0 {
+		t.Errorf("done offered or taken without the action:\n%s", out)
+	}
+}
+
+// Issue #111 AC-4: done plans are grouped with the closed plans, out of
+// the open view.
+func TestPlanListGroupsDonePlansWithClosed(t *testing.T) {
+	f := team()
+	f.plans = append(f.plans, PlanRow{"bfc-d0ne", core.StateDone, "Shipped plan", "ada@example.com", at(17, 11)})
+	if out := run(t, f, 80, 30, "IN-REVIEW"); strings.Contains(out, "Shipped plan") {
+		t.Errorf("open view lists a done plan:\n%s", out)
+	}
+	out := run(t, f, 80, 30, "IN-REVIEW", "s", "s", "s", "s", "s")
+	if !strings.Contains(out, "state: closed") || !strings.Contains(out, "CLOSED OR DONE (2)") || !strings.Contains(out, "Shipped plan") {
+		t.Errorf("closed view:\n%s", out)
+	}
+}

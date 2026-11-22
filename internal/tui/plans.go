@@ -26,8 +26,8 @@ type Plans interface {
 	// way bfc edit does, and then produces a PlanEditedMsg.
 	Edit(shortID string, doc Doc) tea.Cmd
 	// Review writes the event of a review action, the way the CLI command
-	// of the same name does. reason is used by ActionRequestChanges and
-	// ActionClose only; for ActionClose it may be empty.
+	// of the same name does. reason is used by ActionRequestChanges,
+	// ActionClose and ActionDone only; for the last two it may be empty.
 	Review(ctx context.Context, shortID string, a ReviewAction, reason string) error
 	// Inbox returns what waits on the current user, as bfc inbox does. It
 	// returns a *NotSetUpError when the repository has no Plans ref.
@@ -57,8 +57,12 @@ type PlanDetail struct {
 	// BlockingQuestions is the number of open Questions that alone keep the
 	// current user from approving; 0 when they could not approve anyway.
 	BlockingQuestions int
-	// Editable is true when the documents may be edited (not closed).
+	// Editable is true when the documents may be edited (not closed or
+	// done).
 	Editable bool
+	// DoneWarnings are what is unfinished when the plan is marked done:
+	// Tasks not completed, Findings nobody acknowledged.
+	DoneWarnings []string
 }
 
 // Doc names one of the two documents of a Plan.
@@ -94,9 +98,10 @@ const (
 	ActionApprove        ReviewAction = "approve"
 	ActionRequestChanges ReviewAction = "request-changes"
 	ActionClose          ReviewAction = "close"
+	ActionDone           ReviewAction = "done"
 )
 
-var reviewActionOrder = []ReviewAction{ActionSubmit, ActionApprove, ActionRequestChanges, ActionClose}
+var reviewActionOrder = []ReviewAction{ActionSubmit, ActionApprove, ActionRequestChanges, ActionClose, ActionDone}
 
 // PlanCreatedMsg reports the end of a NewPlan command. Err is nil when a
 // plan was created.

@@ -210,8 +210,8 @@ func runStart(cmd *cobra.Command, args []string) error {
 	if err != nil {
 		return err
 	}
-	if v.Status.State == core.StateClosed {
-		return fmt.Errorf("%s is closed and cannot be started", v.ShortID)
+	if err := core.CheckWritable(v.Status); err != nil {
+		return fmt.Errorf("%w: it cannot be started", err)
 	}
 	if remote != "" {
 		fctx, cancel := context.WithTimeout(ctx, fetchTimeout)

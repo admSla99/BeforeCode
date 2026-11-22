@@ -77,8 +77,8 @@ func runEdit(cmd *cobra.Command, query, doc string, src editSource) error {
 	if err != nil {
 		return err
 	}
-	if v.Status.State == core.StateClosed {
-		return fmt.Errorf("%s is closed; a closed plan cannot be edited", v.ShortID)
+	if err := core.CheckWritable(v.Status); err != nil {
+		return fmt.Errorf("%w: it cannot be edited", err)
 	}
 	path := core.PlanDir(v.ID) + "/" + doc
 

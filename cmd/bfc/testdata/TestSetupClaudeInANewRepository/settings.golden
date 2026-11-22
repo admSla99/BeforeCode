@@ -33,6 +33,7 @@
       "Bash(bfc request-changes:*)",
       "Bash(bfc withdraw:*)",
       "Bash(bfc close:*)",
+      "Bash(bfc done:*)",
       "Bash(bfc acknowledge:*)"
     ]
   }

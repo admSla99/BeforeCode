@@ -144,11 +144,16 @@ var reviewActions = map[core.EventType]reviewAction{
 		check:   func(v index.Plan, actor core.Person, _ string) error { return core.CheckClose(v.Status, actor) },
 		detail:  func(core.Status) string { return "final" },
 	},
+	core.Done: {
+		command: "done", planBlob: true,
+		check:  func(v index.Plan, _ core.Person, _ string) error { return core.CheckDone(v.Status) },
+		detail: func(core.Status) string { return "final" },
+	},
 }
 
 // runReview checks that the event fits the plan and its author, writes it
-// (with the reason as a Message for changes-requested, and for closed when
-// one is given) as one commit, and prints the new state.
+// (with the reason as a Message for changes-requested, and for closed and
+// done when one is given) as one commit, and prints the new state.
 func runReview(cmd *cobra.Command, query string, typ core.EventType, reason string) error {
 	s, err := openPlans(cmd, forWriting)
 	if err != nil {
@@ -224,7 +229,7 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 	files := map[string][]byte{}
 	// The reason is a Message: always for changes-requested, and for
 	// closed when one is given.
-	if typ == core.ChangesRequested || typ == core.Closed && strings.TrimSpace(reason) != "" {
+	if typ == core.ChangesRequested || (typ == core.Closed || typ == core.Done) && strings.TrimSpace(reason) != "" {
 		msg := newID()
 		files[core.MessagePath(v.ID, msg)] = core.EncodeMessage(core.Message{Author: actor, At: now, Body: reason})
 		e.Message = msg.String()

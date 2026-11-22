@@ -44,7 +44,7 @@ type Event struct {
 	Agent  string // set when an AI wrote the event through a harness
 
 	ShortID           string // created
-	PlanBlob          string // submitted, approved, changes-requested
+	PlanBlob          string // submitted, approved, changes-requested, done
 	RequiredApprovals int    // submitted
 	Message           string // changes-requested, closed: ULID of a Message
 	Task              string // claimed, released, completed: T-<n> (ADR 0013 section 4)
@@ -133,8 +133,11 @@ const (
 	StateInvalid    State = "invalid"
 )
 
-// The Event types format version 2 adds (ADR 0013 section 4). done comes
-// with bfc done (#111).
+// Final reports whether a plan in state s takes no more writes: closed and
+// done are final.
+func (s State) Final() bool { return s == StateClosed || s == StateDone }
+
+// The Event types format version 2 adds (ADR 0013 section 4).
 const (
 	Claimed   EventType = "claimed"
 	Released  EventType = "released"
@@ -150,7 +153,7 @@ const Checked EventType = "checked"
 // Any other type may belong to a later format version.
 func KnownEventType(t EventType) bool {
 	switch t {
-	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed, Released, Completed:
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed, Released, Completed, Done:
 		return true
 	}
 	return false
@@ -200,7 +203,7 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if n < minShortIDLen || n > maxShortIDLen || e.ShortID != ShortIDPrefix+own[:n] {
 			return fmt.Errorf("event %s: short_id %q is not %s and the first 4 to 16 characters of %s", id, e.ShortID, ShortIDPrefix, own)
 		}
-	case Submitted, Approved, ChangesRequested:
+	case Submitted, Approved, ChangesRequested, Done:
 		if !objectIDPattern.MatchString(e.PlanBlob) {
 			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
 		}
@@ -218,7 +221,7 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if h, err := ulid.ParseStrict(e.Handoff); err != nil || h.String() != e.Handoff {
 			return fmt.Errorf("event %s: handoff %q is not the ULID of a Handoff", id, e.Handoff)
 		}
-	case Checked, Done:
+	case Checked:
 		return fmt.Errorf("event %s: type %q is not written by this bfc", id, e.Type)
 	default:
 		return fmt.Errorf("event %s: unknown type %q", id, e.Type)

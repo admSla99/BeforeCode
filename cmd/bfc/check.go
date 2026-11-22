@@ -135,8 +135,8 @@ func readCheckResult(r io.Reader) (checkResult, error) {
 // new file in one commit.
 func recordCheck(cmd *cobra.Command, s *store.Store, v index.Plan, c core.Check, res checkResult) (core.Check, error) {
 	ctx := cmd.Context()
-	if v.Status.State == core.StateClosed {
-		return core.Check{}, fmt.Errorf("%s is closed; closed is final and takes no checks", v.ShortID)
+	if err := core.CheckWritable(v.Status); err != nil {
+		return core.Check{}, fmt.Errorf("%w and takes no checks", err)
 	}
 	blob, plan, err := currentPlanDoc(ctx, s, v.ID)
 	if errors.Is(err, store.ErrNotFound) {

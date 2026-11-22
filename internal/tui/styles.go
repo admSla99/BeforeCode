@@ -30,7 +30,7 @@ func stateStyle(s core.State) lipgloss.Style {
 		return lipgloss.NewStyle().Foreground(lipgloss.Yellow)
 	case core.StateApproved, core.StateInProgress:
 		return lipgloss.NewStyle().Foreground(lipgloss.Green)
-	case core.StateClosed, core.StateInvalid:
+	case core.StateClosed, core.StateDone, core.StateInvalid:
 		return lipgloss.NewStyle().Foreground(lipgloss.Red)
 	default:
 		return lipgloss.NewStyle()

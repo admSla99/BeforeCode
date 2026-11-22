@@ -50,7 +50,8 @@ type Claim struct {
 // valid submitted, for a Task that is open or Paused: of two Claims on one
 // Task the earlier ULID wins. A released (the Task is Paused) or completed
 // counts when its author holds the Task and it names a Handoff. An approved
-// plan with a Claim is in-progress.
+// plan with a Claim is in-progress. A done by a person while the plan is
+// in-progress makes it done, which is final like closed.
 func Derive(plan ulid.ULID, events []Event, planBlob string) Status {
 	st, _ := derive(plan, events, planBlob)
 	return st
@@ -63,6 +64,20 @@ func Derive(plan ulid.ULID, events []Event, planBlob string) Status {
 func SkippedEvents(plan ulid.ULID, events []Event, planBlob string) []ulid.ULID {
 	_, skipped := derive(plan, events, planBlob)
 	return skipped
+}
+
+// validApprovers returns the emails of the Approvals among round, the
+// approved Events of the open review round, that approve planBlob, each
+// once, in the order given.
+func validApprovers(round []Event, planBlob string) []string {
+	var out []string
+	for _, e := range round {
+		email := strings.ToLower(e.Author.Email)
+		if e.PlanBlob == planBlob && planBlob != "" && !slices.Contains(out, email) {
+			out = append(out, email)
+		}
+	}
+	return out
 }
 
 // HandoffEvents returns, by the ULID of the Handoff it names, each valid
@@ -142,6 +157,17 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 				if valid = !isAuthor(e.Author) && e.Agent == "" && inRound; valid {
 					round = append(round, e)
 				}
+			case Done:
+				// Valid only while the plan is in-progress: approved, with a
+				// Claim (ADR 0013 section 4). The Approvals count for the
+				// plan.md the done names, not the current one, so a plan.md
+				// changed elsewhere before the done arrived does not undo it.
+				inProgress := inRound && len(st.Tasks) > 0 && len(validApprovers(round, e.PlanBlob)) >= st.RequiredApprovals
+				if valid = e.Agent == "" && inProgress; valid {
+					st.State, st.RequiredApprovals, st.Approvers = StateDone, 0, nil
+					skip(events[start+2+i:]...)
+					return st, skipped
+				}
 			case Closed:
 				st.State, st.RequiredApprovals = StateClosed, 0
 				skip(events[start+2+i:]...)
@@ -155,12 +181,7 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 	if !inRound {
 		return st, skipped
 	}
-	for _, e := range round {
-		email := strings.ToLower(e.Author.Email)
-		if e.PlanBlob == planBlob && planBlob != "" && !slices.Contains(st.Approvers, email) {
-			st.Approvers = append(st.Approvers, email)
-		}
-	}
+	st.Approvers = validApprovers(round, planBlob)
 	st.State = StateInReview
 	if len(st.Approvers) >= st.RequiredApprovals {
 		st.State = StateApproved
