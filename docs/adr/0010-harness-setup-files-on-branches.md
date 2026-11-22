@@ -23,3 +23,7 @@ This widens the rule of ADR 0001. On normal branches live `.beforecode/config.ya
 - A teammate who runs Claude Code in the repository without `bfc` on `PATH` gets a hook that cannot run. `bfc doctor` warns about this (issue #61).
 - Turning the hook off is a pull request too: `claude.enforce: false` in `.beforecode/config.yaml` (config version 3, issue #59).
 - `bfc setup` for other harnesses (phase 4) follows the same rule for their project files.
+
+## Amendment (2026-11-22, issue #99)
+
+`bfc setup github` (ADR 0014) writes `.github/workflows/bfc-plan-check.yml`, the plan check workflow. It lives on normal branches under the same rule: committed through a pull request, rewritten for the installed `bfc` on every run, never committed by `bfc` itself. A workflow that only some teammates have is no check, for the same reason as the hook.

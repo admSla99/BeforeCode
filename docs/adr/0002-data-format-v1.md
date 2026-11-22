@@ -1,6 +1,6 @@
 # ADR 0002: Data format v1 for the plans ref
 
-Date: 2026-11-16. Status: accepted.
+Date: 2026-11-16. Status: accepted. Extended by ADR 0013 (`format-version` 2: Tasks, Claims, Handoffs, checks, `done`) on 2026-11-22; this document still holds for everything ADR 0013 does not change.
 
 ## Decision
 
@@ -22,14 +22,14 @@ plans/
     plan.md
     events/<ULID>.yaml
     messages/<ULID>.md
-    handoff/            reserved (phase 2)
-    checks/             reserved (phase 3)
+    handoff/            reserved; used from v2 (ADR 0013)
+    checks/             reserved; used from v2 (ADR 0013)
 ```
 
 - **ULID.** 26 characters, Crockford base32, upper case, as in the ULID specification. A plan directory is named by the plan's ULID only, with no title slug, so the path never changes when the title does. The ULID of an Event or Message file is that item's ID.
 - **`intent.md`** is written by `bfc new`. **`plan.md`** is created from the template the first time someone edits it with `bfc edit`. It can be missing in a `draft` plan.
 - **Append-only.** Files in `events/` and `messages/` are never modified, renamed or deleted. Only `intent.md` and `plan.md` change in place.
-- **Reserved names.** A v1 binary never writes `handoff/` or `checks/` and ignores them when reading. It also ignores any other unknown file or directory.
+- **Reserved names.** A v1 binary never writes `handoff/` or `checks/` and ignores them when reading. Their format is in ADR 0013. It also ignores any other unknown file or directory.
 - **Encoding.** All files are UTF-8 with LF line endings. Markdown files with metadata start with YAML front matter between two `---` lines.
 
 ## 2. `format-version`
@@ -81,7 +81,7 @@ plan_blob: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad
 | `approved` | `plan_blob` | anyone but the plan author, and not with `agent` | `in-review` → `approved` once enough valid Approvals exist |
 | `changes-requested` | `plan_blob`, `message` (ULID of the Message with the reasons) | anyone but the plan author | `in-review` or `approved` → `draft` |
 | `closed` | `message` (optional) | anyone | any state → `closed`, which is final |
-| `claimed`, `checked`, `done` | reserved for phase 3 | | |
+| `claimed`, `released`, `completed`, `done` | see ADR 0013 (v2); the reserved `checked` was dropped | | |
 
 `bfc` refuses to write an event that is not allowed. It also refuses `approved` while the plan has an open Question (see section 7). That check runs only at write time; state derivation does not read Messages.
 
@@ -144,7 +144,7 @@ There is no front matter. Title and labels live only in `intent.md`.
 
 - IDs are unique within the file and are **never reused or renumbered**. A removed AC-3 leaves a gap, because Messages and Plan check results refer to criteria by ID.
 - `bfc submit` requires at least one Acceptance criterion.
-- `## Tasks` is a free-form list in v1. Its structure is specified in phase 3.
+- `## Tasks` is a free-form list in v1. In v2 its items are `- T-<n>: <text>` (ADR 0013 section 3).
 
 ## 7. Messages
 

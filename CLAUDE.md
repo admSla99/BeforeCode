@@ -8,13 +8,15 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 
 - Go + Bubble Tea (Bubbles, Lip Gloss, Glamour, Huh). One static binary, command name `bfc`.
 - Plans are plain Markdown/YAML files stored in the hidden git ref `refs/beforecode/plans`. No Dolt, no server. SQLite is a disposable local cache only.
-- Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (`.claude/settings.json`, `.claude/skills/beforecode/SKILL.md`) live on normal branches (ADR 0010).
+- Only `.beforecode/config.yaml`, `.beforecode/skills/`, `.beforecode/templates/` and the files written by `bfc setup <harness>` (`.claude/settings.json`, `.claude/skills/beforecode/SKILL.md`, and from `bfc setup github` `.github/workflows/bfc-plan-check.yml`) live on normal branches (ADR 0010, 0014).
 - Git is driven through the system `git` binary (subprocess), never a Go git library.
 - GitHub only, single repository. No GitLab, no multi-repo plans.
 - Two documents per plan: short `intent.md` (human) and `plan.md` (for agents, with acceptance criteria `AC-1`, `AC-2`, …).
 - Agents use the `bfc` CLI with `--json`, like people and scripts; their instructions come from the binary (`bfc prime`). No MCP server, no daemon (ADR 0008).
 - The Current plan is bound to the branch by its Short ID (`bfc start`), fallback `bfc use` (ADR 0009). `bfc start` is the first command that changes the current branch, on the user's explicit request.
-- Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`) are for people and refuse to run inside an agent; a PreToolUse hook blocks edits unless the Current plan is approved (ADR 0011).
+- Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`, `done`) and `acknowledge` are for people and refuse to run inside an agent; a PreToolUse hook blocks edits unless the Current plan is `approved` or `in-progress` (ADR 0011).
+- Data format v2 (ADR 0013): Tasks `T-1`, `T-2`, … in `plan.md`; `claimed`, `released`, `completed` and `done` Events; Handoffs and plan check results as files. Two Claims on one Task: the earlier ULID wins. Upgrading a ref is the explicit `bfc migrate`.
+- The plan check runs Claude Code headless in GitHub Actions; `bfc check record` stores the result, the workflow labels and comments through `gh`, `bfc` never calls the GitHub API. Pull requests from forks are skipped (ADR 0014).
 - The Grill is stored as Messages (ADR 0002 section 7). Skills ship in the binary like the templates; the repository's copy wins.
 - Identity is the git commit author. No signing or extra trust rules yet.
 - Apache-2.0.
