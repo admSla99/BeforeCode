@@ -209,7 +209,13 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 		if !taskID.MatchString(e.Task) {
 			return fmt.Errorf("event %s: task %q is not a Task ID such as T-1", id, e.Task)
 		}
-		if h, err := ulid.ParseStrict(e.Handoff); e.Type != Claimed && (err != nil || h.String() != e.Handoff) {
+		if e.Type == Claimed {
+			if e.Handoff != "" {
+				return fmt.Errorf("event %s: a claimed Event names no handoff", id)
+			}
+			break
+		}
+		if h, err := ulid.ParseStrict(e.Handoff); err != nil || h.String() != e.Handoff {
 			return fmt.Errorf("event %s: handoff %q is not the ULID of a Handoff", id, e.Handoff)
 		}
 	case Checked, Done:

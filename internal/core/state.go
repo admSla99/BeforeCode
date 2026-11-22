@@ -68,15 +68,15 @@ func SkippedEvents(plan ulid.ULID, events []Event, planBlob string) []ulid.ULID 
 // HandoffEvents returns, by the ULID of the Handoff it names, each valid
 // released or completed Event of the plan: a Handoff that is not in it has
 // no Event and changes nothing (ADR 0013 section 5).
-func HandoffEvents(plan ulid.ULID, events []Event, planBlob string) map[string]ulid.ULID {
+func HandoffEvents(plan ulid.ULID, events []Event, planBlob string) map[ulid.ULID]ulid.ULID {
 	skipped := map[ulid.ULID]bool{}
 	for _, id := range SkippedEvents(plan, events, planBlob) {
 		skipped[id] = true
 	}
-	out := map[string]ulid.ULID{}
+	out := map[ulid.ULID]ulid.ULID{}
 	for _, e := range events {
-		if (e.Type == Released || e.Type == Completed) && e.Plan == plan && !skipped[e.ID] {
-			out[e.Handoff] = e.ID
+		if (e.Type == Released || e.Type == Completed) && !skipped[e.ID] {
+			out[ulid.MustParseStrict(e.Handoff)] = e.ID // derive accepts only a ULID
 		}
 	}
 	return out
@@ -122,7 +122,8 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 				}
 			case Released, Completed:
 				ts := st.Tasks[e.Task]
-				if valid = ts.State == TaskClaimed && samePerson(e.Author, ts.Claim.Holder) && e.Handoff != ""; valid {
+				_, err := ulid.ParseStrict(e.Handoff)
+				if valid = ts.State == TaskClaimed && samePerson(e.Author, ts.Claim.Holder) && err == nil; valid {
 					ts.State, ts.Handoff = TaskPaused, e.Handoff
 					if e.Type == Completed {
 						ts.State = TaskCompleted

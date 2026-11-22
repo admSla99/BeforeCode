@@ -22,7 +22,9 @@
       "Bash(bfc edit:*)",
       "Bash(bfc start:*)",
       "Bash(bfc ready:*)",
-      "Bash(bfc claim:*)"
+      "Bash(bfc claim:*)",
+      "Bash(bfc handoff:*)",
+      "Bash(bfc push:*)"
     ],
     "deny": [
       "Bash(bfc submit:*)",

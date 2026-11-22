@@ -119,15 +119,9 @@ func runHandoff(cmd *cobra.Command, query, task, note string, done, asJSON bool)
 // a Handoff without its Event, which changes nothing). A file that cannot
 // be read as a Handoff is skipped; bfc doctor reports it.
 func planHandoffs(ctx context.Context, s *store.Store, v index.Plan) ([]core.Handoff, map[ulid.ULID]string, error) {
-	files, err := readPlanFiles(ctx, s, v.ID, "handoff", ".md")
+	hs, err := readHandoffs(ctx, s, v.ID)
 	if err != nil {
 		return nil, nil, err
-	}
-	var hs []core.Handoff
-	for _, f := range files {
-		if h, err := core.ParseHandoff(f.id, f.data); err == nil {
-			hs = append(hs, h)
-		}
 	}
 	events, err := readEvents(ctx, s, v.ID)
 	if err != nil {
@@ -139,11 +133,25 @@ func planHandoffs(ctx context.Context, s *store.Store, v index.Plan) ([]core.Han
 	}
 	byHandoff := map[ulid.ULID]string{}
 	for h, e := range core.HandoffEvents(v.ID, events, blob) {
-		if id, err := ulid.ParseStrict(h); err == nil {
-			byHandoff[id] = e.String()
-		}
+		byHandoff[h] = e.String()
 	}
 	return hs, byHandoff, nil
+}
+
+// readHandoffs returns the Handoffs of a plan in ULID order. A file that
+// cannot be read as a Handoff is skipped; bfc doctor reports it.
+func readHandoffs(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.Handoff, error) {
+	files, err := readPlanFiles(ctx, s, plan, "handoff", ".md")
+	if err != nil {
+		return nil, err
+	}
+	var hs []core.Handoff
+	for _, f := range files {
+		if h, err := core.ParseHandoff(f.id, f.data); err == nil {
+			hs = append(hs, h)
+		}
+	}
+	return hs, nil
 }
 
 // readEvents returns the Events of a plan that parse, in ULID order.
@@ -186,11 +194,15 @@ func toHandoffJSON(v index.Plan, h core.Handoff, event string) handoffJSON {
 
 // writeTasks prints the Tasks section of bfc show: each Task of plan.md
 // with its state and holder, and under it its Handoffs. Handoffs without
-// their Event follow as notes.
+// their Event, or of a Task plan.md no longer has, follow as notes.
 func writeTasks(b *strings.Builder, v index.Plan, hs []core.Handoff, events map[ulid.ULID]string) {
 	views := core.TaskViews(v.Status, v.Plan)
 	if len(views) == 0 && len(hs) == 0 {
 		return
+	}
+	listed := map[string]bool{}
+	for _, t := range views {
+		listed[t.ID] = true
 	}
 	b.WriteString("\n--- Tasks ---\n")
 	for _, t := range views {
@@ -206,8 +218,11 @@ func writeTasks(b *strings.Builder, v index.Plan, hs []core.Handoff, events map[
 		}
 	}
 	for _, h := range hs {
-		if events[h.ID] == "" {
+		switch {
+		case events[h.ID] == "":
 			writeHandoff(b, h, "note without its Event, changes nothing: ")
+		case !listed[h.Task]:
+			writeHandoff(b, h, "of a Task plan.md no longer has: ")
 		}
 	}
 }

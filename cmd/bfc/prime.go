@@ -139,7 +139,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.\n" +
 	"  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.\n" +
 	"  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.\n" +
-	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
+	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open and Paused Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
 	"  - `bfc handoff [id] T-n -m <what is done, what comes next> [--done]`: before you stop working on a Task you hold, hand it off: `--done` when it is finished, else it is Paused for the next one. Then run `bfc push`.\n" +
 	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent, and so does `acknowledge`. " +
 	"When a plan needs one, tell the user to open `bfc` and take it there.\n" +
@@ -150,8 +150,9 @@ const primeInstructions = "# BeforeCode\n\n" +
 // primeLimit caps the output of bfc prime; a longer plan.md is cut.
 const primeLimit = 8 << 10
 
-// primeListLimit caps each list of bfc prime, so that the lists alone stay
-// well within primeLimit.
+// primeListLimit caps each list of bfc prime. The lists of short lines stay
+// well within primeLimit; the Tasks with their Handoffs may not, and then
+// fitDoc cuts what comes after them.
 const primeListLimit = 10
 
 // writeList writes the lines of the first primeListLimit items, then how

@@ -207,15 +207,13 @@ With an ID, only that plan's. bfc claim takes one.`,
 
 // handoffNotes returns the notes of the plan's Handoffs by their ULID.
 func handoffNotes(ctx context.Context, s *store.Store, v index.Plan) (map[string]string, error) {
-	files, err := readPlanFiles(ctx, s, v.ID, "handoff", ".md")
+	hs, err := readHandoffs(ctx, s, v.ID)
 	if err != nil {
 		return nil, err
 	}
 	notes := map[string]string{}
-	for _, f := range files {
-		if h, err := core.ParseHandoff(f.id, f.data); err == nil {
-			notes[h.ID.String()] = h.Note
-		}
+	for _, h := range hs {
+		notes[h.ID.String()] = h.Note
 	}
 	return notes, nil
 }
