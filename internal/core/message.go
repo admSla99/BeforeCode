@@ -201,14 +201,41 @@ func Discussion(msgs []Message) []DiscussionMessage {
 }
 
 func answered(q Message, replies []Message) bool {
+	_, ok := firstAnswer(q, replies)
+	return ok
+}
+
+// firstAnswer returns the first of replies, direct replies to q, that
+// answers it.
+func firstAnswer(q Message, replies []Message) (Message, bool) {
 	for _, r := range replies {
 		for _, to := range q.To {
 			if to == AI && r.Agent != "" || r.Agent == "" && strings.EqualFold(to, r.Author.Email) {
-				return true
+				return r, true
 			}
 		}
 	}
-	return false
+	return Message{}, false
+}
+
+// AnswerOf returns the Message among msgs, in ULID order, that answers the
+// Question with this ID (the rule of OpenQuestions); ok is false while it
+// is open, or when the Question is not among msgs.
+func AnswerOf(msgs []Message, question ulid.ULID) (answer Message, ok bool) {
+	var q *Message
+	var replies []Message
+	for i, m := range msgs {
+		switch {
+		case m.ID == question:
+			q = &msgs[i]
+		case m.ReplyTo == question.String():
+			replies = append(replies, m)
+		}
+	}
+	if q == nil {
+		return Message{}, false
+	}
+	return firstAnswer(*q, replies)
 }
 
 // CheckOpenQuestions reports why the plan with Status st cannot be approved

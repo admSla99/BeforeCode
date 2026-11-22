@@ -170,3 +170,21 @@ func TestDiscussionKeepsRepliesInACycle(t *testing.T) {
 		t.Errorf("Discussion has %d Messages, want 2", got)
 	}
 }
+
+// Issue #114: the answer of a Question is its first direct reply by an
+// addressee (or by an agent for ai); other replies are discussion.
+func TestAnswerOf(t *testing.T) {
+	q := Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C40"), Author: ada, To: []string{"ben@example.com"}, Body: "EUR only?"}
+	chat := Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C41"), Author: jana, ReplyTo: q.ID.String(), Body: "Good question."}
+	answer := Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C42"), Author: ben, ReplyTo: q.ID.String(), Body: "Yes."}
+	later := Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C43"), Author: ben, ReplyTo: q.ID.String(), Body: "Still yes."}
+	if _, ok := AnswerOf([]Message{q, chat}, q.ID); ok {
+		t.Errorf("a reply by someone else answered it")
+	}
+	if got, ok := AnswerOf([]Message{q, chat, answer, later}, q.ID); !ok || got.ID != answer.ID {
+		t.Errorf("AnswerOf = %+v, %v; want the first answer", got, ok)
+	}
+	if _, ok := AnswerOf([]Message{answer}, q.ID); ok {
+		t.Errorf("an answer to a Question that is not among msgs")
+	}
+}

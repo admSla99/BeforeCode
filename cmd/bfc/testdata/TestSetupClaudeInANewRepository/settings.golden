@@ -24,7 +24,8 @@
       "Bash(bfc ready:*)",
       "Bash(bfc claim:*)",
       "Bash(bfc handoff:*)",
-      "Bash(bfc push:*)"
+      "Bash(bfc push:*)",
+      "Bash(bfc wait:*)"
     ],
     "deny": [
       "Bash(bfc submit:*)",
