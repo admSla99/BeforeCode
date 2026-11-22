@@ -27,10 +27,8 @@ type planCheckWorkflow struct {
 	} `yaml:"jobs"`
 }
 
-// Issue #103 AC-1: the plan check runs on pull_request opened, synchronize,
-// reopened and edited, may write contents and pull requests, builds bfc
-// from the source and fetches the Plans ref.
-func TestPlanCheckWorkflowTriggersAndPermissions(t *testing.T) {
+func readPlanCheckWorkflow(t *testing.T) planCheckWorkflow {
+	t.Helper()
 	data, err := os.ReadFile(".github/workflows/bfc-plan-check.yml")
 	if err != nil {
 		t.Fatal(err)
@@ -39,6 +37,15 @@ func TestPlanCheckWorkflowTriggersAndPermissions(t *testing.T) {
 	if err := yaml.Unmarshal(data, &w); err != nil {
 		t.Fatal(err)
 	}
+	return w
+}
+
+// Issue #103 AC-1: the plan check runs on pull_request opened, synchronize,
+// reopened and edited, may write contents and pull requests, builds bfc
+// from the source and fetches the Plans ref.
+func TestPlanCheckWorkflowTriggersAndPermissions(t *testing.T) {
+	t.Parallel()
+	w := readPlanCheckWorkflow(t)
 	if got := w.On.PullRequest.Types; !slices.Equal(got, []string{"opened", "synchronize", "reopened", "edited"}) {
 		t.Errorf("pull_request types = %v", got)
 	}
@@ -51,7 +58,12 @@ func TestPlanCheckWorkflowTriggersAndPermissions(t *testing.T) {
 			runs.WriteString(s.Run + "\n")
 		}
 	}
-	for _, want := range []string{"go build -o", "./cmd/bfc", "bfc bootstrap", "bfc check find", "bfc prime check", "bfc check record", "bfc push"} {
+	for _, want := range []string{
+		"go build -o", "./cmd/bfc", "bfc bootstrap", "bfc check find", "bfc prime check", "bfc check record", "bfc push",
+		// Issue #103 AC-4: Claude Code may only read.
+		`--allowedTools Read Grep Glob "Bash(git diff:*)" "Bash(git log:*)" "Bash(bfc show:*)" "Bash(bfc prime:*)"`,
+		"--disallowedTools Edit Write NotebookEdit WebFetch WebSearch",
+	} {
 		if !strings.Contains(runs.String(), want) {
 			t.Errorf("no step runs %q", want)
 		}
@@ -62,14 +74,8 @@ func TestPlanCheckWorkflowTriggersAndPermissions(t *testing.T) {
 // written by whoever opens it: the scripts take them from the environment,
 // never through ${{ }} inside run, where they would become shell code.
 func TestPlanCheckWorkflowKeepsUntrustedTextOutOfScripts(t *testing.T) {
-	data, err := os.ReadFile(".github/workflows/bfc-plan-check.yml")
-	if err != nil {
-		t.Fatal(err)
-	}
-	var w planCheckWorkflow
-	if err := yaml.Unmarshal(data, &w); err != nil {
-		t.Fatal(err)
-	}
+	t.Parallel()
+	w := readPlanCheckWorkflow(t)
 	expr := regexp.MustCompile(`\$\{\{[^}]*\}\}`)
 	for _, job := range w.Jobs {
 		for _, s := range job.Steps {
