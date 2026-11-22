@@ -364,7 +364,7 @@ func TestDoctorChecksTheFormatVersion(t *testing.T) {
 	dir := newLocalRepo(t)
 	writeRef(t, dir, "from the future", map[string][]byte{"format-version": []byte("99\n")})
 	out, _ := bfcIn(t, dir, "doctor")
-	wantDoctor(t, out, "FAIL", "format-version", "99 is newer than this bfc supports (1)")
+	wantDoctor(t, out, "FAIL", "format-version", "99 is newer than this bfc supports (2)")
 	if !strings.Contains(out, "fix: update bfc") {
 		t.Errorf("output lacks the fix:\n%s", out)
 	}
@@ -378,7 +378,7 @@ func TestDoctorChecksTheFormatVersion(t *testing.T) {
 	// Issue #48 Q1: also a plans ref without plans gets one, as after an
 	// interrupted bfc init.
 	out = mustBfc(t, dir, "doctor", "--fix")
-	wantDoctor(t, out, "fixed", "format-version", "1")
+	wantDoctor(t, out, "fixed", "format-version", "2")
 }
 
 // Issue #48 AC-5: a repair that fails still leaves a fix line that says
@@ -394,7 +394,7 @@ func TestDoctorFixLineAfterAFailedRepair(t *testing.T) {
 
 	out, _ := bfcIn(t, dir, "doctor", "--fix")
 	wantDoctor(t, out, "FAIL", "format-version")
-	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "fix: bfc doctor --fix: adds format-version 1") {
+	if !strings.Contains(out, "fix failed:") || !strings.Contains(out, "fix: bfc doctor --fix: adds format-version 2") {
 		t.Errorf("output lacks the failed fix and what to do:\n%s", out)
 	}
 }
@@ -428,7 +428,7 @@ func TestDoctorFixAddsAMissingFormatVersion(t *testing.T) {
 		t.Errorf("doctor exited 0:\n%s", out)
 	}
 	wantDoctor(t, out, "FAIL", "format-version", "has no format-version file")
-	for _, want := range []string{"fix: bfc doctor --fix: adds format-version 1 in a new commit",
+	for _, want := range []string{"fix: bfc doctor --fix: adds format-version 2 in a new commit",
 		"1 failed check can be repaired with bfc doctor --fix"} {
 		if !strings.Contains(out, want) {
 			t.Errorf("output lacks %q:\n%s", want, out)
@@ -437,21 +437,21 @@ func TestDoctorFixAddsAMissingFormatVersion(t *testing.T) {
 	before := gitIn(t, ana, "rev-parse", plansRef)
 
 	out = mustBfc(t, ana, "doctor", "--fix")
-	wantDoctor(t, out, "fixed", "format-version", "1")
+	wantDoctor(t, out, "fixed", "format-version", "2")
 	if got := gitIn(t, ana, "rev-parse", plansRef+"^"); got != before {
 		t.Errorf("the repair is not one new commit on top of %s (parent %s)", before, got)
 	}
-	if msg := gitIn(t, ana, "log", "-1", "--format=%s", plansRef); msg != "bfc doctor: add format-version 1" {
+	if msg := gitIn(t, ana, "log", "-1", "--format=%s", plansRef); msg != "bfc doctor: add format-version 2" {
 		t.Errorf("commit message %q", msg)
 	}
-	if got := gitIn(t, ana, "show", plansRef+":format-version"); got != "1" {
+	if got := gitIn(t, ana, "show", plansRef+":format-version"); got != "2" {
 		t.Errorf("format-version = %q", got)
 	}
 	if gitIn(t, ana, "rev-parse", "HEAD") != head || gitIn(t, ana, "status", "--porcelain") != status {
 		t.Error("the repair touched the current branch, the index or the working tree")
 	}
 	out = mustBfc(t, ana, "doctor")
-	wantDoctor(t, out, "ok", "format-version", "1")
+	wantDoctor(t, out, "ok", "format-version", "2")
 	if out := mustBfc(t, ana, "list"); !strings.Contains(out, "Payments via Stripe") {
 		t.Errorf("list after the repair:\n%s", out)
 	}

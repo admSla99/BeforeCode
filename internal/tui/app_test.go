@@ -35,8 +35,8 @@ Refunds.
 
 ## Tasks
 
-- Add the Stripe client.
-- Wire the feature flag.
+- T-1: Add the Stripe client.
+- T-2: Wire the feature flag.
 - Remove the old provider once EU traffic is moved.
 
 ## Acceptance criteria

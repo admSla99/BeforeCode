@@ -27,7 +27,9 @@ Refunds.
 
 ## Tasks
 
-- Add the client.
+- T-1: Add the client.
+- T-2: Handle the webhook idempotently,
+  keyed by the event ID.
 
 ## Acceptance criteria
 
@@ -133,5 +135,75 @@ func TestAcceptanceCriteriaListsTheIDsInOrder(t *testing.T) {
 	}
 	if got := core.AcceptanceCriteria(nil); len(got) != 0 {
 		t.Errorf("no plan.md: got %v", got)
+	}
+}
+
+// Issue #100 AC-4: Tasks are "- T-<n>: <text>" items of ## Tasks, checked
+// like acceptance criteria.
+func TestValidatePlanChecksTasks(t *testing.T) {
+	cases := map[string]struct {
+		plan string
+		want []string
+	}{
+		"not a task":       {strings.Replace(goodPlan, "- T-1: Add", "- Add", 1), []string{`not a task: "- Add the client."; write "- T-<n>: <text>"`}},
+		"leading zero":     {strings.Replace(goodPlan, "- T-1:", "- T-01:", 1), []string{`not a task: "- T-01:`}},
+		"zero":             {strings.Replace(goodPlan, "- T-1:", "- T-0:", 1), []string{`not a task: "- T-0:`}},
+		"duplicate ID":     {strings.Replace(goodPlan, "- T-2:", "- T-1:", 1), []string{"T-1 is used more than once (first on line"}},
+		"empty text":       {strings.Replace(goodPlan, "- T-1: Add the client.", "- T-1:", 1), []string{"T-1 has no text"}},
+		"other list style": {strings.Replace(goodPlan, "- T-1:", "* T-1:", 1), []string{`not a task: "* T-1:`}},
+	}
+	for name, c := range cases {
+		got := messages(core.ValidatePlan([]byte(c.plan)))
+		for _, w := range c.want {
+			if !strings.Contains(got, w) {
+				t.Errorf("%s: problems do not include %q:\n%s", name, w, got)
+			}
+		}
+	}
+}
+
+func TestValidatePlanAllowsAnEmptyTasksSection(t *testing.T) {
+	plan := strings.Replace(goodPlan, "- T-1: Add the client.\n- T-2: Handle the webhook idempotently,\n  keyed by the event ID.\n", "", 1)
+	if problems := core.ValidatePlan([]byte(plan)); len(problems) != 0 {
+		t.Errorf("problems with an empty ## Tasks:\n%s", messages(problems))
+	}
+	if got := core.Tasks([]byte(plan)); len(got) != 0 {
+		t.Errorf("Tasks = %v, want none", got)
+	}
+}
+
+// Tasks lists the Tasks in the order of plan.md with their text,
+// continuation lines included, skipping comments, fences, broken items,
+// duplicates and items outside the section.
+func TestTasksListsTheTasksInOrder(t *testing.T) {
+	plan := strings.Replace(goodPlan, "- T-1: Add the client.\n",
+		"- T-3: Third first.\n<!--\n- T-9: in a comment\n-->\n```\n- T-8: in a fence\n```\n- T-1: Add the client.\n- T-3: again\n- broken\n", 1) +
+		"\n## Notes\n\n- T-7: outside the section\n"
+	got := core.Tasks([]byte(plan))
+	want := []core.Task{
+		{ID: "T-3", Text: "Third first."},
+		{ID: "T-1", Text: "Add the client."},
+		{ID: "T-2", Text: "Handle the webhook idempotently,\nkeyed by the event ID."},
+	}
+	if len(got) != len(want) {
+		t.Fatalf("got %v, want %v", got, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Errorf("task %d = %+v, want %+v", i, got[i], want[i])
+		}
+	}
+	if got := core.Tasks(nil); len(got) != 0 {
+		t.Errorf("no plan.md: got %v", got)
+	}
+}
+
+func TestValidatePlanFlagsTheEmptyTemplateTask(t *testing.T) {
+	tpl, err := os.ReadFile(filepath.Join("..", "..", ".beforecode", "templates", "plan.md"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got := messages(core.ValidatePlan(tpl)); !strings.Contains(got, "T-1 has no text") {
+		t.Errorf("template's empty T-1 not flagged:\n%s", got)
 	}
 }

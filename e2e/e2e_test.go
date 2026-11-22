@@ -254,7 +254,7 @@ Refunds.
 
 ## Tasks
 
-- Replace the charge call.
+- T-1: Replace the charge call.
 
 ## Acceptance criteria
 

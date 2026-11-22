@@ -27,7 +27,11 @@ type showOutput struct {
 	Intent             string      `json:"intent"`
 	Plan               *string     `json:"plan"`
 	AcceptanceCriteria []string    `json:"acceptance_criteria"`
-	OpenQuestions      []struct {
+	Tasks              []struct {
+		ID   string `json:"id"`
+		Text string `json:"text"`
+	} `json:"tasks"`
+	OpenQuestions []struct {
 		ID   string   `json:"id"`
 		To   []string `json:"to"`
 		Ref  string   `json:"ref"`
@@ -74,6 +78,10 @@ func TestShowJSONPrintsThePlanForAgents(t *testing.T) {
 	if strings.Join(got.AcceptanceCriteria, ",") != "AC-1" {
 		t.Errorf("acceptance_criteria = %v", got.AcceptanceCriteria)
 	}
+	// Issue #100 AC-5: the Tasks of plan.md, in order.
+	if len(got.Tasks) != 1 || got.Tasks[0].ID != "T-1" || got.Tasks[0].Text != "Add the client." {
+		t.Errorf("tasks = %+v", got.Tasks)
+	}
 	// The second Question to ai is open too; the third was answered.
 	if len(got.OpenQuestions) != 2 || got.OpenQuestions[0].ID != q || got.OpenQuestions[0].Ref != "plan.md#AC-1" ||
 		got.OpenQuestions[0].Body != "Which card?\nAny?" || strings.Join(got.OpenQuestions[0].To, ",") != "ada@example.com" {
@@ -94,7 +102,7 @@ func TestShowJSONWithoutPlanMdOfTheCurrentPlan(t *testing.T) {
 		t.Errorf("got %+v", got)
 	}
 	out := mustBfc(t, dir, "show", "--json")
-	for _, empty := range []string{`"approvers": []`, `"acceptance_criteria": []`, `"open_questions": []`, `"messages": []`, `"plan": null`} {
+	for _, empty := range []string{`"approvers": []`, `"acceptance_criteria": []`, `"tasks": []`, `"open_questions": []`, `"messages": []`, `"plan": null`} {
 		if !strings.Contains(out, empty) {
 			t.Errorf("missing %s in\n%s", empty, out)
 		}

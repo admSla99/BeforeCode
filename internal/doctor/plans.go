@@ -40,7 +40,7 @@ func checkFormatVersion(ctx context.Context, e *env) Result {
 	case v > core.FormatVersion:
 		return fail(update, "format-version %d is newer than this bfc supports (%d)", v, core.FormatVersion)
 	case v < core.FormatVersion:
-		return fail("this bfc cannot migrate it yet; use the bfc release that wrote it",
+		return fail("bfc migrate (bfc doctor --fix does not migrate: it decides which bfc versions may still write)",
 			"format-version %d is older than this bfc writes (%d) and needs a migration", v, core.FormatVersion)
 	}
 	return pass("%d", v)

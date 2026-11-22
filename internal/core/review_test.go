@@ -14,7 +14,7 @@ var (
 	ben  = Person{Name: "Ben Bitdiddle", Email: "ben@example.com"}
 )
 
-const goodPlan = "## Context\nx\n## Approach\nx\n## Affected areas\nx\n## Out of scope\nx\n## Tasks\n- x\n## Acceptance criteria\n\n- AC-1: works\n"
+const goodPlan = "## Context\nx\n## Approach\nx\n## Affected areas\nx\n## Out of scope\nx\n## Tasks\n- T-1: x\n## Acceptance criteria\n\n- AC-1: works\n"
 
 func status(state State, approvers ...string) Status {
 	return Status{State: state, ShortID: "bfc-abcd", Author: ada, RequiredApprovals: 2, Approvers: approvers}

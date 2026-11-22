@@ -110,7 +110,7 @@ func checkPlansRef(cmd *cobra.Command, s *store.Store, mode access) error {
 	case v > core.FormatVersion:
 		return fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
 	case v != core.FormatVersion:
-		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; it needs a migration", v, core.FormatVersion)
+		return fmt.Errorf("the plans ref has format-version %d, which this bfc (%d) does not write; run bfc migrate to upgrade it", v, core.FormatVersion)
 	}
 	return nil
 }
