@@ -30,6 +30,15 @@ type Message struct {
 // IsQuestion reports whether m is addressed to someone.
 func (m Message) IsQuestion() bool { return len(m.To) > 0 }
 
+// Acknowledges returns the Plan check m acknowledges (ADR 0013 section 7):
+// m is about the check (ref checks/<ULID>), written by a person (no Agent),
+// and neither a Question nor a reply, as bfc acknowledge writes it. A
+// Question or a reply about a check is discussion.
+func (m Message) Acknowledges() (ulid.ULID, bool) {
+	id, ok := CheckOfRef(m.Ref)
+	return id, ok && m.Agent == "" && !m.IsQuestion() && m.ReplyTo == ""
+}
+
 type messageFile struct {
 	Author  Person    `yaml:"author"`
 	At      time.Time `yaml:"at"`

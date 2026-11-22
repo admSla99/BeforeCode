@@ -228,13 +228,13 @@ type PullRequestCheck struct {
 // PullRequestChecks returns, for each pull request with a check among
 // checks, the newest one by ULID, ordered by pull request number. planBlob
 // is the object ID of the current plan.md; msgs are the plan's Messages in
-// ULID order, among them the Acknowledgements: Messages by a person (no
-// Agent) whose ref names a check. An Acknowledgement covers only the check
-// it names, so a newer check of the same pull request needs its own.
+// ULID order, among them the Acknowledgements (see IsAcknowledgement). An
+// Acknowledgement covers only the check it names, so a newer check of the
+// same pull request needs its own.
 func PullRequestChecks(checks []Check, planBlob string, msgs []Message) []PullRequestCheck {
 	acks := map[ulid.ULID]*Message{}
 	for i, m := range msgs {
-		if id, ok := CheckOfRef(m.Ref); ok && m.Agent == "" && acks[id] == nil {
+		if id, ok := m.Acknowledges(); ok && acks[id] == nil {
 			acks[id] = &msgs[i]
 		}
 	}
@@ -272,18 +272,6 @@ func Findings(prs []PullRequestCheck) []Finding {
 	var out []Finding
 	for _, p := range prs {
 		out = append(out, p.Findings...)
-	}
-	return out
-}
-
-// OpenFindings returns the Findings of prs that are not acknowledged: the
-// ones that wait on the plan author.
-func OpenFindings(prs []PullRequestCheck) []Finding {
-	var out []Finding
-	for _, f := range Findings(prs) {
-		if !f.Acknowledged {
-			out = append(out, f)
-		}
 	}
 	return out
 }

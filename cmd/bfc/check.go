@@ -78,7 +78,7 @@ stored check. Nothing is pushed; bfc push sends it.`,
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(toCheckJSON(v, c, nil))
+			return enc.Encode(toCheckJSON(v, c))
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "the number of the pull request")
@@ -252,8 +252,6 @@ func readPlanFiles(ctx context.Context, s *store.Store, plan ulid.ULID, dir stri
 }
 
 // checkJSON is the --json shape of a check, documented in docs/design.md.
-// Stale is set only where the check is the one that counts for its pull
-// request (bfc show --json).
 type checkJSON struct {
 	ID         string          `json:"id"`
 	Plan       string          `json:"plan"`
@@ -268,11 +266,15 @@ type checkJSON struct {
 	Criteria   []criterionJSON `json:"criteria"`
 	OutOfScope []string        `json:"out_of_scope"`
 	Summary    string          `json:"summary"`
-	// Stale and Acknowledged are set only where the check is the one that
-	// counts for its pull request (bfc show --json); Acknowledged is then
-	// null without an Acknowledgement.
-	Stale        *bool              `json:"stale,omitempty"`
-	Acknowledged **acknowledgedJSON `json:"acknowledged,omitempty"`
+}
+
+// countingCheckJSON is the check that counts for its pull request, in the
+// checks of bfc show --json: with its stale marker and its Acknowledgement,
+// null without one.
+type countingCheckJSON struct {
+	checkJSON
+	Stale        bool              `json:"stale"`
+	Acknowledged *acknowledgedJSON `json:"acknowledged"`
 }
 
 // acknowledgedJSON is the Acknowledgement of a check: the Message and its
@@ -301,23 +303,20 @@ type findingJSON struct {
 
 // toCountingCheckJSON is the check that counts for its pull request, with
 // its stale marker and Acknowledgement.
-func toCountingCheckJSON(v index.Plan, p core.PullRequestCheck) checkJSON {
-	stale := p.Stale
-	var ack *acknowledgedJSON
+func toCountingCheckJSON(v index.Plan, p core.PullRequestCheck) countingCheckJSON {
+	out := countingCheckJSON{checkJSON: toCheckJSON(v, p.Check), Stale: p.Stale}
 	if a := p.Acknowledgement; a != nil {
-		ack = &acknowledgedJSON{ID: a.ID.String(), Author: a.Author, At: a.At.UTC().Format(time.RFC3339), Reason: a.Body}
+		out.Acknowledged = &acknowledgedJSON{ID: a.ID.String(), Author: a.Author, At: a.At.UTC().Format(time.RFC3339), Reason: a.Body}
 	}
-	out := toCheckJSON(v, p.Check, &stale)
-	out.Acknowledged = &ack
 	return out
 }
 
-func toCheckJSON(v index.Plan, c core.Check, stale *bool) checkJSON {
+func toCheckJSON(v index.Plan, c core.Check) checkJSON {
 	out := checkJSON{
 		ID: c.ID.String(), Plan: v.ID.String(), ShortID: v.ShortID, Author: c.Author,
 		At: c.At.UTC().Format(time.RFC3339), Agent: c.Agent, PR: c.PR, HeadSHA: c.HeadSHA, BaseSHA: c.BaseSHA,
 		PlanBlob: c.PlanBlob, Criteria: []criterionJSON{}, OutOfScope: append([]string{}, c.OutOfScope...),
-		Summary: c.Summary, Stale: stale,
+		Summary: c.Summary,
 	}
 	for _, r := range c.Criteria {
 		out.Criteria = append(out.Criteria, criterionJSON{ID: r.ID, Status: string(r.Status)})

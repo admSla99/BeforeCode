@@ -86,6 +86,9 @@ func TestAskAboutACheck(t *testing.T) {
 	dir, short, _ := draftWithPlan(t)
 	check := strings.TrimSpace(recordResult(t, dir, short, "7", sampleResult))
 	mustBfc(t, dir, "ask", short, "--to", "ben@example.com", "--ref", "checks/"+check, "-m", "Is AC-1 really unmet?")
+	if js := mustBfc(t, dir, "show", short, "--json"); !strings.Contains(js, `"acknowledged": null`) {
+		t.Errorf("a Question about the check acknowledged it:\n%s", js)
+	}
 	if out, err := bfcIn(t, dir, "ask", short, "--to", "ben@example.com", "--ref", "checks/nope", "-m", "x"); err == nil {
 		t.Errorf("a broken check ref was accepted:\n%s", out)
 	}

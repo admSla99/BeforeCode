@@ -185,6 +185,10 @@ func TestAcknowledgedChecks(t *testing.T) {
 		ack("01JD3K8Q2W5V7X9Y0Z1A2B3C50", older.ID, ""),
 		ack("01JD3K8Q2W5V7X9Y0Z1A2B3C51", other.ID, "claude-code"),
 		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C52"), Author: bot, Ref: "plan.md#AC-1", Body: "Not an Acknowledgement."},
+		// A Question or a reply about the check is discussion, not an
+		// Acknowledgement.
+		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C55"), Author: bot, Ref: "checks/" + newest.ID.String(), To: []string{"ben@example.com"}, Body: "Is AC-1 really unmet?"},
+		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C56"), Author: bot, Ref: "checks/" + newest.ID.String(), ReplyTo: "01JD3K8Q2W5V7X9Y0Z1A2B3C55", Body: "Yes."},
 	}
 
 	got := core.PullRequestChecks([]core.Check{older, newest, other}, "cur", msgs)
@@ -207,8 +211,5 @@ func TestAcknowledgedChecks(t *testing.T) {
 	}
 	if got[1].Findings[0].Acknowledged {
 		t.Errorf("PR 9 finding acknowledged")
-	}
-	if open := core.OpenFindings(got); len(open) != 1 || open[0].PR != 9 {
-		t.Errorf("OpenFindings = %+v", open)
 	}
 }

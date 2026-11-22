@@ -67,15 +67,15 @@ Questions and every Message.`,
 // the shape of bfc list --json and the plan's contents.
 type showJSON struct {
 	planJSON
-	Approvers          []string      `json:"approvers"`
-	Intent             string        `json:"intent"`
-	Plan               *string       `json:"plan"`
-	AcceptanceCriteria []string      `json:"acceptance_criteria"`
-	Tasks              []taskJSON    `json:"tasks"`
-	Checks             []checkJSON   `json:"checks"`
-	Findings           []findingJSON `json:"findings"`
-	OpenQuestions      []messageJSON `json:"open_questions"`
-	Messages           []postJSON    `json:"messages"`
+	Approvers          []string            `json:"approvers"`
+	Intent             string              `json:"intent"`
+	Plan               *string             `json:"plan"`
+	AcceptanceCriteria []string            `json:"acceptance_criteria"`
+	Tasks              []taskJSON          `json:"tasks"`
+	Checks             []countingCheckJSON `json:"checks"`
+	Findings           []findingJSON       `json:"findings"`
+	OpenQuestions      []messageJSON       `json:"open_questions"`
+	Messages           []postJSON          `json:"messages"`
 }
 
 // taskJSON is a Task of plan.md in bfc show --json (ADR 0013 section 3).
@@ -99,7 +99,7 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
 		Tasks:              []taskJSON{},
-		Checks:             make([]checkJSON, 0, len(checks)),
+		Checks:             make([]countingCheckJSON, 0, len(checks)),
 		Findings:           []findingJSON{},
 		OpenQuestions:      make([]messageJSON, 0, len(open)),
 		Messages:           make([]postJSON, 0, len(msgs)),

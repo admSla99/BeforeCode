@@ -12,7 +12,7 @@ This repository plans its work with BeforeCode (`bfc`). Every change is made aga
   - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.
   - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.
   - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.
-- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw`, `close` and `acknowledge` refuse to run inside an agent. When a plan needs one, tell the user to open `bfc` and take it there.
+- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent, and so does `acknowledge`. When a plan needs one, tell the user to open `bfc` and take it there.
 - Edits need an approved plan: a hook blocks file edits unless the Current plan is `approved`. Do not change code before that.
 - Implement `plan.md` as approved. When the work must depart from it, record the deviation with `bfc ask <id> --to <plan author email> --ref plan.md#AC-n -m <what and why>` and tell the user.
 
