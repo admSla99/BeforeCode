@@ -77,6 +77,7 @@ var checks = []check{
 	{name: "format-version", run: checkFormatVersion, fix: fixFormatVersion},
 	{name: "index", run: checkIndex, fix: fixIndex},
 	{name: "event files", run: checkEventFiles},
+	{name: "check files", run: checkCheckFiles},
 	{name: "plans", run: checkPlans},
 	{name: "skipped events", run: checkSkippedEvents},
 	{name: "short IDs", run: checkShortIDs},

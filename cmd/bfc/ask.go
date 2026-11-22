@@ -210,33 +210,13 @@ func findMessage(ctx context.Context, s *store.Store, id ulid.ULID) (ulid.ULID, 
 // readMessages returns the Messages of a plan at the tip of the plans ref,
 // in ULID order. A file that cannot be read as a Message is skipped.
 func readMessages(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.Message, error) {
-	tip, err := s.Tip(ctx)
-	if err != nil {
-		return nil, err
-	}
-	entries, err := s.Entries(ctx, tip, core.PlanDir(plan)+"/messages")
-	if errors.Is(err, store.ErrNotFound) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, err
-	}
-	var ids []ulid.ULID
-	var oids []string
-	for _, e := range entries {
-		id, err := ulid.ParseStrict(strings.TrimSuffix(e.Name, ".md"))
-		if err != nil || e.Dir || !strings.HasSuffix(e.Name, ".md") {
-			continue
-		}
-		ids, oids = append(ids, id), append(oids, e.ID)
-	}
-	content, err := s.Blobs(ctx, oids)
+	files, err := readPlanFiles(ctx, s, plan, "messages")
 	if err != nil {
 		return nil, err
 	}
 	var msgs []core.Message
-	for i, id := range ids {
-		if m, err := core.ParseMessage(id, content[oids[i]]); err == nil {
+	for _, f := range files {
+		if m, err := core.ParseMessage(f.id, f.data); err == nil {
 			msgs = append(msgs, m)
 		}
 	}

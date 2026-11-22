@@ -20,14 +20,16 @@ func newShowCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "show [id]",
-		Short: "Print a plan: header, intent.md, plan.md and the discussion",
+		Short: "Print a plan: header, intent.md, plan.md, checks and the discussion",
 		Long: `Print a plan: a header with its IDs, state, author, approvals and open
-Questions, then intent.md, plan.md if it exists, and the Discussion: every
+Questions, then intent.md, plan.md if it exists, the newest plan check of each
+pull request with its Findings, and the Discussion: every
 Thread with its replies, each Question marked open or answered. The ID is a
 Short ID (bfc-5v7x), a prefix of at least four characters, or the full ULID.
 Without an ID it prints the Current plan (bfc start, bfc use). --json prints
 one JSON object for scripts and agents, with the acceptance criteria IDs, the
-open Questions and every Message.`,
+Tasks, the newest plan check of each pull request and its Findings, the open
+Questions and every Message.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			s, err := openPlans(cmd, forReading)
@@ -47,10 +49,14 @@ open Questions and every Message.`,
 			if err != nil {
 				return err
 			}
-			if asJSON {
-				return printPlanJSON(cmd, v, msgs)
+			checks, err := planChecks(cmd.Context(), s, v.ID)
+			if err != nil {
+				return err
 			}
-			return printPlan(cmd.OutOrStdout(), v, msgs)
+			if asJSON {
+				return printPlanJSON(cmd, v, msgs, checks)
+			}
+			return printPlan(cmd.OutOrStdout(), v, msgs, checks)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
@@ -66,6 +72,8 @@ type showJSON struct {
 	Plan               *string       `json:"plan"`
 	AcceptanceCriteria []string      `json:"acceptance_criteria"`
 	Tasks              []taskJSON    `json:"tasks"`
+	Checks             []checkJSON   `json:"checks"`
+	Findings           []findingJSON `json:"findings"`
 	OpenQuestions      []messageJSON `json:"open_questions"`
 	Messages           []postJSON    `json:"messages"`
 }
@@ -83,7 +91,7 @@ type postJSON struct {
 	Answered *bool `json:"answered,omitempty"`
 }
 
-func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message) error {
+func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck) error {
 	open := core.OpenQuestions(msgs)
 	out := showJSON{
 		planJSON:           toPlanJSON(v),
@@ -91,6 +99,8 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message) error 
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
 		Tasks:              []taskJSON{},
+		Checks:             make([]checkJSON, 0, len(checks)),
+		Findings:           []findingJSON{},
 		OpenQuestions:      make([]messageJSON, 0, len(open)),
 		Messages:           make([]postJSON, 0, len(msgs)),
 	}
@@ -100,6 +110,13 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message) error 
 	}
 	for _, task := range core.Tasks(v.Plan) {
 		out.Tasks = append(out.Tasks, taskJSON{ID: task.ID, Text: task.Text})
+	}
+	for _, p := range checks {
+		stale := p.Stale
+		out.Checks = append(out.Checks, toCheckJSON(v, p.Check, &stale))
+	}
+	for _, f := range core.Findings(checks) {
+		out.Findings = append(out.Findings, toFindingJSON(f))
 	}
 	for _, q := range open {
 		out.OpenQuestions = append(out.OpenQuestions, toMessageJSON(v, q))
@@ -186,7 +203,7 @@ func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) strin
 
 // printPlan prints the header of the plan with its open Questions, then its
 // documents and the Discussion of msgs, the plan's Messages.
-func printPlan(w io.Writer, v index.Plan, msgs []core.Message) error {
+func printPlan(w io.Writer, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck) error {
 	open := core.OpenQuestions(msgs)
 	approvals := "-"
 	if v.Status.RequiredApprovals > 0 {
@@ -231,6 +248,7 @@ func printPlan(w io.Writer, v index.Plan, msgs []core.Message) error {
 			b.WriteString("\n")
 		}
 	}
+	writeChecks(&b, checks)
 	writeDiscussion(&b, msgs)
 	_, err := io.WriteString(w, b.String())
 	return err

@@ -115,6 +115,20 @@ func checkEventFiles(ctx context.Context, e *env) Result {
 	return pass("%d valid", sc.eventFiles)
 }
 
+// checkCheckFiles warns about plan check files that cannot be read: a
+// reader skips them, so their Findings are lost, but nothing else breaks.
+func checkCheckFiles(ctx context.Context, e *env) Result {
+	sc, r, ok := e.scan(ctx)
+	if !ok {
+		return r
+	}
+	if len(sc.badChecks) > 0 {
+		return Result{Status: Warn, Items: sc.badChecks,
+			Detail: fmt.Sprintf("%d of %d cannot be read; readers skip them; see a file with git show %s:<path>", len(sc.badChecks), sc.checkFiles, store.Ref)}
+	}
+	return pass("%d readable", sc.checkFiles)
+}
+
 func checkPlans(ctx context.Context, e *env) Result {
 	sc, r, ok := e.scan(ctx)
 	if !ok {
@@ -163,6 +177,8 @@ func checkShortIDs(ctx context.Context, e *env) Result {
 // scan is what bfc doctor learns from reading every plan in the plans ref.
 type scan struct {
 	eventFiles   int
+	checkFiles   int
+	badChecks    []string // "<path>: <why>"
 	invalidFiles []string // "<path>: <why>"
 	plans        int
 	invalidPlans []string            // plan directories
@@ -266,6 +282,8 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 		}
 	}
 
+	readChecks(ctx, s, commit, id, dir, sc)
+
 	status := core.Derive(id, parsed, planBlob)
 	if status.State == core.StateInvalid {
 		sc.invalidPlans = append(sc.invalidPlans, dir)
@@ -281,6 +299,44 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 	for _, eid := range core.SkippedEvents(id, parsed, planBlob) {
 		ev := byID[eid]
 		sc.skipped = append(sc.skipped, fmt.Sprintf("%s (%s by %s)", paths[eid], ev.Type, ev.Author.Email))
+	}
+}
+
+// readChecks adds the check files of one plan directory to sc. Like the
+// readers, it looks only at <ULID>.md files.
+func readChecks(ctx context.Context, s *store.Store, commit string, plan ulid.ULID, dir string, sc *scan) {
+	files, err := s.Entries(ctx, commit, dir+"/checks")
+	if errors.Is(err, store.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		sc.badChecks = append(sc.badChecks, dir+"/checks: cannot read: "+firstLine(err))
+		return
+	}
+	var ids []string
+	for _, f := range files {
+		ids = append(ids, f.ID)
+	}
+	content := readBlobs(ctx, s, ids)
+	for _, f := range files {
+		cid, err := ulid.ParseStrict(strings.TrimSuffix(f.Name, ".md"))
+		if err != nil || f.Dir || !strings.HasSuffix(f.Name, ".md") {
+			continue
+		}
+		path := dir + "/checks/" + f.Name
+		sc.checkFiles++
+		data, ok := content[f.ID]
+		if !ok {
+			sc.badChecks = append(sc.badChecks, path+": cannot read object "+f.ID)
+			continue
+		}
+		c, err := core.ParseCheck(cid, data)
+		switch {
+		case err != nil:
+			sc.badChecks = append(sc.badChecks, path+": "+firstLine(err))
+		case c.Plan != plan:
+			sc.badChecks = append(sc.badChecks, path+": belongs to plan "+c.Plan.String())
+		}
 	}
 }
 
