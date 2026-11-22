@@ -136,7 +136,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc prime [id]`: these instructions and the Current plan.\n" +
 	"  - `bfc show [id] --json`: one plan with `intent.md`, `plan.md`, its acceptance criteria, open Questions and every Message (`messages`).\n" +
 	"  - `bfc list --json` and `bfc search <text>`: find plans.\n" +
-	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.\n" +
+	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text> [--wait]`: ask a Question. When the decision is a person's to make, add `--wait` and run it through Bash with `timeout: 600000`: it prints the answer, or exits with code 2 when the wait is over, and `bfc wait <ULID>` waits again.\n" +
 	"  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.\n" +
 	"  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.\n" +
 	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open and Paused Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +

@@ -24,7 +24,8 @@ import (
 func newAskCmd() *cobra.Command {
 	var to []string
 	var ref, text string
-	var asJSON bool
+	var asJSON, wait bool
+	var wf waitFlags
 	cmd := &cobra.Command{
 		Use:   "ask <id> --to <email|ai>... [--ref <ref>] [-m <text>]",
 		Short: "Ask a Question on a plan",
@@ -34,7 +35,10 @@ open Question blocks bfc approve. --ref names the part of the plan it is
 about: intent.md, plan.md, plan.md#<heading anchor>, plan.md#AC-<n> or
 checks/<check ULID>. The
 text comes from -m or, without it, from stdin. Prints the ULID of the
-Question; bfc reply answers it by that ULID.`,
+Question; bfc reply answers it by that ULID.
+
+With --wait it pushes the Question and waits for the answer like bfc wait:
+it prints the answer, or after --timeout (default 9m) exits with code 2.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(to) == 0 {
@@ -66,13 +70,27 @@ Question; bfc reply answers it by that ULID.`,
 			if err != nil {
 				return err
 			}
-			return printMessage(cmd, v, m, asJSON)
+			if !wait {
+				return printMessage(cmd, v, m, asJSON)
+			}
+			set, err := syncSettings(s)
+			if err != nil {
+				return err
+			}
+			if !set.local {
+				if _, err := s.Push(cmd.Context(), set.remote); err != nil {
+					return fmt.Errorf("the Question %s is written but not shared; run bfc push, then bfc wait %s: %w", m.ID, m.ID, syncError(cmd, s, err))
+				}
+			}
+			return waitForAnswer(cmd, s, v, m.ID, wf, asJSON)
 		},
 	}
 	cmd.Flags().StringSliceVar(&to, "to", nil, "who answers: an email address or ai (repeat or separate with commas)")
 	cmd.Flags().StringVar(&ref, "ref", "", "the part of the plan the Question is about")
 	cmd.Flags().StringVarP(&text, "message", "m", "", "the text of the Question (default: read from stdin)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the Message as JSON for scripts and agents")
+	cmd.Flags().BoolVar(&wait, "wait", false, "push the Question and wait for its answer, then print it (see bfc wait)")
+	wf.add(cmd)
 	return cmd
 }
 
