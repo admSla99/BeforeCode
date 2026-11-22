@@ -262,6 +262,18 @@ Refunds.
 - AC-1: A card that needs 3-D Secure completes checkout.
 `
 
+// writePlan stores planMD as the plan's plan.md through bfc edit and the
+// developer's editor.
+func (d *dev) writePlan(short string) {
+	d.t.Helper()
+	planFile := filepath.Join(d.t.TempDir(), "plan.md")
+	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
+		d.t.Fatal(err)
+	}
+	d.useEditor(`cp "` + filepath.ToSlash(planFile) + `" "$1"`)
+	d.bfc("edit", short)
+}
+
 // startProject is Ana setting up BeforeCode and sharing it: the code
 // branch on the remote, bfc init, the config committed and pushed.
 func startProject(t *testing.T) (ana *dev, bare string) {
@@ -284,12 +296,7 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 	anaCheckout := ana.checkout()
 
 	short := ana.newPlan("Payments via Stripe")
-	planFile := filepath.Join(t.TempDir(), "plan.md")
-	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ana.useEditor(`cp "` + filepath.ToSlash(planFile) + `" "$1"`)
-	ana.bfc("edit", short)
+	ana.writePlan(short)
 	ana.bfc("submit", short)
 	ana.bfc("push")
 

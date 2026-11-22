@@ -4,12 +4,13 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 )
 
-// waiting is what bfc inbox --json lists.
-type waiting struct {
+// inboxed is what bfc inbox --json lists, here only the Findings.
+type inboxed struct {
 	Findings []struct {
 		ShortID    string `json:"short_id"`
 		PR         int    `json:"pr"`
@@ -19,9 +20,9 @@ type waiting struct {
 	} `json:"findings"`
 }
 
-func (d *dev) inbox() waiting {
+func (d *dev) inbox() inboxed {
 	d.t.Helper()
-	var w waiting
+	var w inboxed
 	if err := json.Unmarshal([]byte(d.bfc("inbox", "--json")), &w); err != nil {
 		d.t.Fatalf("%s: bfc inbox --json: %v", d.name, err)
 	}
@@ -31,13 +32,14 @@ func (d *dev) inbox() waiting {
 // recordCheck runs bfc check record in the developer's clone for a pull
 // request, with the result in the testdata file on stdin, as the plan check
 // workflow does (ADR 0014), and pushes it. It returns the check's ULID.
-func (d *dev) recordCheck(short string, pr, fixture string) string {
+func (d *dev) recordCheck(short string, pr int, fixture string) string {
 	d.t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", fixture))
 	if err != nil {
 		d.t.Fatal(err)
 	}
-	r := d.run(string(data), nil, bfcBin, "check", "record", short, "--pr", pr, "--head", "9f2c", "--base", "1a7e")
+	// The commits of the pull request only end up in the check file.
+	r := d.run(string(data), nil, bfcBin, "check", "record", short, "--pr", strconv.Itoa(pr), "--head", "9f2c", "--base", "1a7e")
 	if r.err != nil {
 		d.t.Fatalf("%s: bfc check record: %v\n%s%s", d.name, r.err, r.stdout, r.stderr)
 	}
@@ -53,12 +55,7 @@ func (d *dev) recordCheck(short string, pr, fixture string) string {
 func TestAFindingReachesThePlanAuthorsInbox(t *testing.T) {
 	ana, bare := startProject(t)
 	short := ana.newPlan("Payments via Stripe")
-	planFile := filepath.Join(t.TempDir(), "plan.md")
-	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ana.useEditor(`cp "` + filepath.ToSlash(planFile) + `" "$1"`)
-	ana.bfc("edit", short)
+	ana.writePlan(short)
 	ana.bfc("submit", short)
 	ana.bfc("push")
 
@@ -77,7 +74,7 @@ func TestAFindingReachesThePlanAuthorsInbox(t *testing.T) {
 
 	// AC-1: a check of pull request 7 with a Finding, recorded in Ben's
 	// clone, reaches Ana's Inbox after her pull.
-	check := ben.recordCheck(short, "7", "plan-check-reply.md")
+	check := ben.recordCheck(short, 7, "plan-check-reply.md")
 	ana.bfc("pull")
 	w := ana.inbox()
 	if len(w.Findings) != 2 || w.Findings[0].ShortID != short || w.Findings[0].PR != 7 || w.Findings[0].Check != check ||
@@ -102,13 +99,12 @@ func TestAFindingReachesThePlanAuthorsInbox(t *testing.T) {
 
 	// AC-2: pull request 8 departs from the plan too, then a newer, clean
 	// check of it takes its Finding out.
-	ben.recordCheck(short, "8", "plan-check-reply.md")
+	ben.recordCheck(short, 8, "plan-check-reply.md")
 	ana.bfc("pull")
 	if w := ana.inbox(); len(w.Findings) != 2 || w.Findings[0].PR != 8 {
 		t.Errorf("ana: Inbox after the check of pull request 8 = %+v", w.Findings)
 	}
-	ben.bfc("pull")
-	ben.recordCheck(short, "8", "plan-check-clean.json")
+	ben.recordCheck(short, 8, "plan-check-clean.json")
 	ana.bfc("pull")
 	if w := ana.inbox(); len(w.Findings) != 0 {
 		t.Errorf("ana: Findings after the clean check: %+v", w.Findings)
