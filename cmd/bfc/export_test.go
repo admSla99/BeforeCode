@@ -129,3 +129,22 @@ func TestShiftHeadings(t *testing.T) {
 		t.Errorf("got\n%s\nwant\n%s", got, want)
 	}
 }
+
+// Issue #117 AC-4: a done plan exports with its check, without writing.
+func TestExportOfADonePlan(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := claimedPlan(t)
+	recordResult(t, dir, short, "7", sampleResult)
+	mustBfc(t, dir, "done", short, "-m", "Shipped in 1.4.")
+	before := gitIn(t, dir, "rev-parse", plansRef)
+
+	out := mustBfc(t, dir, "export", short)
+	for _, want := range []string{"- **State:** done", "### Pull request #7", "## Tasks"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("export lacks %q:\n%s", want, out)
+		}
+	}
+	if gitIn(t, dir, "rev-parse", plansRef) != before {
+		t.Errorf("export wrote to the Plans ref")
+	}
+}
