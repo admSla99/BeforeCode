@@ -14,7 +14,7 @@ import (
 func TestCheckRef(t *testing.T) {
 	for _, ref := range []string{
 		"intent.md", "plan.md", "plan.md#affected-areas", "plan.md#AC-2", "plan.md#AC-17",
-		"plan.md#out-of-scope", "plan.md#step_2", "plan.md#čo-nie", "plan.md#AC-99",
+		"plan.md#out-of-scope", "plan.md#step_2", "plan.md#čo-nie", "plan.md#AC-99", "checks/01JD3K8Q2W5V7X9Y0Z1A2B3C4E",
 	} {
 		if err := CheckRef(ref); err != nil {
 			t.Errorf("CheckRef(%q): %v", ref, err)
@@ -22,7 +22,7 @@ func TestCheckRef(t *testing.T) {
 	}
 	for _, ref := range []string{
 		"", "readme.md", "intent.md#problem", "plan.md#", "plan.md#Affected-Areas", "plan.md#affected areas",
-		"plan.md#AC-0", "plan.md#AC-02", "plan.md#AC-", "PLAN.md", "plan.md#a#b", "plans/x/plan.md",
+		"plan.md#AC-0", "plan.md#AC-02", "plan.md#AC-", "PLAN.md", "plan.md#a#b", "plans/x/plan.md", "checks/", "checks/x", "checks/01JD3K8Q2W5V7X9Y0Z1A2B3C4E.md", "checks/01jd3k8q2w5v7x9y0z1a2b3c4e",
 	} {
 		if err := CheckRef(ref); err == nil {
 			t.Errorf("CheckRef(%q) accepted a malformed ref", ref)

@@ -28,9 +28,10 @@ var harnesses = []struct{ env, name string }{
 	{agentEnv, claudeCode},
 }
 
-// gateCommands are the Gates: the commands that are for people and refuse
-// to run inside an agent.
-var gateCommands = []string{"submit", "approve", "request-changes", "withdraw", "close"}
+// gateCommands are the commands that are for people and refuse to run
+// inside an agent: the Gates, and acknowledge (ADR 0011, ADR 0013 section
+// 7).
+var gateCommands = []string{"submit", "approve", "request-changes", "withdraw", "close", "acknowledge"}
 
 // insideAgent returns the harness bfc runs in, or "" when a person runs it.
 func insideAgent(cmd *cobra.Command) string {

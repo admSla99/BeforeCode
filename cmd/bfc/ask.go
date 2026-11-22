@@ -31,7 +31,8 @@ func newAskCmd() *cobra.Command {
 		Long: `Ask a Question on a plan: a Message addressed to people (by email) and/or to
 the AI (ai). It stays open until one of them answers with bfc reply, and an
 open Question blocks bfc approve. --ref names the part of the plan it is
-about: intent.md, plan.md, plan.md#<heading anchor> or plan.md#AC-<n>. The
+about: intent.md, plan.md, plan.md#<heading anchor>, plan.md#AC-<n> or
+checks/<check ULID>. The
 text comes from -m or, without it, from stdin. Prints the ULID of the
 Question; bfc reply answers it by that ULID.`,
 		Args: cobra.ExactArgs(1),
@@ -181,30 +182,38 @@ func writeMessage(cmd *cobra.Command, s *store.Store, v index.Plan, command stri
 	return core.ParseMessage(m.ID, core.EncodeMessage(m))
 }
 
-// findMessage returns the plan that holds the Message with this ULID, or an
-// error when no plan does.
+// findMessage returns the plan that holds the Message with this ULID, or
+// an error when no plan does.
 func findMessage(ctx context.Context, s *store.Store, id ulid.ULID) (ulid.ULID, error) {
+	plan, ok, err := planHolding(ctx, s, func(p ulid.ULID) string { return core.MessagePath(p, id) })
+	if err == nil && !ok {
+		err = fmt.Errorf("no Message %s in any plan; bfc show <id> lists the open Questions of a plan", id)
+	}
+	return plan, err
+}
+
+// planHolding returns the plan whose file path(plan) exists at the tip of
+// the plans ref; ok is false when no plan has it. A file named by its own
+// ULID is in at most one plan.
+func planHolding(ctx context.Context, s *store.Store, path func(plan ulid.ULID) string) (plan ulid.ULID, ok bool, err error) {
 	tip, err := s.Tip(ctx)
 	if err != nil {
-		return ulid.ULID{}, err
+		return ulid.ULID{}, false, err
 	}
 	plans, err := listPlanIDs(ctx, s)
 	if err != nil {
-		return ulid.ULID{}, err
+		return ulid.ULID{}, false, err
 	}
 	paths := make([]string, len(plans))
 	for i, p := range plans {
-		paths[i] = core.MessagePath(p, id)
+		paths[i] = path(p)
 	}
 	found, err := s.Existing(ctx, tip, paths)
-	if err != nil {
-		return ulid.ULID{}, err
-	}
-	if len(found) == 0 {
-		return ulid.ULID{}, fmt.Errorf("no Message %s in any plan; bfc show <id> lists the open Questions of a plan", id)
+	if err != nil || len(found) == 0 {
+		return ulid.ULID{}, false, err
 	}
 	dir := strings.TrimPrefix(found[0], core.PlansDir+"/")
-	return ulid.MustParseStrict(dir[:strings.Index(dir, "/")]), nil
+	return ulid.MustParseStrict(dir[:strings.Index(dir, "/")]), true, nil
 }
 
 // readMessages returns the Messages of a plan at the tip of the plans ref,

@@ -83,9 +83,10 @@ func ParseMessage(id ulid.ULID, data []byte) (Message, error) {
 // slug (lowercase letters, digits, "-" and "_").
 var refAnchor = regexp.MustCompile(`^(?:AC-[1-9][0-9]*|[\p{Ll}\p{Lo}\p{N}_-]+)$`)
 
-// CheckRef reports why ref is not one of the forms of ADR 0002 section 7:
-// intent.md, plan.md, plan.md#<heading anchor> or plan.md#AC-<n>. It does
-// not check that the heading or criterion exists: a stale ref is kept.
+// CheckRef reports why ref is not one of the forms of ADR 0002 section 7
+// and ADR 0013 section 7: intent.md, plan.md, plan.md#<heading anchor>,
+// plan.md#AC-<n> or checks/<check ULID>. It does not check that the
+// heading, criterion or check exists: a stale ref is kept.
 func CheckRef(ref string) error {
 	switch ref {
 	case "intent.md", "plan.md":
@@ -94,7 +95,26 @@ func CheckRef(ref string) error {
 	if anchor, ok := strings.CutPrefix(ref, "plan.md#"); ok && refAnchor.MatchString(anchor) {
 		return nil
 	}
-	return fmt.Errorf("ref %q is not intent.md, plan.md, plan.md#<heading anchor> (such as plan.md#affected-areas) or plan.md#AC-<n>", ref)
+	if _, ok := CheckOfRef(ref); ok {
+		return nil
+	}
+	return fmt.Errorf("ref %q is not intent.md, plan.md, plan.md#<heading anchor> (such as plan.md#affected-areas), plan.md#AC-<n> or checks/<check ULID>", ref)
+}
+
+// checksRef is the prefix of a ref to a Plan check.
+const checksRef = "checks/"
+
+// CheckRefOf is the ref of a Message about the check with this ULID.
+func CheckRefOf(check ulid.ULID) string { return checksRef + check.String() }
+
+// CheckOfRef returns the check a ref of the form checks/<ULID> names.
+func CheckOfRef(ref string) (ulid.ULID, bool) {
+	s, ok := strings.CutPrefix(ref, checksRef)
+	if !ok {
+		return ulid.ULID{}, false
+	}
+	id, err := ulid.ParseStrict(s)
+	return id, err == nil && id.String() == s
 }
 
 // AI is the word in To that addresses a Question to the AI.

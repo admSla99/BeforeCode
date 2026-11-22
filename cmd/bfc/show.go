@@ -49,7 +49,7 @@ Questions and every Message.`,
 			if err != nil {
 				return err
 			}
-			checks, err := planChecks(cmd.Context(), s, v.ID)
+			checks, err := planChecks(cmd.Context(), s, v.ID, msgs)
 			if err != nil {
 				return err
 			}
@@ -112,8 +112,7 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks
 		out.Tasks = append(out.Tasks, taskJSON{ID: task.ID, Text: task.Text})
 	}
 	for _, p := range checks {
-		stale := p.Stale
-		out.Checks = append(out.Checks, toCheckJSON(v, p.Check, &stale))
+		out.Checks = append(out.Checks, toCountingCheckJSON(v, p))
 	}
 	for _, f := range core.Findings(checks) {
 		out.Findings = append(out.Findings, toFindingJSON(f))

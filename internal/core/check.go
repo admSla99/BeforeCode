@@ -204,6 +204,9 @@ type Finding struct {
 	Check      ulid.ULID
 	Criterion  string
 	OutOfScope string
+	// Acknowledged is set when its check has an Acknowledgement: the
+	// Finding no longer waits on anyone.
+	Acknowledged bool
 }
 
 // PullRequestCheck is the check that counts for one pull request: its
@@ -217,12 +220,24 @@ type PullRequestCheck struct {
 	// Unverified lists the criteria the check could not verify. They are
 	// shown, but are not Findings.
 	Unverified []string
+	// Acknowledgement is the first Acknowledgement of the check, nil when
+	// it has none (ADR 0013 section 7).
+	Acknowledgement *Message
 }
 
 // PullRequestChecks returns, for each pull request with a check among
 // checks, the newest one by ULID, ordered by pull request number. planBlob
-// is the object ID of the current plan.md.
-func PullRequestChecks(checks []Check, planBlob string) []PullRequestCheck {
+// is the object ID of the current plan.md; msgs are the plan's Messages in
+// ULID order, among them the Acknowledgements: Messages by a person (no
+// Agent) whose ref names a check. An Acknowledgement covers only the check
+// it names, so a newer check of the same pull request needs its own.
+func PullRequestChecks(checks []Check, planBlob string, msgs []Message) []PullRequestCheck {
+	acks := map[ulid.ULID]*Message{}
+	for i, m := range msgs {
+		if id, ok := CheckOfRef(m.Ref); ok && m.Agent == "" && acks[id] == nil {
+			acks[id] = &msgs[i]
+		}
+	}
 	newest := map[int]Check{}
 	for _, c := range checks {
 		if n, ok := newest[c.PR]; !ok || c.ID.Compare(n.ID) > 0 {
@@ -231,7 +246,7 @@ func PullRequestChecks(checks []Check, planBlob string) []PullRequestCheck {
 	}
 	out := make([]PullRequestCheck, 0, len(newest))
 	for _, c := range newest {
-		p := PullRequestCheck{Check: c, Stale: c.PlanBlob != planBlob}
+		p := PullRequestCheck{Check: c, Stale: c.PlanBlob != planBlob, Acknowledgement: acks[c.ID]}
 		for _, r := range c.Criteria {
 			switch r.Status {
 			case NotMet:
@@ -242,6 +257,9 @@ func PullRequestChecks(checks []Check, planBlob string) []PullRequestCheck {
 		}
 		for _, item := range c.OutOfScope {
 			p.Findings = append(p.Findings, Finding{PR: c.PR, Check: c.ID, OutOfScope: item})
+		}
+		for i := range p.Findings {
+			p.Findings[i].Acknowledged = p.Acknowledgement != nil
 		}
 		out = append(out, p)
 	}
@@ -254,6 +272,18 @@ func Findings(prs []PullRequestCheck) []Finding {
 	var out []Finding
 	for _, p := range prs {
 		out = append(out, p.Findings...)
+	}
+	return out
+}
+
+// OpenFindings returns the Findings of prs that are not acknowledged: the
+// ones that wait on the plan author.
+func OpenFindings(prs []PullRequestCheck) []Finding {
+	var out []Finding
+	for _, f := range Findings(prs) {
+		if !f.Acknowledged {
+			out = append(out, f)
+		}
 	}
 	return out
 }

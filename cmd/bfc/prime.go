@@ -153,7 +153,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.\n" +
 	"  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.\n" +
 	"  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.\n" +
-	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent. " +
+	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw`, `close` and `acknowledge` refuse to run inside an agent. " +
 	"When a plan needs one, tell the user to open `bfc` and take it there.\n" +
 	"- Edits need an approved plan: a hook blocks file edits unless the Current plan is `approved`. Do not change code before that.\n" +
 	"- Implement `plan.md` as approved. When the work must depart from it, record the deviation with " +
