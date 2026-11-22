@@ -13,6 +13,7 @@ This repository plans its work with BeforeCode (`bfc`). Every change is made aga
   - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.
   - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.
   - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.
+  - `bfc handoff [id] T-n -m <what is done, what comes next> [--done]`: before you stop working on a Task you hold, hand it off: `--done` when it is finished, else it is Paused for the next one. Then run `bfc push`.
 - Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent, and so does `acknowledge`. When a plan needs one, tell the user to open `bfc` and take it there.
 - Edits need an approved plan: a hook blocks file edits unless the Current plan is `approved`. Do not change code before that.
 - Implement `plan.md` as approved. When the work must depart from it, record the deviation with `bfc ask <id> --to <plan author email> --ref plan.md#AC-n -m <what and why>` and tell the user.

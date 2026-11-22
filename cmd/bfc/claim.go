@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto/rand"
 	"encoding/json"
 	"fmt"
@@ -130,12 +131,12 @@ func runClaim(cmd *cobra.Command, query, task string, asJSON bool) error {
 // claimOutcome reports whether the Claim with ID ours holds the Task after
 // the sync: when an earlier Claim reached the plan, that one wins.
 func claimOutcome(st core.Status, task string, ours ulid.ULID) error {
-	c, ok := st.Claims[task]
+	ts, ok := st.Tasks[task]
 	switch {
 	case !ok:
 		return fmt.Errorf("the Claim of %s of %s does not count; run bfc doctor", task, st.ShortID)
-	case c.Event != ours:
-		return fmt.Errorf("%s of %s went to %s, whose Claim came first; bfc ready lists the open Tasks", task, st.ShortID, c.Holder.Email)
+	case ts.Claim.Event != ours:
+		return fmt.Errorf("%s of %s went to %s, whose Claim came first; bfc ready lists the open Tasks", task, st.ShortID, ts.Claim.Holder.Email)
 	}
 	return nil
 }
@@ -159,7 +160,7 @@ func printClaim(w io.Writer, v index.Plan, task string, asJSON bool) error {
 			text = t.Text
 		}
 	}
-	c := v.Status.Claims[task]
+	c := v.Status.Tasks[task].Claim
 	if asJSON {
 		enc := json.NewEncoder(w)
 		enc.SetIndent("", "  ")
@@ -176,9 +177,10 @@ func newReadyCmd() *cobra.Command {
 	var asJSON bool
 	cmd := &cobra.Command{
 		Use:   "ready [id]",
-		Short: "List the open Tasks of the approved plans",
-		Long: `List the Tasks nobody holds of the approved and in-progress plans, each
-plan's Tasks in the order of its plan.md, which is the order of the work.
+		Short: "List the open and Paused Tasks of the approved plans",
+		Long: `List the Tasks nobody holds of the approved and in-progress plans: for each
+plan its open Tasks, then its Paused ones with the first line of their latest
+Handoff, each in the order of its plan.md, which is the order of the work.
 With an ID, only that plan's. bfc claim takes one.`,
 		Args: cobra.MaximumNArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -196,32 +198,67 @@ With an ID, only that plan's. bfc claim takes one.`,
 			} else if views, err = loadPlansWithDocuments(cmd.Context(), s); err != nil {
 				return err
 			}
-			return printReady(cmd.OutOrStdout(), views, asJSON)
+			return printReady(cmd.Context(), s, cmd.OutOrStdout(), views, asJSON)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
 	return cmd
 }
 
+// handoffNotes returns the notes of the plan's Handoffs by their ULID.
+func handoffNotes(ctx context.Context, s *store.Store, v index.Plan) (map[string]string, error) {
+	files, err := readPlanFiles(ctx, s, v.ID, "handoff", ".md")
+	if err != nil {
+		return nil, err
+	}
+	notes := map[string]string{}
+	for _, f := range files {
+		if h, err := core.ParseHandoff(f.id, f.data); err == nil {
+			notes[h.ID.String()] = h.Note
+		}
+	}
+	return notes, nil
+}
+
 // readyJSON is an open Task in bfc ready --json, documented in
 // docs/design.md.
 type readyJSON struct {
-	Plan    string `json:"plan"`
-	ShortID string `json:"short_id"`
-	Title   string `json:"title"`
-	Task    string `json:"task"`
-	Text    string `json:"text"`
+	Plan    string         `json:"plan"`
+	ShortID string         `json:"short_id"`
+	Title   string         `json:"title"`
+	Task    string         `json:"task"`
+	Text    string         `json:"text"`
+	State   core.TaskState `json:"state"`
+	// Handoff is the ULID of the latest Handoff of a Paused Task, and
+	// Note its first line.
+	Handoff string `json:"handoff,omitempty"`
+	Note    string `json:"note,omitempty"`
 }
 
-func printReady(w io.Writer, views []index.Plan, asJSON bool) error {
+func printReady(ctx context.Context, s *store.Store, w io.Writer, views []index.Plan, asJSON bool) error {
 	out := []readyJSON{}
 	for _, v := range views {
 		if !core.HasWork(v.Status.State) {
 			continue
 		}
-		for _, t := range core.TaskViews(v.Status, v.Plan) {
-			if t.State == core.TaskOpen {
-				out = append(out, readyJSON{Plan: v.ID.String(), ShortID: v.ShortID, Title: v.Title, Task: t.ID, Text: t.Text})
+		tasks := core.TaskViews(v.Status, v.Plan)
+		var notes map[string]string // Handoff ULID -> its note
+		for _, want := range []core.TaskState{core.TaskOpen, core.TaskPaused} {
+			for _, t := range tasks {
+				if t.State != want {
+					continue
+				}
+				r := readyJSON{Plan: v.ID.String(), ShortID: v.ShortID, Title: v.Title, Task: t.ID, Text: t.Text, State: t.State, Handoff: t.Handoff}
+				if t.Handoff != "" {
+					if notes == nil {
+						var err error
+						if notes, err = handoffNotes(ctx, s, v); err != nil {
+							return err
+						}
+					}
+					r.Note = firstLine(notes[t.Handoff])
+				}
+				out = append(out, r)
 			}
 		}
 	}
@@ -236,7 +273,11 @@ func printReady(w io.Writer, views []index.Plan, asJSON bool) error {
 	}
 	var b strings.Builder
 	for _, r := range out {
-		fmt.Fprintf(&b, "%s  %s  %s  (%s)\n", r.ShortID, r.Task, firstLine(r.Text), r.Title)
+		fmt.Fprintf(&b, "%s  %s  %s  (%s)", r.ShortID, r.Task, firstLine(r.Text), r.Title)
+		if r.State == core.TaskPaused {
+			fmt.Fprintf(&b, "  paused: %s", r.Note)
+		}
+		b.WriteString("\n")
 	}
 	_, err := io.WriteString(w, b.String())
 	return err

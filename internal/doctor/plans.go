@@ -129,6 +129,20 @@ func checkCheckFiles(ctx context.Context, e *env) Result {
 	return pass("%d readable", sc.checkFiles)
 }
 
+// checkHandoffFiles warns about Handoff files that cannot be read: readers
+// skip them, so their notes are lost, but the Task states come from Events.
+func checkHandoffFiles(ctx context.Context, e *env) Result {
+	sc, r, ok := e.scan(ctx)
+	if !ok {
+		return r
+	}
+	if len(sc.badHandoffs) > 0 {
+		return Result{Status: Warn, Items: sc.badHandoffs,
+			Detail: fmt.Sprintf("%d of %d cannot be read; readers skip them; see a file with git show %s:<path>", len(sc.badHandoffs), sc.handoffFiles, store.Ref)}
+	}
+	return pass("%d readable", sc.handoffFiles)
+}
+
 func checkPlans(ctx context.Context, e *env) Result {
 	sc, r, ok := e.scan(ctx)
 	if !ok {
@@ -179,6 +193,8 @@ type scan struct {
 	eventFiles   int
 	checkFiles   int
 	badChecks    []string // "<path>: <why>"
+	handoffFiles int
+	badHandoffs  []string // "<path>: <why>"
 	invalidFiles []string // "<path>: <why>"
 	plans        int
 	invalidPlans []string            // plan directories
@@ -283,6 +299,7 @@ func readPlan(ctx context.Context, s *store.Store, commit string, id ulid.ULID, 
 	}
 
 	readChecks(ctx, s, commit, id, dir, sc)
+	readHandoffs(ctx, s, commit, dir, sc)
 
 	status := core.Derive(id, parsed, planBlob)
 	if status.State == core.StateInvalid {
@@ -337,6 +354,40 @@ func readChecks(ctx context.Context, s *store.Store, commit string, plan ulid.UL
 			sc.badChecks = append(sc.badChecks, path+": "+firstLine(err))
 		case c.Plan != plan:
 			sc.badChecks = append(sc.badChecks, path+": belongs to plan "+c.Plan.String())
+		}
+	}
+}
+
+// readHandoffs adds the Handoff files of one plan directory to sc. Like
+// the readers, it looks only at <ULID>.md files.
+func readHandoffs(ctx context.Context, s *store.Store, commit, dir string, sc *scan) {
+	files, err := s.Entries(ctx, commit, dir+"/handoff")
+	if errors.Is(err, store.ErrNotFound) {
+		return
+	}
+	if err != nil {
+		sc.badHandoffs = append(sc.badHandoffs, dir+"/handoff: cannot read: "+firstLine(err))
+		return
+	}
+	files = slices.DeleteFunc(files, func(f store.Entry) bool {
+		_, err := ulid.ParseStrict(strings.TrimSuffix(f.Name, ".md"))
+		return err != nil || f.Dir || !strings.HasSuffix(f.Name, ".md")
+	})
+	var ids []string
+	for _, f := range files {
+		ids = append(ids, f.ID)
+	}
+	content := readBlobs(ctx, s, ids)
+	for _, f := range files {
+		path := dir + "/handoff/" + f.Name
+		sc.handoffFiles++
+		data, ok := content[f.ID]
+		if !ok {
+			sc.badHandoffs = append(sc.badHandoffs, path+": cannot read object "+f.ID)
+			continue
+		}
+		if _, err := core.ParseHandoff(ulid.MustParseStrict(strings.TrimSuffix(f.Name, ".md")), data); err != nil {
+			sc.badHandoffs = append(sc.badHandoffs, path+": "+firstLine(err))
 		}
 	}
 }

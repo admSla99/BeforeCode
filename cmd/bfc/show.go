@@ -53,10 +53,14 @@ Questions and every Message.`,
 			if err != nil {
 				return err
 			}
-			if asJSON {
-				return printPlanJSON(cmd, v, msgs, checks)
+			hs, hevents, err := planHandoffs(cmd.Context(), s, v)
+			if err != nil {
+				return err
 			}
-			return printPlan(cmd.OutOrStdout(), v, msgs, checks)
+			if asJSON {
+				return printPlanJSON(cmd, v, msgs, checks, hs, hevents)
+			}
+			return printPlan(cmd.OutOrStdout(), v, msgs, checks, hs, hevents)
 		},
 	}
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print JSON for scripts and agents")
@@ -72,6 +76,7 @@ type showJSON struct {
 	Plan               *string             `json:"plan"`
 	AcceptanceCriteria []string            `json:"acceptance_criteria"`
 	Tasks              []taskJSON          `json:"tasks"`
+	Handoffs           []handoffJSON       `json:"handoffs"`
 	Checks             []countingCheckJSON `json:"checks"`
 	Findings           []findingJSON       `json:"findings"`
 	OpenQuestions      []messageJSON       `json:"open_questions"`
@@ -93,7 +98,7 @@ func toTasksJSON(v index.Plan) []taskJSON {
 	out := []taskJSON{}
 	for _, t := range core.TaskViews(v.Status, v.Plan) {
 		j := taskJSON{ID: t.ID, Text: t.Text, State: t.State, Agent: t.Agent}
-		if t.State == core.TaskClaimed {
+		if t.State != core.TaskOpen {
 			holder := t.Holder
 			j.Holder = &holder
 		}
@@ -109,7 +114,7 @@ type postJSON struct {
 	Answered *bool `json:"answered,omitempty"`
 }
 
-func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck) error {
+func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck, hs []core.Handoff, hevents map[ulid.ULID]string) error {
 	open := core.OpenQuestions(msgs)
 	out := showJSON{
 		planJSON:           toPlanJSON(v),
@@ -117,6 +122,7 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks
 		Intent:             string(v.Intent),
 		AcceptanceCriteria: append([]string{}, core.AcceptanceCriteria(v.Plan)...),
 		Tasks:              toTasksJSON(v),
+		Handoffs:           make([]handoffJSON, 0, len(hs)),
 		Checks:             make([]countingCheckJSON, 0, len(checks)),
 		Findings:           []findingJSON{},
 		OpenQuestions:      make([]messageJSON, 0, len(open)),
@@ -125,6 +131,9 @@ func printPlanJSON(cmd *cobra.Command, v index.Plan, msgs []core.Message, checks
 	if v.Plan != nil {
 		plan := string(v.Plan)
 		out.Plan = &plan
+	}
+	for _, h := range hs {
+		out.Handoffs = append(out.Handoffs, toHandoffJSON(v, h, hevents[h.ID]))
 	}
 	for _, p := range checks {
 		out.Checks = append(out.Checks, toCountingCheckJSON(v, p))
@@ -217,7 +226,7 @@ func candidates(amb *core.AmbiguousIDError, byID map[ulid.ULID]index.Plan) strin
 
 // printPlan prints the header of the plan with its open Questions, then its
 // documents and the Discussion of msgs, the plan's Messages.
-func printPlan(w io.Writer, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck) error {
+func printPlan(w io.Writer, v index.Plan, msgs []core.Message, checks []core.PullRequestCheck, hs []core.Handoff, hevents map[ulid.ULID]string) error {
 	open := core.OpenQuestions(msgs)
 	approvals := "-"
 	if v.Status.RequiredApprovals > 0 {
@@ -262,6 +271,7 @@ func printPlan(w io.Writer, v index.Plan, msgs []core.Message, checks []core.Pul
 			b.WriteString("\n")
 		}
 	}
+	writeTasks(&b, v, hs, hevents)
 	writeChecks(&b, checks)
 	writeDiscussion(&b, msgs)
 	_, err := io.WriteString(w, b.String())

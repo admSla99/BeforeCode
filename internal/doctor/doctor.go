@@ -81,6 +81,7 @@ var checks = []check{
 	{name: "index", run: checkIndex, fix: fixIndex},
 	{name: "event files", run: checkEventFiles},
 	{name: "check files", run: checkCheckFiles},
+	{name: "handoff files", run: checkHandoffFiles},
 	{name: "plans", run: checkPlans},
 	{name: "skipped events", run: checkSkippedEvents},
 	{name: "short IDs", run: checkShortIDs},

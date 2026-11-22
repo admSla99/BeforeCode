@@ -55,6 +55,9 @@ Refunds.
 
 - AC-1: An invalid card returns 402.
 
+--- Tasks ---
+T-1  open  -  Add the client.
+
 --- Discussion ---
 
 <ULID-3>  Ben Bitdiddle <ben@example.com>  <time>

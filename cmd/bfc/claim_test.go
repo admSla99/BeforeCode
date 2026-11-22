@@ -254,12 +254,12 @@ func TestClaimOutcome(t *testing.T) {
 	t.Parallel()
 	ours := ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C4F")
 	theirs := ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C4E")
-	st := core.Status{ShortID: "bfc-5v7x", Claims: map[string]core.Claim{"T-1": {Event: theirs, Holder: benP}}}
+	st := core.Status{ShortID: "bfc-5v7x", Tasks: map[string]core.TaskStatus{"T-1": {State: core.TaskClaimed, Claim: core.Claim{Event: theirs, Holder: benP}}}}
 	err := claimOutcome(st, "T-1", ours)
 	if err == nil || !strings.Contains(err.Error(), "T-1 of bfc-5v7x went to ben@example.com, whose Claim came first") {
 		t.Errorf("err = %v", err)
 	}
-	st.Claims["T-1"] = core.Claim{Event: ours, Holder: adaP}
+	st.Tasks["T-1"] = core.TaskStatus{State: core.TaskClaimed, Claim: core.Claim{Event: ours, Holder: adaP}}
 	if err := claimOutcome(st, "T-1", ours); err != nil {
 		t.Errorf("our Claim won: %v", err)
 	}
