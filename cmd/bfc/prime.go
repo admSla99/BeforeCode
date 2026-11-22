@@ -111,6 +111,9 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 		if msgs, err := readMessages(ctx, s, v.Plan.ID); err == nil {
 			v.Open = core.OpenQuestions(msgs)
 		}
+		if notes, err := handoffNotes(ctx, s, *v.Plan); err == nil {
+			v.Handoffs = notes
+		}
 	}
 	v.Waiting = gatherWaiting(ctx, s, v.Identity, views)
 	for _, pv := range views {
@@ -136,7 +139,8 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc ask <id> --to <email|ai> [--ref plan.md#AC-n] -m <text>`: ask a Question.\n" +
 	"  - `bfc reply <message-ULID> -m <text>`: answer a Question; add `--verbatim` when you record the user's own words.\n" +
 	"  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.\n" +
-	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
+	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open and Paused Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
+	"  - `bfc handoff [id] T-n -m <what is done, what comes next> [--done]`: before you stop working on a Task you hold, hand it off: `--done` when it is finished, else it is Paused for the next one. Then run `bfc push`.\n" +
 	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw` and `close` refuse to run inside an agent, and so does `acknowledge`. " +
 	"When a plan needs one, tell the user to open `bfc` and take it there.\n" +
 	"- Edit code while the Current plan is `approved` or `in-progress`; a hook blocks file edits in its other states.\n" +
@@ -146,8 +150,9 @@ const primeInstructions = "# BeforeCode\n\n" +
 // primeLimit caps the output of bfc prime; a longer plan.md is cut.
 const primeLimit = 8 << 10
 
-// primeListLimit caps each list of bfc prime, so that the lists alone stay
-// well within primeLimit.
+// primeListLimit caps each list of bfc prime. The lists of short lines stay
+// well within primeLimit; the Tasks with their Handoffs may not, and then
+// fitDoc cuts what comes after them.
 const primeListLimit = 10
 
 // writeList writes the lines of the first primeListLimit items, then how
@@ -175,6 +180,8 @@ type primeView struct {
 	Plan    *index.Plan
 	Current bool
 	Open    []core.Message
+	// Handoffs are the notes of the plan's Handoffs, by ULID.
+	Handoffs map[string]string
 	// Note says why the plan asked for could not be shown.
 	Note string
 	// Approved are the approved plans, listed when there is no plan.
@@ -303,7 +310,33 @@ func writePlanHeader(b *strings.Builder, v primeView, doc string) {
 			return fmt.Sprintf("- %s to %s%s: %s", q.ID, strings.Join(q.To, ", "), refSuffix(q.Ref), firstLine(q.Body))
 		}, fmt.Sprintf("`bfc show %s --json`", p.ShortID))
 	}
+	writePrimeTasks(b, v)
 	fmt.Fprintf(b, "\n### %s\n\n", doc)
+}
+
+// writePrimeTasks lists the Tasks of the plan with their state and holder,
+// and the latest Handoff of a claimed or Paused Task in full.
+func writePrimeTasks(b *strings.Builder, v primeView) {
+	tasks := core.TaskViews(v.Plan.Status, v.Plan.Plan)
+	if len(tasks) == 0 {
+		return
+	}
+	b.WriteString("\n### Tasks\n\n")
+	writeList(b, tasks, func(t core.TaskView) string {
+		var line string
+		switch t.State {
+		case core.TaskOpen:
+			line = fmt.Sprintf("- %s (open): %s", t.ID, firstLine(t.Text))
+		case core.TaskClaimed:
+			line = fmt.Sprintf("- %s (claimed by %s): %s", t.ID, t.Holder.Email, firstLine(t.Text))
+		default:
+			line = fmt.Sprintf("- %s (%s, last held by %s): %s", t.ID, t.State, t.Holder.Email, firstLine(t.Text))
+		}
+		if note, ok := v.Handoffs[t.Handoff]; ok && t.State != core.TaskCompleted {
+			line += "\n  Latest Handoff:\n  " + strings.ReplaceAll(note, "\n", "\n  ")
+		}
+		return line
+	}, fmt.Sprintf("`bfc show %s --json`", v.Plan.ShortID))
 }
 
 // stateAdvice says what an agent can do with a plan in this state.

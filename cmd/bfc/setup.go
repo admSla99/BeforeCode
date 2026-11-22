@@ -41,7 +41,7 @@ a pull request, so the setup reaches the whole team.`,
 }
 
 // agentCommands are the bfc commands Claude Code may run without asking.
-var agentCommands = []string{"prime", "show", "list", "ask", "reply", "edit", "start", "ready", "claim"}
+var agentCommands = []string{"prime", "show", "list", "ask", "reply", "edit", "start", "ready", "claim", "handoff", "push"}
 
 // claudeRules are what bfc setup claude puts into .claude/settings.json.
 func claudeRules() claude.Rules {

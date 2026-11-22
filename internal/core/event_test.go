@@ -124,6 +124,8 @@ func TestValidateEventFollowsTheDataFormat(t *testing.T) {
 		{"unknown type", name, "type: renamed\n" + common, "unknown type"},
 		{"claimed without a task", name, "type: claimed\n" + common, "task"},
 		{"claimed with a bad task", name, "type: claimed\n" + common + "task: T-01\n", "task"},
+		{"claimed naming a handoff", name, "type: claimed\n" + common + "task: T-1\nhandoff: 01JD3K8Q2W5V7X9Y0Z1A2B3C9H\n", "names no handoff"},
+		{"released without a handoff", name, "type: released\n" + common + "task: T-1\n", "handoff"},
 		{"checked is not written", name, "type: checked\n" + common, "not written"},
 		{"created without short_id", name, "type: created\n" + common, "short_id"},
 		{"short_id of another ULID", name, "type: created\n" + common + "short_id: bfc-aaaa\n", "short_id"},

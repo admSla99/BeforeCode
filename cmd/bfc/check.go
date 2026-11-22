@@ -193,7 +193,7 @@ func currentPlanDoc(ctx context.Context, s *store.Store, plan ulid.ULID) (string
 // (core.PullRequestChecks). A file that cannot be read as a check, or names
 // another plan, is skipped; bfc doctor reports it.
 func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID, msgs []core.Message) ([]core.PullRequestCheck, error) {
-	files, err := readPlanFiles(ctx, s, plan, "checks")
+	files, err := readPlanFiles(ctx, s, plan, "checks", ".md")
 	if err != nil {
 		return nil, err
 	}
@@ -216,10 +216,10 @@ type planFile struct {
 	data []byte
 }
 
-// readPlanFiles returns the <ULID>.md files in the directory dir of a plan
-// (messages, checks) at the tip of the plans ref, in ULID order. Other
-// entries are ignored.
-func readPlanFiles(ctx context.Context, s *store.Store, plan ulid.ULID, dir string) ([]planFile, error) {
+// readPlanFiles returns the <ULID><ext> files in the directory dir of a
+// plan (messages, checks, handoff with .md; events with .yaml) at the tip of
+// the plans ref, in ULID order. Other entries are ignored.
+func readPlanFiles(ctx context.Context, s *store.Store, plan ulid.ULID, dir, ext string) ([]planFile, error) {
 	tip, err := s.Tip(ctx)
 	if err != nil {
 		return nil, err
@@ -234,8 +234,8 @@ func readPlanFiles(ctx context.Context, s *store.Store, plan ulid.ULID, dir stri
 	var ids []ulid.ULID
 	var oids []string
 	for _, e := range entries {
-		id, err := ulid.ParseStrict(strings.TrimSuffix(e.Name, ".md"))
-		if err != nil || e.Dir || !strings.HasSuffix(e.Name, ".md") {
+		id, err := ulid.ParseStrict(strings.TrimSuffix(e.Name, ext))
+		if err != nil || e.Dir || !strings.HasSuffix(e.Name, ext) {
 			continue
 		}
 		ids, oids = append(ids, id), append(oids, e.ID)

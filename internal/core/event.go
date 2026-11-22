@@ -47,7 +47,8 @@ type Event struct {
 	PlanBlob          string // submitted, approved, changes-requested
 	RequiredApprovals int    // submitted
 	Message           string // changes-requested, closed: ULID of a Message
-	Task              string // claimed: T-<n> (ADR 0013 section 4)
+	Task              string // claimed, released, completed: T-<n> (ADR 0013 section 4)
+	Handoff           string // released, completed: ULID of the Handoff
 }
 
 // eventFile is the YAML layout: common fields first, then the fields of the
@@ -63,6 +64,7 @@ type eventFile struct {
 	RequiredApprovals int       `yaml:"required_approvals,omitempty"`
 	Message           string    `yaml:"message,omitempty"`
 	Task              string    `yaml:"task,omitempty"`
+	Handoff           string    `yaml:"handoff,omitempty"`
 }
 
 // EncodeEvent returns the file content of e.
@@ -81,6 +83,7 @@ func EncodeEvent(e Event) []byte {
 		RequiredApprovals: e.RequiredApprovals,
 		Message:           e.Message,
 		Task:              e.Task,
+		Handoff:           e.Handoff,
 	})
 	if err != nil {
 		panic(err) // plain strings and ints always encode
@@ -111,7 +114,7 @@ func ParseEvent(id ulid.ULID, data []byte) (Event, error) {
 	return Event{
 		ID: id, Type: f.Type, Plan: plan, Author: f.Author, At: f.At.UTC(), Agent: f.Agent,
 		ShortID: f.ShortID, PlanBlob: f.PlanBlob, RequiredApprovals: f.RequiredApprovals, Message: f.Message,
-		Task: f.Task,
+		Task: f.Task, Handoff: f.Handoff,
 	}, nil
 }
 
@@ -130,11 +133,13 @@ const (
 	StateInvalid    State = "invalid"
 )
 
-// The Event types format version 2 adds (ADR 0013 section 4). Claimed is
-// written from issue #108; done comes with bfc done (#111).
+// The Event types format version 2 adds (ADR 0013 section 4). done comes
+// with bfc done (#111).
 const (
-	Claimed EventType = "claimed"
-	Done    EventType = "done"
+	Claimed   EventType = "claimed"
+	Released  EventType = "released"
+	Completed EventType = "completed"
+	Done      EventType = "done"
 )
 
 // Checked was reserved by format version 1 and dropped by format version 2:
@@ -145,7 +150,7 @@ const Checked EventType = "checked"
 // Any other type may belong to a later format version.
 func KnownEventType(t EventType) bool {
 	switch t {
-	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed:
+	case Created, Submitted, Withdrawn, Approved, ChangesRequested, Closed, Claimed, Released, Completed:
 		return true
 	}
 	return false
@@ -200,9 +205,18 @@ func ValidateEvent(plan ulid.ULID, name string, data []byte) error {
 			return fmt.Errorf("event %s: plan_blob %q is not a git object ID", id, e.PlanBlob)
 		}
 	case Withdrawn, Closed:
-	case Claimed:
+	case Claimed, Released, Completed:
 		if !taskID.MatchString(e.Task) {
 			return fmt.Errorf("event %s: task %q is not a Task ID such as T-1", id, e.Task)
+		}
+		if e.Type == Claimed {
+			if e.Handoff != "" {
+				return fmt.Errorf("event %s: a claimed Event names no handoff", id)
+			}
+			break
+		}
+		if h, err := ulid.ParseStrict(e.Handoff); err != nil || h.String() != e.Handoff {
+			return fmt.Errorf("event %s: handoff %q is not the ULID of a Handoff", id, e.Handoff)
 		}
 	case Checked, Done:
 		return fmt.Errorf("event %s: type %q is not written by this bfc", id, e.Type)

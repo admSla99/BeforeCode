@@ -54,6 +54,8 @@ func ev(t *testing.T, specs ...string) []core.Event {
 				e.Plan = ulid.MustParse("01JA0000000000000000000000")
 			case "T-1", "T-2", "T-9":
 				e.Task = extra
+			case "handoff":
+				e.Handoff = handoffID
 			default:
 				if _, err := fmt.Sscan(extra, &e.RequiredApprovals); err != nil {
 					t.Fatalf("bad event spec %q", spec)
@@ -224,8 +226,8 @@ func TestDeriveClaimsAndInProgress(t *testing.T) {
 			}
 			var holders []string
 			for _, task := range []string{"T-1", "T-2", "T-9"} {
-				if cl, ok := got.Claims[task]; ok {
-					holders = append(holders, task+"="+cl.Holder.Email)
+				if ts, ok := got.Tasks[task]; ok && ts.State == core.TaskClaimed {
+					holders = append(holders, task+"="+ts.Claim.Holder.Email)
 				}
 			}
 			if strings.Join(holders, ",") != c.holders {
@@ -287,5 +289,91 @@ func TestTaskViews(t *testing.T) {
 	}
 	if next, ok := core.NextTask(st, []byte(tasksPlan)); !ok || next.ID != "T-2" {
 		t.Errorf("NextTask = %+v, %v", next, ok)
+	}
+}
+
+// handoffID is the Handoff that released and completed Events name.
+const handoffID = "01JD3K8Q2W5V7X9Y0Z1A2B3C9H"
+
+// Issue #109 AC-2, AC-3: the holder releases a Task (Paused, claimable
+// again) or completes it; a released or completed by anyone else, or for a
+// Task nobody holds, is skipped.
+func TestDeriveHandoffs(t *testing.T) {
+	approved := []string{"created ada", "submitted ada v1 1", "approved jana v1"}
+	cases := []struct {
+		name    string
+		events  []string
+		tasks   string // "T-1=<state>[:<holder>]", in Task order
+		state   core.State
+		skipped []string
+	}{
+		{"released by the holder: paused", append(approved, "claimed jana T-1", "released jana T-1 handoff"), "T-1=paused:jana@example.com", core.StateInProgress, nil},
+		{"completed by the holder", append(approved, "claimed agent:jana T-1", "completed agent:jana T-1 handoff"), "T-1=completed:jana@example.com", core.StateInProgress, nil},
+		{"a Paused Task is claimed again", append(approved, "claimed jana T-1", "released jana T-1 handoff", "claimed peter T-1"), "T-1=claimed:peter@example.com", core.StateInProgress, nil},
+		{"only the holder hands off", append(approved, "claimed jana T-1", "released peter T-1 handoff", "completed peter T-1 handoff"), "T-1=claimed:jana@example.com", core.StateInProgress,
+			[]string{"released peter T-1 handoff", "completed peter T-1 handoff"}},
+		{"a Task nobody holds is not handed off", append(approved, "released jana T-1 handoff"), "", core.StateApproved, []string{"released jana T-1 handoff"}},
+		{"a completed Task is not claimed again", append(approved, "claimed jana T-1", "completed jana T-1 handoff", "claimed peter T-1"), "T-1=completed:jana@example.com", core.StateInProgress,
+			[]string{"claimed peter T-1"}},
+		{"a hand-off without its Handoff is skipped", append(approved, "claimed jana T-1", "released jana T-1"), "T-1=claimed:jana@example.com", core.StateInProgress, []string{"released jana T-1"}},
+	}
+	for _, c := range cases {
+		t.Run(c.name, func(t *testing.T) {
+			events := ev(t, c.events...)
+			got := core.Derive(planID, events, blobV1)
+			if got.State != c.state {
+				t.Errorf("state = %q, want %q", got.State, c.state)
+			}
+			var tasks []string
+			for _, task := range []string{"T-1", "T-2"} {
+				if ts, ok := got.Tasks[task]; ok {
+					tasks = append(tasks, task+"="+string(ts.State)+":"+ts.Claim.Holder.Email)
+				}
+			}
+			if strings.Join(tasks, ",") != c.tasks {
+				t.Errorf("tasks = %v, want %s", tasks, c.tasks)
+			}
+			if ts := got.Tasks["T-1"]; (ts.State == core.TaskPaused || ts.State == core.TaskCompleted) && ts.Handoff != handoffID {
+				t.Errorf("handoff = %q", ts.Handoff)
+			}
+			var want []ulid.ULID
+			for _, spec := range c.skipped {
+				for i, s := range c.events {
+					if s == spec {
+						want = append(want, events[i].ID)
+					}
+				}
+			}
+			if got := core.SkippedEvents(planID, events, blobV1); fmt.Sprint(got) != fmt.Sprint(want) {
+				t.Errorf("skipped = %v, want %v", got, want)
+			}
+		})
+	}
+}
+
+// Issue #109 AC-2: only the holder hands a Task off.
+func TestCheckHandoff(t *testing.T) {
+	st := core.Derive(planID, ev(t, "created ada", "submitted ada v1 1", "approved jana v1", "claimed jana T-1", "claimed peter T-2", "released peter T-2 handoff"), blobV1)
+	plan := []byte(tasksPlan)
+	if err := core.CheckHandoff(st, plan, "T-1", jana); err != nil {
+		t.Errorf("the holder: %v", err)
+	}
+	for name, c := range map[string]struct {
+		task  string
+		actor core.Person
+		want  string
+	}{
+		"not the holder": {"T-1", peter, "T-1 of bfc-5v7x is held by Jana <jana@example.com>"},
+		"paused":         {"T-2", peter, "T-2 of bfc-5v7x is paused"},
+		"open":           {"T-3", jana, "T-3 of bfc-5v7x is open"},
+		"no such Task":   {"T-9", jana, "T-9 is not a Task"},
+	} {
+		if err := core.CheckHandoff(st, plan, c.task, c.actor); err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("%s: err = %v, want %q", name, err, c.want)
+		}
+	}
+	// A Paused Task may be claimed again.
+	if err := core.CheckClaim(st, plan, "T-2"); err != nil {
+		t.Errorf("claim a Paused Task: %v", err)
 	}
 }

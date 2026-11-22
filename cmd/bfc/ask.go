@@ -219,7 +219,7 @@ func planHolding(ctx context.Context, s *store.Store, path func(plan ulid.ULID) 
 // readMessages returns the Messages of a plan at the tip of the plans ref,
 // in ULID order. A file that cannot be read as a Message is skipped.
 func readMessages(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.Message, error) {
-	files, err := readPlanFiles(ctx, s, plan, "messages")
+	files, err := readPlanFiles(ctx, s, plan, "messages", ".md")
 	if err != nil {
 		return nil, err
 	}

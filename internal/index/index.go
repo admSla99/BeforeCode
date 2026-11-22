@@ -27,7 +27,7 @@ import (
 // meaning of a column changes, and whenever reading a plan gives another
 // result for the same files (core.Derive, core.ParseIntent, searchText):
 // plans whose directory did not change are not read again.
-const schemaVersion = 3
+const schemaVersion = 4
 
 // File is where the index lives, relative to the git common directory.
 const File = "beforecode/index.db"
@@ -285,7 +285,7 @@ CREATE TABLE plans (
 	author_email       TEXT NOT NULL,
 	required_approvals INTEGER NOT NULL,
 	approvers          TEXT NOT NULL,    -- JSON array
-	claims             TEXT NOT NULL,    -- JSON object: Task ID -> core.Claim
+	tasks              TEXT NOT NULL,    -- JSON object: Task ID -> core.TaskStatus
 	last_activity      INTEGER NOT NULL, -- Unix seconds; 0 when unknown
 	intent             TEXT,             -- NULL when missing
 	plan               TEXT              -- NULL when missing
@@ -297,7 +297,7 @@ CREATE VIRTUAL TABLE plan_text USING fts5(title, intent, plan, tokenize = 'unico
 // documents, which only Plan returns.
 const (
 	headerColumns = `p.id, p.short_id, p.state, p.title, p.labels, p.author_name, p.author_email,
-	p.required_approvals, p.approvers, p.claims, p.last_activity`
+	p.required_approvals, p.approvers, p.tasks, p.last_activity`
 	docColumns = headerColumns + `, p.intent, p.plan`
 )
 
@@ -588,24 +588,24 @@ func upsert(ctx context.Context, tx *sql.Tx, p Plan, tree string) error {
 	if err != nil {
 		return err
 	}
-	claims := p.Status.Claims
-	if claims == nil {
-		claims = map[string]core.Claim{}
+	tasks := p.Status.Tasks
+	if tasks == nil {
+		tasks = map[string]core.TaskStatus{}
 	}
-	cl, err := json.Marshal(claims)
+	cl, err := json.Marshal(tasks)
 	if err != nil {
 		return err
 	}
 	var rowid int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO plans (id, tree, short_id, state, title, labels, author_name, author_email,
-			required_approvals, approvers, claims, last_activity, intent, plan)
+			required_approvals, approvers, tasks, last_activity, intent, plan)
 		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET tree = excluded.tree, short_id = excluded.short_id,
 			state = excluded.state, title = excluded.title, labels = excluded.labels,
 			author_name = excluded.author_name, author_email = excluded.author_email,
 			required_approvals = excluded.required_approvals, approvers = excluded.approvers,
-			claims = excluded.claims,
+			tasks = excluded.tasks,
 			intent = excluded.intent, plan = excluded.plan
 		RETURNING rowid`,
 		p.ID.String(), tree, p.Status.ShortID, string(p.Status.State), p.Title, string(labels),
@@ -642,11 +642,11 @@ func nullable(b []byte) any {
 // followed by the columns in extra.
 func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	var p Plan
-	var id, state, labels, approvers, claims string
+	var id, state, labels, approvers, tasks string
 	var lastActivity int64
 	var intent, plan sql.NullString
 	dest := []any{&id, &p.Status.ShortID, &state, &p.Title, &labels, &p.Status.Author.Name,
-		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &claims, &lastActivity}
+		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &tasks, &lastActivity}
 	if docs {
 		dest = append(dest, &intent, &plan)
 	}
@@ -668,11 +668,11 @@ func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	if len(p.Status.Approvers) == 0 {
 		p.Status.Approvers = nil // as core.Derive leaves it
 	}
-	if err := json.Unmarshal([]byte(claims), &p.Status.Claims); err != nil {
+	if err := json.Unmarshal([]byte(tasks), &p.Status.Tasks); err != nil {
 		return p, err
 	}
-	if len(p.Status.Claims) == 0 {
-		p.Status.Claims = nil // as core.Derive leaves it
+	if len(p.Status.Tasks) == 0 {
+		p.Status.Tasks = nil // as core.Derive leaves it
 	}
 	if lastActivity != 0 {
 		p.LastActivity = time.Unix(lastActivity, 0).UTC()
