@@ -207,3 +207,18 @@ func TestValidatePlanFlagsTheEmptyTemplateTask(t *testing.T) {
 		t.Errorf("template's empty T-1 not flagged:\n%s", got)
 	}
 }
+
+// A Task whose text starts on a continuation line has text, and a code
+// block indented under a Task belongs to it.
+func TestTaskTextFromContinuationLinesAndIndentedCode(t *testing.T) {
+	plan := strings.Replace(goodPlan, "- T-1: Add the client.\n",
+		"- T-1:\n  Add the client.\n  ```\n  ## not a heading\n\n  go get stripe\n  ```\n  Then wire it.\n", 1)
+	if problems := core.ValidatePlan([]byte(plan)); len(problems) != 0 {
+		t.Errorf("problems:\n%s", messages(problems))
+	}
+	got := core.Tasks([]byte(plan))
+	want := "Add the client.\n```\n## not a heading\n\ngo get stripe\n```\nThen wire it."
+	if len(got) != 2 || got[0].Text != want {
+		t.Errorf("tasks = %q", got)
+	}
+}

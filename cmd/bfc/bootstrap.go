@@ -4,8 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
+	"io"
 
 	"github.com/spf13/cobra"
 
@@ -64,7 +63,7 @@ func runBootstrap(cmd *cobra.Command, s *store.Store, remote string) error {
 	}
 	report(out, "checked", remote+" has plans in "+store.Ref)
 
-	if err := checkRemoteFormat(ctx, s, remote); err != nil {
+	if err := checkRemoteFormat(ctx, out, s, remote); err != nil {
 		return err
 	}
 	added, err := s.AddFetchRefspec(ctx, remote)
@@ -96,7 +95,7 @@ func runBootstrap(cmd *cobra.Command, s *store.Store, remote string) error {
 
 // checkRemoteFormat refuses a fetched plans ref whose format-version this
 // binary cannot use (ADR 0002 section 2).
-func checkRemoteFormat(ctx context.Context, s *store.Store, remote string) error {
+func checkRemoteFormat(ctx context.Context, out io.Writer, s *store.Store, remote string) error {
 	data, err := s.ReadRemote(ctx, "format-version")
 	if errors.Is(err, store.ErrNotFound) {
 		return fmt.Errorf("the plans of %s have no format-version file; ask whoever set them up to run bfc doctor", remote)
@@ -104,12 +103,14 @@ func checkRemoteFormat(ctx context.Context, s *store.Store, remote string) error
 	if err != nil {
 		return err
 	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	v, err := core.ParseFormatVersion(data)
 	switch {
 	case err != nil:
-		return fmt.Errorf("the plans of %s have an unreadable format-version %q", remote, data)
+		return fmt.Errorf("the plans of %s have an unreadable %w", remote, err)
 	case v > core.FormatVersion:
 		return fmt.Errorf("the plans of %s have format-version %d, newer than this bfc supports (%d); update bfc", remote, v, core.FormatVersion)
+	case v < core.FormatVersion:
+		report(out, "note", fmt.Sprintf("the plans of %s have format-version %d: this bfc reads them, and writes once someone runs bfc migrate", remote, v))
 	}
 	return nil
 }

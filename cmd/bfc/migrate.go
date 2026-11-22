@@ -3,8 +3,6 @@ package main
 import (
 	"errors"
 	"fmt"
-	"strconv"
-	"strings"
 
 	"github.com/spf13/cobra"
 
@@ -44,16 +42,16 @@ func runMigrate(cmd *cobra.Command, s *store.Store) error {
 	case err != nil:
 		return err
 	}
-	v, err := strconv.Atoi(strings.TrimSpace(string(data)))
+	v, err := core.ParseFormatVersion(data)
 	switch {
 	case err != nil:
-		return fmt.Errorf("the plans ref has an unreadable format-version %q; run bfc doctor", data)
+		return fmt.Errorf("the plans ref has an unreadable %w; run bfc doctor", err)
 	case v == core.FormatVersion:
 		_, err := fmt.Fprintf(cmd.OutOrStdout(), "The plans ref already has format-version %d: nothing to do.\n", v)
 		return err
 	case v > core.FormatVersion:
 		return fmt.Errorf("the plans ref has format-version %d, newer than this bfc writes (%d); update bfc", v, core.FormatVersion)
-	case v != 1:
+	case v != core.MigratesFrom:
 		return fmt.Errorf("the plans ref has format-version %d, which this bfc cannot migrate", v)
 	}
 	msg := fmt.Sprintf("bfc migrate: format-version %d to %d", v, core.FormatVersion)

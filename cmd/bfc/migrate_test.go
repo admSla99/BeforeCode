@@ -124,3 +124,49 @@ func TestDoctorSendsAV1RefToMigrate(t *testing.T) {
 		t.Errorf("doctor --fix migrated: format-version = %q", got)
 	}
 }
+
+// Issue #100 AC-1: a v3 ref also refuses an ordinary write.
+func TestANewerRefRefusesToWrite(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	setFormatVersion(t, dir, "3")
+	out, err := bfcIn(t, dir, "new", "--no-edit", "Payments")
+	if err == nil || !strings.Contains(out, "format-version 3") || !strings.Contains(out, "update bfc") {
+		t.Errorf("bfc new on a v3 ref: err %v\n%s", err, out)
+	}
+}
+
+// Issue #100 AC-4: a malformed or duplicate Task is a warning in bfc edit
+// and refuses bfc submit.
+func TestBadTasksWarnInEditAndRefuseSubmit(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	short, _ := newPlan(t, dir, "Payments")
+	bad := strings.Replace(validPlan, "- T-1: Add the client.", "- T-1: Add the client.\n- T-1: Again.\n- Wire the flag.", 1)
+
+	out := mustStdin(t, dir, bad, "edit", short, "--stdin")
+	for _, want := range []string{"warning: plan.md", "T-1 is used more than once", `not a task: "- Wire the flag."`, "saved plan.md"} {
+		if !strings.Contains(out, want) {
+			t.Errorf("bfc edit output lacks %q:\n%s", want, out)
+		}
+	}
+	out, err := bfcIn(t, dir, "submit", short)
+	if err == nil || !strings.Contains(out, "T-1 is used more than once") || !strings.Contains(out, "not a task") {
+		t.Errorf("bfc submit with bad Tasks: err %v\n%s", err, out)
+	}
+}
+
+// Issue #100 AC-1: bootstrap joins a v1 remote and says that it needs bfc
+// migrate before this bfc writes.
+func TestBootstrapNotesAV1Remote(t *testing.T) {
+	t.Parallel()
+	ana, bare := sharedProject(t, "Old plans")
+	setFormatVersion(t, ana, "1")
+	mustBfc(t, ana, "push")
+	ben := plainClone(t, bare)
+
+	out := mustBfc(t, ben, "bootstrap")
+	if !strings.Contains(out, "format-version 1") || !strings.Contains(out, "bfc migrate") {
+		t.Errorf("bootstrap of a v1 remote:\n%s", out)
+	}
+}
