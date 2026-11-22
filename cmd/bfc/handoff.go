@@ -204,13 +204,21 @@ func writeTasks(b *strings.Builder, v index.Plan, hs []core.Handoff, events map[
 	for _, t := range views {
 		listed[t.ID] = true
 	}
+	notes := map[string]string{}
+	for _, h := range hs {
+		notes[h.ID.String()] = h.Note
+	}
 	b.WriteString("\n--- Tasks ---\n")
 	for _, t := range views {
 		holder := "-"
 		if t.State != core.TaskOpen {
 			holder = throughAgent(orDash(t.Holder.Name), t.Agent)
 		}
-		fmt.Fprintf(b, "%s  %s  %s  %s\n", t.ID, t.State, holder, firstLine(t.Text))
+		line := fmt.Sprintf("%s  %s  %s  %s", t.ID, t.State, holder, firstLine(t.Text))
+		if note, ok := notes[t.Handoff]; ok {
+			line += "  · " + firstLine(note)
+		}
+		b.WriteString(line + "\n")
 		for _, h := range hs {
 			if h.Task == t.ID && events[h.ID] != "" {
 				writeHandoff(b, h, "")

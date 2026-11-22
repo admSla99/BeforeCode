@@ -1,4 +1,4 @@
-bfc-5v7x  Payments via Stripe   intent.md   plan.md
+bfc-5v7x  Payments via Stripe   plan.md   intent.md   tasks
   ## Context                                                                    
                                                                                 
   The checkout calls payments.Charge, which wraps the old provider.             
@@ -21,4 +21,4 @@ bfc-5v7x  Payments via Stripe   intent.md   plan.md
 approve: done
 Offline: Could not resolve host: github.com
  in-review · 1/2 approvals (peter) · jana@example… ○ offline · 1 change waiting 
-tab intent/plan • e edit • a approve • r changes • ↑↓ scroll • esc back • q quit
+tab switch • e edit • a approve • r changes • ↑↓ scroll • esc back • q quit

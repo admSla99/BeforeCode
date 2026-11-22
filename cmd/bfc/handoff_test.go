@@ -239,3 +239,42 @@ func TestPrimeShowsTheTasksAndTheirHandoffs(t *testing.T) {
 		}
 	}
 }
+
+// Issue #112 AC-1: the Task line of bfc show has the first line of its
+// latest Handoff.
+func TestShowTaskLinesHaveTheLatestHandoff(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := claimedPlan(t)
+	mustBfc(t, dir, "handoff", short, "T-1", "-m", "Half done.\nMore detail.")
+	if out := mustBfc(t, dir, "show", short); !strings.Contains(out, "T-1  paused  Ada Lovelace  Add the client.  · Half done.\n") {
+		t.Errorf("bfc show:\n%s", out)
+	}
+}
+
+// Issue #112 AC-2: the TUI adapter gives the Tasks with state, holder, my
+// own Claims, the latest Handoff and every Handoff of each Task.
+func TestTUIAdapterGivesTheTasks(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := claimedPlan(t)
+	mustBfc(t, dir, "handoff", short, "T-1", "-m", "Half done.\nMore detail.")
+	as(t, dir, benP)
+	mustBfc(t, dir, "claim", short, "T-1")
+	as(t, dir, adaP)
+	mustBfc(t, dir, "claim", short, "T-2")
+
+	d, err := adapterIn(t, dir).Detail(t.Context(), short)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Tasks) != 2 {
+		t.Fatalf("tasks = %+v", d.Tasks)
+	}
+	t1, t2 := d.Tasks[0], d.Tasks[1]
+	if t1.ID != "T-1" || t1.State != core.TaskClaimed || t1.Holder != "Ben Bitdiddle" || t1.Mine || t1.Latest != "Half done." ||
+		len(t1.Handoffs) != 1 || t1.Handoffs[0].By != "Ada Lovelace" || t1.Handoffs[0].Note != "Half done.\nMore detail." || t1.Handoffs[0].Done {
+		t.Errorf("T-1 = %+v", t1)
+	}
+	if t2.ID != "T-2" || t2.State != core.TaskClaimed || !t2.Mine || t2.Latest != "" || len(t2.Handoffs) != 0 {
+		t.Errorf("T-2 = %+v", t2)
+	}
+}

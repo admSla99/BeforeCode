@@ -63,28 +63,62 @@ type PlanDetail struct {
 	// DoneWarnings are what is unfinished when the plan is marked done:
 	// Tasks not completed, Findings nobody acknowledged.
 	DoneWarnings []string
+	// Tasks are the Tasks of plan.md in its order, with their state.
+	Tasks []TaskRow
+}
+
+// TaskRow is what the tasks tab shows of one Task.
+type TaskRow struct {
+	ID       string
+	Text     string
+	State    core.TaskState
+	Holder   string // the name of the holder, or of the last one; "" while open
+	Mine     bool   // the current user holds it
+	Latest   string // the first line of the latest Handoff, "" without one
+	Handoffs []HandoffRow
+}
+
+// HandoffRow is one Handoff of a Task, oldest first.
+type HandoffRow struct {
+	ID   string
+	By   string // the author, with the harness when an agent wrote it
+	Done bool   // completed; released otherwise
+	Note string
 }
 
 // Doc names one of the two documents of a Plan.
 type Doc int
 
-// The documents of a Plan.
+// The documents of a Plan, and the tasks tab of the detail, which is no
+// document.
 const (
 	DocPlan Doc = iota
 	DocIntent
+	DocTasks
 )
 
-// other is the document the Tab key switches to.
-func (d Doc) other() Doc {
-	if d == DocIntent {
-		return DocPlan
+// next is the tab the Tab key switches to: from plan.md, where the detail
+// opens, to intent.md, then tasks, then back to plan.md.
+func (d Doc) next() Doc {
+	switch d {
+	case DocPlan:
+		return DocIntent
+	case DocIntent:
+		return DocTasks
 	}
-	return DocIntent
+	return DocPlan
 }
 
+// Editable reports whether d is a document the editor opens; the tasks
+// tab is not.
+func (d Doc) Editable() bool { return d != DocTasks }
+
 func (d Doc) String() string {
-	if d == DocIntent {
+	switch d {
+	case DocIntent:
 		return "intent.md"
+	case DocTasks:
+		return "tasks"
 	}
 	return "plan.md"
 }

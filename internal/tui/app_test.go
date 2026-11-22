@@ -212,6 +212,8 @@ func TestAppDetailOfAPlanWithoutPlanMd(t *testing.T) {
 	tm := startApp(t, f)
 	send(tm, "enter")
 	waitFor(t, tm, "Problem") // a plan without plan.md opens on intent.md
+	send(tm, "tab")           // the tasks tab (#112)
+	waitFor(t, tm, "No Tasks yet")
 	send(tm, "tab")
 	waitFor(t, tm, "No plan.md yet")
 	out := screen(t, tm)

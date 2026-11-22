@@ -58,12 +58,16 @@ func (k inboxKeys) FullHelp() [][]key.Binding { return [][]key.Binding{k.ShortHe
 // accepted only when the plan allows the action for the current user.
 type detailKeys struct {
 	SwitchDoc, Edit, Grill, Scroll, Back, Quit key.Binding
+	TaskUp, TaskDown, Handoffs                 key.Binding
 	Review                                     map[ReviewAction]key.Binding
 }
 
 func newDetailKeys() detailKeys {
 	return detailKeys{
-		SwitchDoc: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "intent/plan")),
+		SwitchDoc: key.NewBinding(key.WithKeys("tab"), key.WithHelp("tab", "switch")),
+		TaskUp:    key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑↓", "select")),
+		TaskDown:  key.NewBinding(key.WithKeys("down", "j")),
+		Handoffs:  key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "handoffs")),
 		Edit:      key.NewBinding(key.WithKeys("e"), key.WithHelp("e", "edit")),
 		Grill:     key.NewBinding(key.WithKeys("g"), key.WithHelp("g", "grill")),
 		// The viewport handles scrolling; this binding only shows in help.
