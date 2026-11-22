@@ -17,3 +17,11 @@ in `cwd` and `tool_input.file_path`, and by `-work` in `transcript_path` and
 tool-use IDs and the `/root` and `/tmp/claude-0` prefixes of the recording
 container, which hold nothing personal. The test replaces `cwd` with the clone and moves
 `file_path` into it.
+
+# Plan check results
+
+`plan-check-reply.md` is a reply in the shape the `plan-check` skill asks
+for: prose, then the result JSON in a `json` fence, which `bfc check record`
+reads (issue #102). It is written by hand, not captured from a real run; #121
+runs the check on GitHub. `plan-check-clean.json` is a clean result as plain
+JSON. Both name `AC-1` of the `planMD` in `e2e_test.go`.
