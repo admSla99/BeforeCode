@@ -17,7 +17,8 @@
       "Bash(bfc approve:*)",
       "Bash(bfc request-changes:*)",
       "Bash(bfc withdraw:*)",
-      "Bash(bfc close:*)"
+      "Bash(bfc close:*)",
+      "Bash(bfc acknowledge:*)"
     ]
   },
   "hooks": {

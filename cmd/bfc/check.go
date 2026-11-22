@@ -78,7 +78,7 @@ stored check. Nothing is pushed; bfc push sends it.`,
 			}
 			enc := json.NewEncoder(cmd.OutOrStdout())
 			enc.SetIndent("", "  ")
-			return enc.Encode(toCheckJSON(v, c, nil))
+			return enc.Encode(toCheckJSON(v, c))
 		},
 	}
 	cmd.Flags().IntVar(&pr, "pr", 0, "the number of the pull request")
@@ -189,9 +189,10 @@ func currentPlanDoc(ctx context.Context, s *store.Store, plan ulid.ULID) (string
 }
 
 // planChecks returns, for each pull request of the plan, the check that
-// counts (core.PullRequestChecks). A file that cannot be read as a check,
-// or names another plan, is skipped; bfc doctor reports it.
-func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.PullRequestCheck, error) {
+// counts with its Acknowledgement among msgs, the plan's Messages
+// (core.PullRequestChecks). A file that cannot be read as a check, or names
+// another plan, is skipped; bfc doctor reports it.
+func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID, msgs []core.Message) ([]core.PullRequestCheck, error) {
 	files, err := readPlanFiles(ctx, s, plan, "checks")
 	if err != nil {
 		return nil, err
@@ -206,7 +207,7 @@ func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.Pul
 	if err != nil && !errors.Is(err, store.ErrNotFound) {
 		return nil, err
 	}
-	return core.PullRequestChecks(checks, blob), nil
+	return core.PullRequestChecks(checks, blob, msgs), nil
 }
 
 // planFile is one append-only file of a plan, named by its ULID.
@@ -251,8 +252,6 @@ func readPlanFiles(ctx context.Context, s *store.Store, plan ulid.ULID, dir stri
 }
 
 // checkJSON is the --json shape of a check, documented in docs/design.md.
-// Stale is set only where the check is the one that counts for its pull
-// request (bfc show --json).
 type checkJSON struct {
 	ID         string          `json:"id"`
 	Plan       string          `json:"plan"`
@@ -267,7 +266,24 @@ type checkJSON struct {
 	Criteria   []criterionJSON `json:"criteria"`
 	OutOfScope []string        `json:"out_of_scope"`
 	Summary    string          `json:"summary"`
-	Stale      *bool           `json:"stale,omitempty"`
+}
+
+// countingCheckJSON is the check that counts for its pull request, in the
+// checks of bfc show --json: with its stale marker and its Acknowledgement,
+// null without one.
+type countingCheckJSON struct {
+	checkJSON
+	Stale        bool              `json:"stale"`
+	Acknowledged *acknowledgedJSON `json:"acknowledged"`
+}
+
+// acknowledgedJSON is the Acknowledgement of a check: the Message and its
+// reason.
+type acknowledgedJSON struct {
+	ID     string      `json:"id"`
+	Author core.Person `json:"author"`
+	At     string      `json:"at"`
+	Reason string      `json:"reason"`
 }
 
 type criterionJSON struct {
@@ -278,18 +294,29 @@ type criterionJSON struct {
 // findingJSON is a Finding in bfc show --json: a criterion that is not met
 // or an out-of-scope change.
 type findingJSON struct {
-	PR         int    `json:"pr"`
-	Check      string `json:"check"`
-	Criterion  string `json:"criterion,omitempty"`
-	OutOfScope string `json:"out_of_scope,omitempty"`
+	PR           int    `json:"pr"`
+	Check        string `json:"check"`
+	Criterion    string `json:"criterion,omitempty"`
+	OutOfScope   string `json:"out_of_scope,omitempty"`
+	Acknowledged bool   `json:"acknowledged"`
 }
 
-func toCheckJSON(v index.Plan, c core.Check, stale *bool) checkJSON {
+// toCountingCheckJSON is the check that counts for its pull request, with
+// its stale marker and Acknowledgement.
+func toCountingCheckJSON(v index.Plan, p core.PullRequestCheck) countingCheckJSON {
+	out := countingCheckJSON{checkJSON: toCheckJSON(v, p.Check), Stale: p.Stale}
+	if a := p.Acknowledgement; a != nil {
+		out.Acknowledged = &acknowledgedJSON{ID: a.ID.String(), Author: a.Author, At: a.At.UTC().Format(time.RFC3339), Reason: a.Body}
+	}
+	return out
+}
+
+func toCheckJSON(v index.Plan, c core.Check) checkJSON {
 	out := checkJSON{
 		ID: c.ID.String(), Plan: v.ID.String(), ShortID: v.ShortID, Author: c.Author,
 		At: c.At.UTC().Format(time.RFC3339), Agent: c.Agent, PR: c.PR, HeadSHA: c.HeadSHA, BaseSHA: c.BaseSHA,
 		PlanBlob: c.PlanBlob, Criteria: []criterionJSON{}, OutOfScope: append([]string{}, c.OutOfScope...),
-		Summary: c.Summary, Stale: stale,
+		Summary: c.Summary,
 	}
 	for _, r := range c.Criteria {
 		out.Criteria = append(out.Criteria, criterionJSON{ID: r.ID, Status: string(r.Status)})
@@ -298,7 +325,7 @@ func toCheckJSON(v index.Plan, c core.Check, stale *bool) checkJSON {
 }
 
 func toFindingJSON(f core.Finding) findingJSON {
-	return findingJSON{PR: f.PR, Check: f.Check.String(), Criterion: f.Criterion, OutOfScope: f.OutOfScope}
+	return findingJSON{PR: f.PR, Check: f.Check.String(), Criterion: f.Criterion, OutOfScope: f.OutOfScope, Acknowledged: f.Acknowledged}
 }
 
 // writeChecks prints the Checks section of bfc show: per pull request its
@@ -319,6 +346,9 @@ func writeChecks(b *strings.Builder, prs []core.PullRequestCheck) {
 		}
 		fields = append(fields, formatTime(c.At))
 		fmt.Fprintf(b, "%s\n", strings.Join(fields, "  "))
+		if a := p.Acknowledgement; a != nil {
+			fmt.Fprintf(b, "  acknowledged by %s: %s\n", orDash(a.Author.Name), firstLine(a.Body))
+		}
 		for _, f := range p.Findings {
 			if f.Criterion != "" {
 				fmt.Fprintf(b, "  not met: %s\n", f.Criterion)

@@ -138,7 +138,7 @@ func TestPullRequestChecksDeriveTheFindings(t *testing.T) {
 		check("01JD3K8Q2W5V7X9Y0Z1A2B3C42", 7, "old", map[string]core.CriterionStatus{"AC-1": core.Met, "AC-2": core.NotMet}, "Touches billing."),
 		check("01JD3K8Q2W5V7X9Y0Z1A2B3C43", 12, "cur", map[string]core.CriterionStatus{"AC-1": core.NotMet}),
 	}
-	got := core.PullRequestChecks(checks, "cur")
+	got := core.PullRequestChecks(checks, "cur", nil)
 	if len(got) != 3 {
 		t.Fatalf("got %d pull requests, want 3: %+v", len(got), got)
 	}
@@ -165,7 +165,51 @@ func TestPullRequestChecksDeriveTheFindings(t *testing.T) {
 	if all := core.Findings(got); len(all) != 3 {
 		t.Errorf("Findings = %+v, want 3", all)
 	}
-	if got := core.PullRequestChecks(nil, "cur"); len(got) != 0 {
+	if got := core.PullRequestChecks(nil, "cur", nil); len(got) != 0 {
 		t.Errorf("no checks: %+v", got)
+	}
+}
+
+func ack(id string, check ulid.ULID, agent string) core.Message {
+	return core.Message{ID: ulid.MustParseStrict(id), Author: bot, Agent: agent, Ref: "checks/" + check.String(), Body: "On purpose."}
+}
+
+// Issue #105 AC-4: an Acknowledgement by a person covers every Finding of
+// its check; one by an agent does not, and a newer check of the same pull
+// request needs its own.
+func TestAcknowledgedChecks(t *testing.T) {
+	older := check("01JD3K8Q2W5V7X9Y0Z1A2B3C40", 7, "cur", map[string]core.CriterionStatus{"AC-1": core.NotMet})
+	newest := check("01JD3K8Q2W5V7X9Y0Z1A2B3C42", 7, "cur", map[string]core.CriterionStatus{"AC-1": core.NotMet}, "Touches billing.")
+	other := check("01JD3K8Q2W5V7X9Y0Z1A2B3C43", 9, "cur", map[string]core.CriterionStatus{"AC-1": core.NotMet})
+	msgs := []core.Message{
+		ack("01JD3K8Q2W5V7X9Y0Z1A2B3C50", older.ID, ""),
+		ack("01JD3K8Q2W5V7X9Y0Z1A2B3C51", other.ID, "claude-code"),
+		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C52"), Author: bot, Ref: "plan.md#AC-1", Body: "Not an Acknowledgement."},
+		// A Question or a reply about the check is discussion, not an
+		// Acknowledgement.
+		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C55"), Author: bot, Ref: "checks/" + newest.ID.String(), To: []string{"ben@example.com"}, Body: "Is AC-1 really unmet?"},
+		{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C56"), Author: bot, Ref: "checks/" + newest.ID.String(), ReplyTo: "01JD3K8Q2W5V7X9Y0Z1A2B3C55", Body: "Yes."},
+	}
+
+	got := core.PullRequestChecks([]core.Check{older, newest, other}, "cur", msgs)
+	if got[0].Acknowledgement != nil || got[1].Acknowledgement != nil {
+		t.Errorf("the newest check of PR 7 and the agent's ack count as acknowledged: %+v", got)
+	}
+	if len(core.Findings(got)) != 3 {
+		t.Errorf("findings = %+v", core.Findings(got))
+	}
+
+	msgs = append(msgs, ack("01JD3K8Q2W5V7X9Y0Z1A2B3C53", newest.ID, ""), ack("01JD3K8Q2W5V7X9Y0Z1A2B3C54", newest.ID, ""))
+	got = core.PullRequestChecks([]core.Check{older, newest, other}, "cur", msgs)
+	if a := got[0].Acknowledgement; a == nil || a.ID.String() != "01JD3K8Q2W5V7X9Y0Z1A2B3C53" {
+		t.Errorf("PR 7 acknowledgement = %+v, want the first", a)
+	}
+	for _, f := range got[0].Findings {
+		if !f.Acknowledged {
+			t.Errorf("finding of an acknowledged check: %+v", f)
+		}
+	}
+	if got[1].Findings[0].Acknowledged {
+		t.Errorf("PR 9 finding acknowledged")
 	}
 }
