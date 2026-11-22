@@ -17,6 +17,7 @@ import (
 
 	"github.com/admSla99/BeforeCode/internal/config"
 	"github.com/admSla99/BeforeCode/internal/core"
+	"github.com/admSla99/BeforeCode/internal/index"
 	"github.com/admSla99/BeforeCode/internal/store"
 	"github.com/admSla99/BeforeCode/internal/tui"
 )
@@ -211,6 +212,9 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 		RequiredApprovals: v.Status.RequiredApprovals, Approvers: v.Status.Approvers,
 		Intent: v.Intent, Plan: v.Plan, Editable: core.CheckWritable(v.Status) == nil,
 	}
+	if d.Tasks, err = tuiTasks(ctx, s, v, actor); err != nil {
+		return tui.PlanDetail{}, err
+	}
 	// The review actions are Gates, for people only (ADR 0011).
 	if checkPerson(p.cmd) != nil {
 		return d, nil
@@ -243,6 +247,38 @@ func (p *tuiPlans) Detail(ctx context.Context, shortID string) (tui.PlanDetail, 
 		}
 	}
 	return d, nil
+}
+
+// tuiTasks returns the Tasks of the plan v for the tasks tab: state,
+// holder, whether me holds it, and the Handoffs of each with their Event.
+func tuiTasks(ctx context.Context, s *store.Store, v index.Plan, me core.Person) ([]tui.TaskRow, error) {
+	views := core.TaskViews(v.Status, v.Plan)
+	if len(views) == 0 {
+		return nil, nil
+	}
+	hs, events, err := planHandoffs(ctx, s, v)
+	if err != nil {
+		return nil, err
+	}
+	rows := make([]tui.TaskRow, 0, len(views))
+	for _, t := range views {
+		r := tui.TaskRow{ID: t.ID, Text: t.Text, State: t.State}
+		if t.State != core.TaskOpen {
+			r.Holder = orDash(t.Holder.Name)
+			r.Mine = t.State == core.TaskClaimed && strings.EqualFold(t.Holder.Email, me.Email)
+		}
+		for _, h := range hs {
+			if h.Task != t.ID || events[h.ID] == "" {
+				continue
+			}
+			r.Handoffs = append(r.Handoffs, tui.HandoffRow{ID: h.ID.String(), By: throughAgent(orDash(h.Author.Name), h.Agent), Done: h.Done, Note: h.Note})
+			if h.ID.String() == t.Handoff {
+				r.Latest = firstLine(h.Note)
+			}
+		}
+		rows = append(rows, r)
+	}
+	return rows, nil
 }
 
 // Review writes a review event the way the CLI command does.

@@ -12,6 +12,8 @@ import (
 	tea "charm.land/bubbletea/v2"
 	"charm.land/glamour/v2"
 	"charm.land/lipgloss/v2"
+
+	"github.com/admSla99/BeforeCode/internal/core"
 )
 
 // PlanDetailScreen shows one plan: a header line with the document tabs,
@@ -42,6 +44,10 @@ type PlanDetailScreen struct {
 	syncHint string // set by the app: why sync is offline or in conflict
 	canGrill bool   // set by the app: the Grill is available
 	rendered string // the document as last rendered, to keep the scroll
+	// taskAt is the selected Task of the tasks tab, and handoffs says
+	// whether its Handoffs are shown instead of the Tasks.
+	taskAt   int
+	handoffs bool
 }
 
 // NewPlanDetail returns the detail screen of the plan with this Short ID.
@@ -130,20 +136,25 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		}
 		return m, m.review(a, reason)
 	}
+	if m.doc == DocTasks {
+		if next, cmd, ok := m.pressTasks(msg); ok {
+			return next, cmd
+		}
+	}
 	switch {
 	case key.Matches(msg, m.keys.Quit):
 		return m, tea.Quit
 	case key.Matches(msg, m.keys.Back):
 		return m, func() tea.Msg { return backMsg{} }
 	case key.Matches(msg, m.keys.SwitchDoc):
-		m.doc = m.doc.other()
+		m.doc, m.handoffs = m.doc.next(), false
 		m.rendered = ""
 		m.refresh()
 		m.view.GotoTop()
 		return m, nil
 	case key.Matches(msg, m.keys.Grill) && m.canGrill && m.detail.Editable && m.loadErr == nil:
 		return m, func() tea.Msg { return openGrillMsg{m.shortID} }
-	case key.Matches(msg, m.keys.Edit) && m.detail.Editable && m.loadErr == nil:
+	case key.Matches(msg, m.keys.Edit) && m.detail.Editable && m.loadErr == nil && m.doc != DocTasks:
 		m.status = ""
 		return m, m.plans.Edit(m.shortID, m.doc)
 	}
@@ -160,6 +171,33 @@ func (m PlanDetailScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 	var cmd tea.Cmd
 	m.view, cmd = m.view.Update(msg)
 	return m, cmd
+}
+
+// pressTasks handles the keys of the tasks tab: ↑↓ select a Task, Enter
+// shows its Handoffs and esc returns to the Tasks. ok is false for a key
+// the rest of the screen handles.
+func (m PlanDetailScreen) pressTasks(msg tea.KeyPressMsg) (_ tea.Model, _ tea.Cmd, ok bool) {
+	n := len(m.detail.Tasks)
+	switch {
+	case m.handoffs && key.Matches(msg, m.keys.Back):
+		m.handoffs = false
+	case m.handoffs:
+		return m, nil, false
+	case key.Matches(msg, m.keys.TaskUp) && n > 0:
+		m.taskAt = max(m.taskAt-1, 0)
+	case key.Matches(msg, m.keys.TaskDown) && n > 0:
+		m.taskAt = min(m.taskAt+1, n-1)
+	case key.Matches(msg, m.keys.Handoffs) && n > 0:
+		m.handoffs = true
+	default:
+		return m, nil, false
+	}
+	m.rendered = ""
+	m.refresh()
+	if m.handoffs {
+		m.view.GotoTop()
+	}
+	return m, nil, true
 }
 
 func (m PlanDetailScreen) review(a ReviewAction, reason string) tea.Cmd {
@@ -202,7 +240,10 @@ func (m PlanDetailScreen) footer() []string {
 // helpKeys lists the keys valid now.
 func (m PlanDetailScreen) helpKeys() []key.Binding {
 	keys := []key.Binding{m.keys.SwitchDoc}
-	if m.detail.Editable {
+	if m.doc == DocTasks && !m.handoffs && len(m.detail.Tasks) > 0 {
+		keys = append(keys, m.keys.TaskUp, m.keys.Handoffs)
+	}
+	if m.detail.Editable && m.doc != DocTasks {
 		keys = append(keys, m.keys.Edit)
 		if m.canGrill {
 			keys = append(keys, m.keys.Grill)
@@ -213,13 +254,25 @@ func (m PlanDetailScreen) helpKeys() []key.Binding {
 			keys = append(keys, m.keys.Review[a])
 		}
 	}
-	return append(keys, m.keys.Scroll, m.keys.Back, m.keys.Quit)
+	if m.doc != DocTasks || m.handoffs {
+		keys = append(keys, m.keys.Scroll)
+	}
+	return append(keys, m.keys.Back, m.keys.Quit)
 }
 
 // statusBar shows state, Approvals, author and sync in reverse video.
 func (m PlanDetailScreen) statusBar() string {
 	d := m.detail
 	parts := []string{string(d.State)}
+	if d.State == core.StateInProgress && len(d.Tasks) > 0 {
+		completed := 0
+		for _, t := range d.Tasks {
+			if t.State == core.TaskCompleted {
+				completed++
+			}
+		}
+		parts = append(parts, fmt.Sprintf("%d/%d tasks", completed, len(d.Tasks)))
+	}
 	if d.RequiredApprovals > 0 {
 		a := fmt.Sprintf("%d/%d approvals", len(d.Approvers), d.RequiredApprovals)
 		if len(d.Approvers) > 0 {
@@ -242,14 +295,14 @@ func (m PlanDetailScreen) statusBar() string {
 }
 
 func (m PlanDetailScreen) header() string {
-	tabs := make([]string, 2)
-	for i, d := range []Doc{DocIntent, DocPlan} {
+	tabs := make([]string, 3)
+	for i, d := range []Doc{DocIntent, DocPlan, DocTasks} {
 		tabs[i] = styleDim.Render(d.String())
 		if d == m.doc {
 			tabs[i] = styleTab.Render(d.String())
 		}
 	}
-	return styleTitle.Render(m.shortID+"  "+m.detail.Title) + "   " + tabs[0] + "   " + tabs[1]
+	return styleTitle.Render(m.shortID+"  "+m.detail.Title) + "   " + strings.Join(tabs, "   ")
 }
 
 // bodyHeight is the height of the viewport: what the header and footer
@@ -281,6 +334,9 @@ func (m PlanDetailScreen) render() string {
 	case m.loadErr != nil:
 		return styleError.Render("  " + m.loadErr.Error())
 	}
+	if m.doc == DocTasks {
+		return m.renderTasks()
+	}
 	text := m.detail.Plan
 	if m.doc == DocIntent {
 		text = m.detail.Intent
@@ -289,6 +345,62 @@ func (m PlanDetailScreen) render() string {
 		return fmt.Sprintf("  No %s yet. Press e to write it.", m.doc)
 	}
 	return renderMarkdown(withoutFrontMatter(string(text)), m.width)
+}
+
+// renderTasks is the tasks tab: one line per Task with its state, holder
+// and the first line of its latest Handoff, or the Handoffs of the selected
+// Task.
+func (m PlanDetailScreen) renderTasks() string {
+	tasks := m.detail.Tasks
+	if len(tasks) == 0 {
+		return "  No Tasks yet: plan.md lists them under ## Tasks."
+	}
+	at := min(m.taskAt, len(tasks)-1)
+	if m.handoffs {
+		t := tasks[at]
+		first, _, _ := strings.Cut(t.Text, "\n")
+		lines := []string{styleTitle.Render(t.ID + "  " + first), ""}
+		if len(t.Handoffs) == 0 {
+			lines = append(lines, "  No Handoffs yet.")
+		}
+		for _, h := range t.Handoffs {
+			what := "released"
+			if h.Done {
+				what = "completed"
+			}
+			lines = append(lines, styleDim.Render(fmt.Sprintf("Handoff %s · %s by %s", h.ID, what, h.By)))
+			for _, l := range strings.Split(h.Note, "\n") {
+				lines = append(lines, "  "+l)
+			}
+			lines = append(lines, "")
+		}
+		return strings.Join(lines, "\n")
+	}
+	var lines []string
+	for i, t := range tasks {
+		first, _, _ := strings.Cut(t.Text, "\n")
+		holder := t.Holder
+		switch {
+		case holder == "":
+			holder = "-"
+		case t.Mine:
+			holder += " (you)"
+		}
+		line := fmt.Sprintf("%s  %-9s  %s  %s", t.ID, t.State, holder, first)
+		if t.Latest != "" {
+			line += "  · " + t.Latest
+		}
+		switch {
+		case i == at:
+			line = styleSelected.Render("▶ " + line)
+		case t.Mine:
+			line = styleTitle.Render("  " + line)
+		default:
+			line = "  " + line
+		}
+		lines = append(lines, line)
+	}
+	return strings.Join(lines, "\n")
 }
 
 // withoutFrontMatter drops the YAML front matter of intent.md; its title

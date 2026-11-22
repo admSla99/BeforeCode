@@ -1,4 +1,4 @@
-bfc-5v7x  Payments via Stripe   intent.md   plan.md
+bfc-5v7x  Payments via Stripe   intent.md   plan.md   tasks
   ## Context                                                                    
                                                                                 
   The checkout calls payments.Charge, which wraps the old provider.             
@@ -21,4 +21,4 @@ bfc-5v7x  Payments via Stripe   intent.md   plan.md
                                                                                 
 Approval waits on 2 open Questions; bfc show bfc-5v7x lists them.
  in-review · 1/2 approvals (peter) · jana@example.com    local mode, not synced 
-tab intent/plan • e edit • r changes • ↑↓ scroll • esc back • q quit
+tab switch • e edit • r changes • ↑↓ scroll • esc back • q quit
