@@ -1,7 +1,8 @@
 // Package e2e runs the real bfc binary the way two developers would: two
 // clones of one bare remote, each with its own git identity. It proves the
 // exit criteria of docs/design.md for phase 1 (issue #19) and, in
-// claude_test.go, phase 2 (issue #67). Nothing here uses the network.
+// claude_test.go, phase 2 (issue #67), and in plancheck_test.go the plan
+// check of phase 3 (issue #107). Nothing here uses the network.
 package e2e
 
 import (
@@ -261,6 +262,18 @@ Refunds.
 - AC-1: A card that needs 3-D Secure completes checkout.
 `
 
+// writePlan stores planMD as the plan's plan.md through bfc edit and the
+// developer's editor.
+func (d *dev) writePlan(short string) {
+	d.t.Helper()
+	planFile := filepath.Join(d.t.TempDir(), "plan.md")
+	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
+		d.t.Fatal(err)
+	}
+	d.useEditor(`cp "` + filepath.ToSlash(planFile) + `" "$1"`)
+	d.bfc("edit", short)
+}
+
 // startProject is Ana setting up BeforeCode and sharing it: the code
 // branch on the remote, bfc init, the config committed and pushed.
 func startProject(t *testing.T) (ana *dev, bare string) {
@@ -283,12 +296,7 @@ func TestTwoDevelopersCreateEditAndApproveAPlan(t *testing.T) {
 	anaCheckout := ana.checkout()
 
 	short := ana.newPlan("Payments via Stripe")
-	planFile := filepath.Join(t.TempDir(), "plan.md")
-	if err := os.WriteFile(planFile, []byte(planMD), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	ana.useEditor(`cp "` + filepath.ToSlash(planFile) + `" "$1"`)
-	ana.bfc("edit", short)
+	ana.writePlan(short)
 	ana.bfc("submit", short)
 	ana.bfc("push")
 

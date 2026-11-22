@@ -415,6 +415,8 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 to 2 a
 | **5. Notifications and learning from the loop** | Email notifications. Archive of finished plans, metrics, proposed skill changes from recurring findings | A reviewer gets an email and a plan retro proposes a skill change |
 | **6. Web and server (later)** | Web view for clients, realtime chat, stricter identity, GitLab, multiple repositories | A client without the TUI answers a question on a plan |
 
+The plan check part of phase 3 is implemented: `bfc check record`, `bfc prime check` with the `plan-check` Skill, the workflow and `bfc setup github`, `bfc acknowledge` and the Inbox (#100 to #106). `e2e/plancheck_test.go` shows its exit criterion without the network: a check recorded in one clone puts a Finding in the plan author's Inbox in another, and an Acknowledgement or a clean newer check takes it out (#107). The manual run on GitHub, with the secret and a real pull request, is #121.
+
 ## 8. Open points
 
 - **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; the plan check skips pull requests from forks with a notice (ADR 0014). Revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
