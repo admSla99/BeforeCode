@@ -123,19 +123,19 @@ func readCheckResult(r io.Reader) (checkResult, error) {
 // new file in one commit.
 func recordCheck(cmd *cobra.Command, s *store.Store, v index.Plan, c core.Check, res checkResult) (core.Check, error) {
 	ctx := cmd.Context()
-	switch {
-	case v.Status.State == core.StateClosed:
+	if v.Status.State == core.StateClosed {
 		return core.Check{}, fmt.Errorf("%s is closed; closed is final and takes no checks", v.ShortID)
-	case v.Plan == nil:
+	}
+	blob, plan, err := currentPlanDoc(ctx, s, v.ID)
+	if errors.Is(err, store.ErrNotFound) {
 		return core.Check{}, fmt.Errorf("%s has no plan.md to check against", v.ShortID)
 	}
-	criteria, err := core.CheckCriteria(v.Plan, res.Criteria)
-	if err != nil {
-		return core.Check{}, fmt.Errorf("the check result does not match plan.md of %s:\n%w", v.ShortID, err)
-	}
-	blob, err := s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
 	if err != nil {
 		return core.Check{}, err
+	}
+	criteria, err := core.CheckCriteria(plan, res.Criteria)
+	if err != nil {
+		return core.Check{}, fmt.Errorf("the check result does not match plan.md of %s:\n%w", v.ShortID, err)
 	}
 	actor, err := currentUser(ctx, s)
 	if err != nil {
@@ -145,17 +145,40 @@ func recordCheck(cmd *cobra.Command, s *store.Store, v index.Plan, c core.Check,
 	c.ID = ulid.MustNew(ulid.Timestamp(c.At), rand.Reader)
 	c.Plan, c.PlanBlob, c.Criteria = v.ID, blob, criteria
 	c.OutOfScope, c.Summary = res.OutOfScope, res.Summary
-	files := map[string][]byte{core.CheckPath(v.ID, c.ID): core.EncodeCheck(c)}
-	if _, err := s.Write(ctx, fmt.Sprintf("bfc check record %s #%d", v.ShortID, c.PR), files); err != nil {
+	data := core.EncodeCheck(c)
+	if _, err := s.Write(ctx, fmt.Sprintf("bfc check record %s #%d", v.ShortID, c.PR), map[string][]byte{core.CheckPath(v.ID, c.ID): data}); err != nil {
 		return core.Check{}, err
 	}
 	// As stored: whole seconds, trimmed summary.
-	return core.ParseCheck(c.ID, core.EncodeCheck(c))
+	return core.ParseCheck(c.ID, data)
+}
+
+// currentPlanDoc returns the object ID and the content of the plan's
+// plan.md, both from the same tip of the plans ref, or store.ErrNotFound.
+func currentPlanDoc(ctx context.Context, s *store.Store, plan ulid.ULID) (string, []byte, error) {
+	tip, err := s.Tip(ctx)
+	if err != nil {
+		return "", nil, err
+	}
+	entries, err := s.Entries(ctx, tip, core.PlanDir(plan))
+	if err != nil {
+		return "", nil, err
+	}
+	for _, e := range entries {
+		if e.Name == "plan.md" && !e.Dir {
+			content, err := s.Blobs(ctx, []string{e.ID})
+			if err != nil {
+				return "", nil, err
+			}
+			return e.ID, content[e.ID], nil
+		}
+	}
+	return "", nil, store.ErrNotFound
 }
 
 // planChecks returns, for each pull request of the plan, the check that
-// counts (core.PullRequestChecks). A file that cannot be read as a check is
-// skipped; bfc doctor reports it.
+// counts (core.PullRequestChecks). A file that cannot be read as a check,
+// or names another plan, is skipped; bfc doctor reports it.
 func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.PullRequestCheck, error) {
 	files, err := readPlanFiles(ctx, s, plan, "checks")
 	if err != nil {
@@ -163,7 +186,7 @@ func planChecks(ctx context.Context, s *store.Store, plan ulid.ULID) ([]core.Pul
 	}
 	var checks []core.Check
 	for _, f := range files {
-		if c, err := core.ParseCheck(f.id, f.data); err == nil {
+		if c, err := core.ParseCheck(f.id, f.data); err == nil && c.Plan == plan {
 			checks = append(checks, c)
 		}
 	}
@@ -291,10 +314,8 @@ func writeChecks(b *strings.Builder, prs []core.PullRequestCheck) {
 				fmt.Fprintf(b, "  out of scope: %s\n", f.OutOfScope)
 			}
 		}
-		for _, r := range c.Criteria {
-			if r.Status == core.CannotVerify {
-				fmt.Fprintf(b, "  cannot verify: %s\n", r.ID)
-			}
+		for _, id := range p.Unverified {
+			fmt.Fprintf(b, "  cannot verify: %s\n", id)
 		}
 	}
 }

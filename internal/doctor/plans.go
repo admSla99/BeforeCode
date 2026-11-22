@@ -313,16 +313,17 @@ func readChecks(ctx context.Context, s *store.Store, commit string, plan ulid.UL
 		sc.badChecks = append(sc.badChecks, dir+"/checks: cannot read: "+firstLine(err))
 		return
 	}
+	files = slices.DeleteFunc(files, func(f store.Entry) bool {
+		_, err := ulid.ParseStrict(strings.TrimSuffix(f.Name, ".md"))
+		return err != nil || f.Dir || !strings.HasSuffix(f.Name, ".md")
+	})
 	var ids []string
 	for _, f := range files {
 		ids = append(ids, f.ID)
 	}
 	content := readBlobs(ctx, s, ids)
 	for _, f := range files {
-		cid, err := ulid.ParseStrict(strings.TrimSuffix(f.Name, ".md"))
-		if err != nil || f.Dir || !strings.HasSuffix(f.Name, ".md") {
-			continue
-		}
+		cid := ulid.MustParseStrict(strings.TrimSuffix(f.Name, ".md"))
 		path := dir + "/checks/" + f.Name
 		sc.checkFiles++
 		data, ok := content[f.ID]

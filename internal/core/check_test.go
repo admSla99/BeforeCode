@@ -78,6 +78,10 @@ func TestParseCheckRefusesABrokenFile(t *testing.T) {
 		"no pr":           strings.Replace(checkFile, "pr: 42\n", "", 1),
 		"bad status":      strings.Replace(checkFile, "AC-2: met", "AC-2: done", 1),
 		"bad yaml":        strings.Replace(checkFile, "criteria:\n", "criteria: [\n", 1),
+		"duplicate AC":    strings.Replace(checkFile, "AC-3: cannot-verify", "AC-2: not-met", 1),
+		"bad key":         strings.Replace(checkFile, "AC-3:", "criterion-3:", 1),
+		"no plan_blob":    strings.Replace(checkFile, "plan_blob: 3b18e512dba79e4c8300dd08aeb37f8e728b8dad\n", "", 1),
+		"no head_sha":     strings.Replace(checkFile, "head_sha: 9f2c\n", "", 1),
 	} {
 		if _, err := core.ParseCheck(id, []byte(data)); err == nil {
 			t.Errorf("%s: parsed", name)
@@ -152,7 +156,7 @@ func TestPullRequestChecksDeriveTheFindings(t *testing.T) {
 	if len(pr7.Findings) != 2 || pr7.Findings[0] != want[0] || pr7.Findings[1] != want[1] {
 		t.Errorf("PR 7 findings = %+v, want %+v", pr7.Findings, want)
 	}
-	if pr9.Stale || len(pr9.Findings) != 0 {
+	if pr9.Stale || len(pr9.Findings) != 0 || strings.Join(pr9.Unverified, ",") != "AC-2" {
 		t.Errorf("PR 9: cannot-verify is not a Finding: %+v", pr9)
 	}
 	if len(pr12.Findings) != 1 || pr12.Findings[0].Criterion != "AC-1" {

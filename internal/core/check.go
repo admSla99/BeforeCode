@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
+	"regexp"
 	"slices"
 	"strings"
 	"time"
@@ -26,6 +27,13 @@ const (
 func (s CriterionStatus) valid() bool {
 	return s == Met || s == NotMet || s == CannotVerify
 }
+
+// badStatus is the problem of a criterion with another status.
+func badStatus(id, status string) string {
+	return fmt.Sprintf("%s: status %q is not %s, %s or %s", id, status, Met, NotMet, CannotVerify)
+}
+
+var criterionID = regexp.MustCompile(`^AC-[1-9][0-9]*$`)
 
 // CriterionResult is the status of one acceptance criterion in a check.
 type CriterionResult struct {
@@ -125,6 +133,8 @@ func ParseCheck(id ulid.ULID, data []byte) (Check, error) {
 		return fail(fmt.Errorf("plan %q is not a ULID", f.Plan))
 	case f.PR <= 0:
 		return fail(errors.New("pr must be a pull request number"))
+	case f.HeadSHA == "" || f.BaseSHA == "" || f.PlanBlob == "":
+		return fail(errors.New("head_sha, base_sha and plan_blob are required"))
 	case f.Criteria.Kind != yaml.MappingNode:
 		return fail(errors.New("criteria must map each AC to its status"))
 	}
@@ -133,12 +143,19 @@ func ParseCheck(id ulid.ULID, data []byte) (Check, error) {
 		HeadSHA: f.HeadSHA, BaseSHA: f.BaseSHA, PlanBlob: f.PlanBlob, OutOfScope: f.OutOfScope,
 		Summary: strings.TrimSpace(string(body)),
 	}
+	seen := map[string]bool{}
 	for i := 0; i+1 < len(f.Criteria.Content); i += 2 {
-		r := CriterionResult{ID: f.Criteria.Content[i].Value, Status: CriterionStatus(f.Criteria.Content[i+1].Value)}
-		if !r.Status.valid() {
-			return fail(fmt.Errorf("%s: status %q is not met, not-met or cannot-verify", r.ID, r.Status))
+		k, v := f.Criteria.Content[i], f.Criteria.Content[i+1]
+		switch {
+		case k.Kind != yaml.ScalarNode || !criterionID.MatchString(k.Value):
+			return fail(fmt.Errorf("criteria key %q is not AC-<n>", k.Value))
+		case seen[k.Value]:
+			return fail(fmt.Errorf("%s is in criteria more than once", k.Value))
+		case v.Kind != yaml.ScalarNode || !CriterionStatus(v.Value).valid():
+			return fail(errors.New(badStatus(k.Value, v.Value)))
 		}
-		c.Criteria = append(c.Criteria, r)
+		seen[k.Value] = true
+		c.Criteria = append(c.Criteria, CriterionResult{ID: k.Value, Status: CriterionStatus(v.Value)})
 	}
 	return c, nil
 }
@@ -167,7 +184,7 @@ func CheckCriteria(plan []byte, criteria map[string]string) ([]CriterionResult, 
 		case !ok:
 			problems = append(problems, id+" of plan.md has no result")
 		case !CriterionStatus(s).valid():
-			problems = append(problems, fmt.Sprintf("%s: status %q is not met, not-met or cannot-verify", id, s))
+			problems = append(problems, badStatus(id, s))
 		default:
 			out = append(out, CriterionResult{ID: id, Status: CriterionStatus(s)})
 		}
@@ -197,6 +214,9 @@ type PullRequestCheck struct {
 	Check    Check
 	Stale    bool
 	Findings []Finding
+	// Unverified lists the criteria the check could not verify. They are
+	// shown, but are not Findings.
+	Unverified []string
 }
 
 // PullRequestChecks returns, for each pull request with a check among
@@ -213,8 +233,11 @@ func PullRequestChecks(checks []Check, planBlob string) []PullRequestCheck {
 	for _, c := range newest {
 		p := PullRequestCheck{Check: c, Stale: c.PlanBlob != planBlob}
 		for _, r := range c.Criteria {
-			if r.Status == NotMet {
+			switch r.Status {
+			case NotMet:
 				p.Findings = append(p.Findings, Finding{PR: c.PR, Check: c.ID, Criterion: r.ID})
+			case CannotVerify:
+				p.Unverified = append(p.Unverified, r.ID)
 			}
 		}
 		for _, item := range c.OutOfScope {
