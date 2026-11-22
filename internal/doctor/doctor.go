@@ -21,6 +21,7 @@ import (
 	beforecode "github.com/admSla99/BeforeCode"
 	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/config"
+	"github.com/admSla99/BeforeCode/internal/github"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
@@ -87,6 +88,7 @@ var checks = []check{
 	{name: "claude", run: checkClaude},
 	{name: "claude hook", run: checkClaudeHook},
 	{name: "claude skill", run: checkClaudeSkill},
+	{name: "github workflow", run: checkGithubWorkflow},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -94,10 +96,10 @@ var checks = []check{
 // failed check that has a Repair: add the fetch refspec, pull the plans ref
 // when it is behind or diverged, rebuild the index, add a missing
 // format-version (ADR 0007). Without fix, the Fix of such a check names
-// bfc doctor --fix and what it would do. vars are passed to store.Open as
-// its extra environment.
-func Run(ctx context.Context, dir string, fix bool, vars ...string) []Result {
-	e := &env{dir: dir, vars: vars}
+// bfc doctor --fix and what it would do. version is the version of this bfc.
+// vars are passed to store.Open as its extra environment.
+func Run(ctx context.Context, dir string, fix bool, version string, vars ...string) []Result {
+	e := &env{dir: dir, vars: vars, version: version}
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
 		r := c.run(ctx, e)
@@ -145,10 +147,11 @@ type fixHint struct {
 
 // env is what the checks learn about the repository, shared between them.
 type env struct {
-	dir   string
-	vars  []string // extra environment of git, see store.Open
-	gitOK bool
-	s     *store.Store // nil outside a repository
+	dir     string
+	vars    []string // extra environment of git, see store.Open
+	version string   // of this bfc
+	gitOK   bool
+	s       *store.Store // nil outside a repository
 
 	cfg      config.Config
 	cfgFound bool
@@ -288,6 +291,31 @@ func checkClaude(_ context.Context, e *env) Result {
 		return warn("%s not found; install Claude Code, or set claude.command in %s, to use it with bfc", command, config.Path)
 	}
 	return pass("%s is %s", command, path)
+}
+
+// checkGithubWorkflow reports the plan check workflow (ADR 0014): a
+// warning when it is missing, changed by hand or written by another bfc.
+func checkGithubWorkflow(_ context.Context, e *env) Result {
+	if e.s == nil || !e.cfgFound {
+		return skip("needs " + config.Path)
+	}
+	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(github.WorkflowPath)))
+	if errors.Is(err, os.ErrNotExist) {
+		return warn("%s is missing, so pull requests are not checked against their plans; bfc setup github writes it", github.WorkflowPath)
+	}
+	if err != nil {
+		return warn("cannot read %s: %v", github.WorkflowPath, err)
+	}
+	version, intact, ok := github.ReadMarker(data)
+	switch {
+	case !ok || !intact:
+		return warn("%s was changed by hand; bfc setup github shows how it differs from this bfc's", github.WorkflowPath)
+	case version == github.FromSource:
+		return pass("%s builds bfc from source", github.WorkflowPath)
+	case version != e.version:
+		return warn("%s was written by bfc %s, this is %s; run bfc setup github to rewrite it", github.WorkflowPath, version, e.version)
+	}
+	return pass("%s runs bfc %s", github.WorkflowPath, version)
 }
 
 // checkSkills reports the repository's skills. A missing directory, or a

@@ -33,7 +33,7 @@ reported.`,
 			if err != nil {
 				return err
 			}
-			results := doctor.Run(cmd.Context(), wd, fix, extraEnv(cmd)...)
+			results := doctor.Run(cmd.Context(), wd, fix, bfcVersion(cmd), extraEnv(cmd)...)
 			if failed := printDoctor(cmd.OutOrStdout(), results, fix); failed > 0 {
 				return fmt.Errorf("%d check(s) failed", failed)
 			}

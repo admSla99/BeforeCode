@@ -1,11 +1,12 @@
+# Written by bfc setup github (bfc source, sha256 1236798ef68c83aa56ab87af55db6912c8af9ef10d155ecd9f8716a16d986c51); run it again to update this file.
 # The plan check (ADR 0014): Claude Code compares the pull request with the
 # plan.md of its plan, bfc check record stores the result in the Plans ref,
 # and this workflow labels the pull request and posts one comment. It warns;
 # it never blocks merging.
 #
 # BeforeCode checks itself with the bfc built from the pull request's own
-# source. bfc setup github writes the same workflow for other repositories,
-# with a released bfc instead (#104).
+# source; bfc setup github writes the same workflow for other repositories,
+# with the released bfc that wrote it.
 name: Plan check
 
 on:
@@ -51,7 +52,6 @@ jobs:
           # No token in .git/config while Claude Code runs; the steps that
           # fetch and push get it through the environment.
           persist-credentials: false
-
       - uses: actions/setup-go@v7
         if: steps.fork.outputs.skip != 'true'
         with:
@@ -62,6 +62,10 @@ jobs:
         run: |
           go build -o "$RUNNER_TEMP/bin/bfc" ./cmd/bfc
           echo "$RUNNER_TEMP/bin" >> "$GITHUB_PATH"
+
+      - name: Set the git identity of the results
+        if: steps.fork.outputs.skip != 'true'
+        run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
 
