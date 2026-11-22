@@ -373,7 +373,7 @@ e2e/              end-to-end test: the bfc binary in two clones of one bare remo
 
 ## 7. Implementation phases
 
-Each phase ends in a usable version with a clear exit criterion. Phases 0 and 1 are broken into GitHub issues; later phases are one tracking issue each until they come up. From phase 2 on, plan BeforeCode in BeforeCode.
+Each phase ends in a usable version with a clear exit criterion. Phases 0 to 2 are broken into GitHub issues; later phases are one tracking issue each until they come up. From phase 2 on, plan BeforeCode in BeforeCode.
 
 | Phase | Content | Done when |
 | --- | --- | --- |
