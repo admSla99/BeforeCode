@@ -34,6 +34,9 @@ func TestWaitingOn(t *testing.T) {
 		// Ada's closed plan: nothing waits.
 		{ShortID: "bfc-eeee", Title: "Old", Status: Status{State: StateClosed, Author: ada}, Checks: findings,
 			Messages: []Message{question("01JD3K8Q2W5V7X9Y0Z1A2B3C42", "ada@example.com")}},
+		// Ada's done plan: final like closed, nothing waits.
+		{ShortID: "bfc-ffff", Title: "Shipped", Status: Status{State: StateDone, Author: ada}, Checks: findings,
+			Messages: []Message{question("01JD3K8Q2W5V7X9Y0Z1A2B3C43", "ada@example.com")}},
 	}
 
 	w := WaitingOn(ada, plans)

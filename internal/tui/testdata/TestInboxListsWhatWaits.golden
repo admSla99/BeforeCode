@@ -1,7 +1,7 @@
 BeforeCode · inbox   what waits on you
 
 Findings (2) ───────────────────────────────────────────────────────────────────
-  bfc-5v7x  PR #42  AC-2 not met
+  bfc-5v7x  PR #42  AC-2 is not met
   bfc-5v7x  PR #42  out of scope: Changes the retry policy of the email worker.
 
 Reviews (1) ────────────────────────────────────────────────────────────────────

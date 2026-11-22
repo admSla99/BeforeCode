@@ -31,15 +31,7 @@ others wrote.`,
 			if err != nil {
 				return err
 			}
-			me, err := currentUser(cmd.Context(), s)
-			if err != nil {
-				return err
-			}
-			views, err := loadPlans(cmd.Context(), s)
-			if err != nil {
-				return err
-			}
-			w, err := gatherWaiting(cmd.Context(), s, me, views)
+			me, w, err := loadWaiting(cmd.Context(), s)
 			if err != nil {
 				return err
 			}
@@ -53,34 +45,40 @@ others wrote.`,
 	return cmd
 }
 
+// loadWaiting returns the git author of the clone and what waits on them.
+func loadWaiting(ctx context.Context, s *store.Store) (core.Person, core.Waiting, error) {
+	me, err := currentUser(ctx, s)
+	if err != nil {
+		return core.Person{}, core.Waiting{}, err
+	}
+	views, err := loadPlans(ctx, s)
+	if err != nil {
+		return core.Person{}, core.Waiting{}, err
+	}
+	return me, gatherWaiting(ctx, s, me, views), nil
+}
+
 // gatherWaiting reads the Messages and plan checks of the plans that can
-// have something waiting and returns what waits on me (core.WaitingOn).
-func gatherWaiting(ctx context.Context, s *store.Store, me core.Person, views []index.Plan) (core.Waiting, error) {
+// have something waiting and returns what waits on me (core.WaitingOn). A
+// plan whose files cannot be read is left out, so one broken plan does not
+// hide the rest; bfc doctor reports it.
+func gatherWaiting(ctx context.Context, s *store.Store, me core.Person, views []index.Plan) core.Waiting {
 	var work []core.PlanWork
 	for _, v := range views {
-		if v.Status.State == core.StateClosed || v.Status.State == core.StateInvalid {
+		if !core.Waits(v.Status.State) {
 			continue
 		}
 		msgs, err := readMessages(ctx, s, v.ID)
 		if err != nil {
-			return core.Waiting{}, err
+			continue
 		}
 		checks, err := planChecks(ctx, s, v.ID, msgs)
 		if err != nil {
-			return core.Waiting{}, err
+			continue
 		}
 		work = append(work, core.PlanWork{ID: v.ID, ShortID: v.ShortID, Title: v.Title, Status: v.Status, Messages: msgs, Checks: checks})
 	}
-	return core.WaitingOn(me, work), nil
-}
-
-// findingText is what a Finding says: the criterion that is not met, or the
-// out-of-scope change.
-func findingText(f core.Finding) string {
-	if f.Criterion != "" {
-		return f.Criterion + " is not met"
-	}
-	return "out of scope: " + f.OutOfScope
+	return core.WaitingOn(me, work)
 }
 
 // printInbox prints the three lists, each with a heading and a count, or
@@ -100,7 +98,7 @@ func printInbox(w io.Writer, in core.Waiting) error {
 	if len(in.Findings) > 0 {
 		section("Findings", len(in.Findings))
 		for _, f := range in.Findings {
-			fmt.Fprintf(&b, "  %s  PR #%d  %s  (%s)\n", f.ShortID, f.Finding.PR, findingText(f.Finding), f.Title)
+			fmt.Fprintf(&b, "  %s  PR #%d  %s  (%s)\n", f.ShortID, f.Finding.PR, f.Finding.Text(), f.Title)
 		}
 	}
 	if len(in.Reviews) > 0 {

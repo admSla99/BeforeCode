@@ -120,15 +120,8 @@ func (p *tuiPlans) Inbox(ctx context.Context) (core.Waiting, error) {
 	if err != nil {
 		return core.Waiting{}, err
 	}
-	me, err := currentUser(ctx, s)
-	if err != nil {
-		return core.Waiting{}, err
-	}
-	views, err := loadPlans(ctx, s)
-	if err != nil {
-		return core.Waiting{}, err
-	}
-	return gatherWaiting(ctx, s, me, views)
+	_, w, err := loadWaiting(ctx, s)
+	return w, err
 }
 
 // NewPlan runs bfc new with the title, which opens the editor on intent.md

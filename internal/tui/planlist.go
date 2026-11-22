@@ -231,13 +231,18 @@ func (m PlanList) header() string {
 		search = styleDim.Render("(/ to search)")
 	}
 	left := styleTitle.Render("BeforeCode · plans") + "   state: " + stateFilters[m.filterAt].name + "   search: " + search
-	if m.syncText == "" {
+	return withSyncText(left, m.syncText, m.width)
+}
+
+// withSyncText returns a header line: left, and the sync status on the
+// right. The sync status keeps its place; left gives way.
+func withSyncText(left, syncText string, width int) string {
+	if syncText == "" {
 		return left
 	}
-	// The sync status keeps its place on the right; the header gives way.
-	right := "  " + m.syncText
-	left = truncate(left, max(m.width-lipgloss.Width(right), 1))
-	return left + strings.Repeat(" ", max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 0)) + right
+	right := "  " + syncText
+	left = truncate(left, max(width-lipgloss.Width(right), 1))
+	return left + strings.Repeat(" ", max(width-lipgloss.Width(left)-lipgloss.Width(right), 0)) + right
 }
 
 func (m PlanList) footer() []string {

@@ -69,17 +69,13 @@ func (m Inbox) sections() []struct {
 } {
 	var findings, reviews, questions []inboxItem
 	for _, f := range m.waiting.Findings {
-		what := f.Finding.Criterion + " not met"
-		if f.Finding.Criterion == "" {
-			what = "out of scope: " + f.Finding.OutOfScope
-		}
-		findings = append(findings, inboxItem{f.ShortID, fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, what)})
+		findings = append(findings, inboxItem{f.ShortID, fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, f.Finding.Text())})
 	}
 	for _, r := range m.waiting.Reviews {
 		reviews = append(reviews, inboxItem{r.ShortID, r.ShortID + "  " + r.Title})
 	}
 	for _, q := range m.waiting.Questions {
-		body, _, _ := strings.Cut(q.Message.Body, "\n")
+		body, _, _ := strings.Cut(strings.TrimSpace(q.Message.Body), "\n")
 		questions = append(questions, inboxItem{q.ShortID, fmt.Sprintf("%s  from %s: %s", q.ShortID, q.Message.Author.Email, body)})
 	}
 	return []struct {
@@ -152,13 +148,7 @@ func (m Inbox) View() tea.View {
 }
 
 func (m Inbox) header() string {
-	left := styleTitle.Render("BeforeCode · inbox") + "   " + styleDim.Render("what waits on you")
-	if m.syncText == "" {
-		return left
-	}
-	right := "  " + m.syncText
-	left = truncate(left, max(m.width-lipgloss.Width(right), 1))
-	return left + strings.Repeat(" ", max(m.width-lipgloss.Width(left)-lipgloss.Width(right), 0)) + right
+	return withSyncText(styleTitle.Render("BeforeCode · inbox")+"   "+styleDim.Render("what waits on you"), m.syncText, m.width)
 }
 
 // body returns the lines below the header and the index of the line of the

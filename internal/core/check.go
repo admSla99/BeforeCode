@@ -209,6 +209,15 @@ type Finding struct {
 	Acknowledged bool
 }
 
+// Text says what the Finding is: the criterion that is not met, or the
+// out-of-scope change.
+func (f Finding) Text() string {
+	if f.Criterion != "" {
+		return f.Criterion + " is not met"
+	}
+	return "out of scope: " + f.OutOfScope
+}
+
 // PullRequestCheck is the check that counts for one pull request: its
 // newest, with its Findings. Stale is set when it checked another plan.md
 // than the current one; a stale check still counts until the next check of

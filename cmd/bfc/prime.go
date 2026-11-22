@@ -112,9 +112,7 @@ func gatherPrime(cmd *cobra.Command, args []string) primeView {
 			v.Open = core.OpenQuestions(msgs)
 		}
 	}
-	if v.Waiting, err = gatherWaiting(ctx, s, v.Identity, views); err != nil {
-		return primeView{Setup: err.Error()}
-	}
+	v.Waiting = gatherWaiting(ctx, s, v.Identity, views)
 	for _, pv := range views {
 		if v.Plan == nil && pv.Status.State == core.StateApproved {
 			v.Approved = append(v.Approved, core.PlanRef{ID: pv.ID, ShortID: pv.ShortID, Title: pv.Title})
@@ -248,7 +246,7 @@ func writeWaiting(b *strings.Builder, v primeView) {
 		return
 	}
 	writeList(b, w.Findings, func(f core.WaitingFinding) string {
-		return fmt.Sprintf("- Finding in %s %s, pull request #%d: %s (check %s).", f.ShortID, f.Title, f.Finding.PR, findingText(f.Finding), f.Finding.Check)
+		return fmt.Sprintf("- Finding in %s %s, pull request #%d: %s (check %s).", f.ShortID, f.Title, f.Finding.PR, f.Finding.Text(), f.Finding.Check)
 	}, "`bfc inbox --json`")
 	if len(w.Findings) > 0 {
 		b.WriteString("\nA Finding is where a pull request departs from its plan. Tell the user: they fix the code, update the plan, or accept it on purpose with `bfc acknowledge <check> -m <reason>`, which is for people.\n\n")

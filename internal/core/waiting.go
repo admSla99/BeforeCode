@@ -51,15 +51,21 @@ func (w Waiting) Empty() bool {
 	return len(w.Findings) == 0 && len(w.Reviews) == 0 && len(w.Questions) == 0
 }
 
+// Waits reports whether something on a plan in state st can wait on
+// someone: not when it is final (closed, done) or invalid.
+func Waits(st State) bool {
+	return st != StateClosed && st != StateDone && st != StateInvalid
+}
+
 // WaitingOn returns what waits on p among plans, in their order:
 // the Findings that are not acknowledged on the plans p wrote, the plans in
 // review p may approve now (no open Question keeps them from it), and the
-// open Questions addressed to p. Closed and invalid plans have nothing that
-// waits.
+// open Questions addressed to p. Nothing waits on a plan that is final
+// (closed or done) or invalid (see Waits).
 func WaitingOn(p Person, plans []PlanWork) Waiting {
 	w := Waiting{Findings: []WaitingFinding{}, Reviews: []PlanRef{}, Questions: []WaitingQuestion{}}
 	for _, pl := range plans {
-		if pl.Status.State == StateClosed || pl.Status.State == StateInvalid {
+		if !Waits(pl.Status.State) {
 			continue
 		}
 		ref := PlanRef{ID: pl.ID, ShortID: pl.ShortID, Title: pl.Title}
