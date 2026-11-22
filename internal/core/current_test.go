@@ -89,3 +89,33 @@ func TestCurrentPlanReportsAUsedPlanThatDoesNotExist(t *testing.T) {
 		t.Fatalf("err = %v, want ErrUnknownID", err)
 	}
 }
+
+// Issue #103 AC-2: the plan of a pull request is the Short ID in its
+// branch name, else a "Plan: bfc-…" line in its description; neither is no
+// plan, and a Short ID that names no plan is an error.
+func TestPullRequestPlan(t *testing.T) {
+	a, b := idWith("a1b2"), idWith("xyzw")
+	plans := []PlanHandle{{ID: a, ShortID: "bfc-a1b2"}, {ID: b, ShortID: "bfc-xyzw"}}
+	for _, tc := range []struct {
+		name, branch, body string
+		want               ulid.ULID
+		found              bool
+	}{
+		{"branch", "bfc-a1b2-payments", "Plan: bfc-xyzw", a, true},
+		{"description", "fix-typo", "Fixes the README.\r\n\r\nPlan: bfc-xyzw\r\n", b, true},
+		{"description, any case and spaces", "fix-typo", "  plan:   BFC-XYZW  ", b, true},
+		{"neither", "fix-typo", "No plan here; see bfc-a1b2 in the text.", ulid.ULID{}, false},
+		{"empty", "", "", ulid.ULID{}, false},
+	} {
+		got, found, err := PullRequestPlan(tc.branch, tc.body, plans)
+		if err != nil || found != tc.found || got != tc.want {
+			t.Errorf("%s: got %s, %v, %v; want %s, %v", tc.name, got, found, err, tc.want, tc.found)
+		}
+	}
+	if _, _, err := PullRequestPlan("bfc-zzzz-x", "", plans); !errors.Is(err, ErrUnknownID) {
+		t.Errorf("unknown Short ID in the branch: %v", err)
+	}
+	if _, _, err := PullRequestPlan("fix", "Plan: bfc-zzzz", plans); !errors.Is(err, ErrUnknownID) || !strings.Contains(err.Error(), "Plan: bfc-zzzz") {
+		t.Errorf("unknown Short ID in the description: %v", err)
+	}
+}

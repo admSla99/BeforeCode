@@ -54,6 +54,14 @@ These skills are for developing BeforeCode. They are different from the skills B
 5. **Review your own diff against the issue.** Fill in the pull request template: which acceptance criteria are covered, how you tested them, and anything that departs from the issue.
 6. **Departures are documented.** If the implementation must differ from the issue or from `docs/design.md`, say so in the pull request and update the document in the same pull request. Record a non-obvious decision as an ADR in `docs/adr/`.
 
+## The plan check
+
+Every pull request also runs `.github/workflows/bfc-plan-check.yml` (ADR 0014). It finds the pull request's plan from the Short ID in the branch name (`bfc start` names branches that way) or a line `Plan: bfc-…` in the description. Claude Code then compares the diff with that plan's `plan.md`. The result is stored in the Plans ref, and when the pull request departs from the plan it gets the `plan-mismatch` label and a comment. The check warns; it never blocks merging. A pull request without a plan, or from a fork, is skipped with a note in the job summary.
+
+The check needs the `ANTHROPIC_API_KEY` repository secret; without it, a pull request that has a plan fails the job with a message saying so. To add it, a repository admin opens **Settings → Secrets and variables → Actions → New repository secret**, names it `ANTHROPIC_API_KEY` and pastes an Anthropic API key. With the GitHub CLI: `gh secret set ANTHROPIC_API_KEY --repo admSla99/BeforeCode`, which asks for the key.
+
+The check writes `format-version` 2 results, so the Plans ref must be migrated once with `bfc migrate` and `bfc push` before the first real check.
+
 ## Working with git in code
 
 Plans are stored in the hidden ref. Code that reads or writes plans must never touch the user's working tree, index or current branch, and must never force-push. The full rules are in the "Rules for the hidden ref" section of `CLAUDE.md`.

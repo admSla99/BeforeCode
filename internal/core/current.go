@@ -64,12 +64,8 @@ func ShortIDInBranch(branch string) (string, bool) {
 // A Short ID that names no plan, or several, is a *BranchPlanError, never a
 // silent fall back to used. A used plan that does not exist is ErrUnknownID.
 func CurrentPlan(branch string, used ulid.ULID, plans []PlanHandle) (Current, error) {
-	if short, ok := ShortIDInBranch(branch); ok {
-		id, err := ResolveID(short, plans)
-		if err != nil {
-			return Current{}, &BranchPlanError{Branch: branch, ShortID: short, Err: err}
-		}
-		return Current{ID: id, Source: FromBranch}, nil
+	if id, ok, err := branchPlan(branch, plans); ok || err != nil {
+		return Current{ID: id, Source: FromBranch}, err
 	}
 	if used == (ulid.ULID{}) {
 		return Current{}, nil
@@ -80,6 +76,44 @@ func CurrentPlan(branch string, used ulid.ULID, plans []PlanHandle) (Current, er
 		}
 	}
 	return Current{}, fmt.Errorf("%w: %s, set with bfc use", ErrUnknownID, used)
+}
+
+// planLine is a line "Plan: bfc-…" in the description of a pull request.
+var planLine = regexp.MustCompile(`(?im)^\s*plan:\s*(bfc-[0-9a-z]{4,16})\s*$`)
+
+// PullRequestPlan returns the plan a pull request belongs to (ADR 0014):
+// the Short ID in its branch name, resolved like the Current plan's, else
+// the one in a "Plan: bfc-…" line of its description. found is false when
+// neither names a plan; a Short ID that names no plan, or several, is an
+// error.
+func PullRequestPlan(branch, body string, plans []PlanHandle) (id ulid.ULID, found bool, err error) {
+	if id, ok, err := branchPlan(branch, plans); ok || err != nil {
+		return id, ok, err
+	}
+	m := planLine.FindStringSubmatch(strings.ReplaceAll(body, "\r\n", "\n"))
+	if m == nil {
+		return ulid.ULID{}, false, nil
+	}
+	id, err = ResolveID(m[1], plans)
+	if err != nil {
+		return ulid.ULID{}, false, fmt.Errorf("the description says Plan: %s: %w", m[1], err)
+	}
+	return id, true, nil
+}
+
+// branchPlan returns the plan the first Short ID in the branch name
+// resolves to; ok is false when the name has none. A Short ID that names no
+// plan, or several, is a *BranchPlanError.
+func branchPlan(branch string, plans []PlanHandle) (id ulid.ULID, ok bool, err error) {
+	short, ok := ShortIDInBranch(branch)
+	if !ok {
+		return ulid.ULID{}, false, nil
+	}
+	id, err = ResolveID(short, plans)
+	if err != nil {
+		return ulid.ULID{}, false, &BranchPlanError{Branch: branch, ShortID: short, Err: err}
+	}
+	return id, true, nil
 }
 
 // maxSlugLen bounds the slug of the title in a branch name.

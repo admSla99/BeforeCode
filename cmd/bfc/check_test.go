@@ -2,6 +2,7 @@ package main
 
 import (
 	"encoding/json"
+	"path/filepath"
 	"strings"
 	"testing"
 
@@ -215,5 +216,48 @@ func TestDoctorWarnsAboutAnUnreadableCheckFile(t *testing.T) {
 	wantDoctor(t, out, "warn", "check files", "1 of 2 cannot be read")
 	if !strings.Contains(out, bad) {
 		t.Errorf("output does not name %s:\n%s", bad, out)
+	}
+}
+
+// Issue #103 AC-2: check find names the plan of a pull request from its
+// branch, else its description, as JSON for the workflow; no plan is
+// found: false and exit 0.
+func TestCheckFindNamesThePlanOfAPullRequest(t *testing.T) {
+	t.Parallel()
+	dir, short, id := draftWithPlan(t)
+	body := filepath.Join(t.TempDir(), "body.md")
+	writeFile(t, body, "Fixes the checkout.\n\nPlan: "+short+"\n")
+
+	type found struct {
+		Found   bool   `json:"found"`
+		ID      string `json:"id"`
+		ShortID string `json:"short_id"`
+		Title   string `json:"title"`
+		State   string `json:"state"`
+	}
+	find := func(args ...string) found {
+		t.Helper()
+		var got found
+		out := mustBfc(t, dir, append([]string{"check", "find", "--json"}, args...)...)
+		if err := json.Unmarshal([]byte(out), &got); err != nil {
+			t.Fatalf("not JSON: %v\n%s", err, out)
+		}
+		return got
+	}
+	want := found{Found: true, ID: id.String(), ShortID: short, Title: "Payments", State: "draft"}
+	if got := find("--branch", short+"-payments"); got != want {
+		t.Errorf("from the branch: %+v", got)
+	}
+	if got := find("--branch", "fix-checkout", "--body-file", body); got != want {
+		t.Errorf("from the description: %+v", got)
+	}
+	if got := find("--branch", "fix-checkout"); got != (found{}) {
+		t.Errorf("no plan: %+v", got)
+	}
+	if out := strings.TrimSpace(mustBfc(t, dir, "check", "find", "--branch", short+"-x")); out != short {
+		t.Errorf("without --json: %q", out)
+	}
+	if out, err := bfcIn(t, dir, "check", "find", "--branch", "bfc-zzzz-x"); err == nil {
+		t.Errorf("a branch that names no plan: %s", out)
 	}
 }
