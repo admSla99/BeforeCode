@@ -1,0 +1,85 @@
+# bfc-5v7x: Payments via Stripe
+
+- **ID:** `01JD3K8Q2W5V7X9Y0Z1A2B3C4D`
+- **State:** in-progress
+- **Author:** Ada Lovelace <ada@example.com>
+- **Approvals:** 1 of 1 (ben@example.com)
+- **Labels:** payments
+- **Last activity:** 2026-11-20 10:30 UTC
+
+## Intent
+
+### Problem
+
+Cards fail.
+
+## Plan
+
+## A stray title
+
+### Context
+
+Cards fail.
+
+### Approach
+
+Stripe.
+
+### Affected areas
+
+payments/
+
+### Out of scope
+
+Refunds.
+
+### Tasks
+
+- T-1: Add the client.
+
+### Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+
+```
+## inside a fence
+```
+
+## Tasks
+
+- **T-1** (paused, Ada Lovelace): Add the client.
+  - Handoff, released by Ada Lovelace, 2026-11-20 10:25 UTC:
+
+    > Half done.
+    >
+    > ### Next
+    >
+    > The retries.
+
+## Checks
+
+### Pull request #7
+
+Newest check `01JD3K8Q2W5V7X9Y0Z1A2B3C40`, 2026-11-20 10:15 UTC by Ben Bitdiddle. It checked an older `plan.md`.
+
+- Finding: AC-1 is not met
+- Finding: out of scope: Touches the email worker.
+
+Acknowledged by Ada Lovelace, 2026-11-20 10:20 UTC:
+
+> Agreed with Ben.
+
+## Discussion
+
+- **Ben Bitdiddle** · 2026-11-20 10:05 UTC · answered Question to ada@example.com · about `plan.md#AC-1`
+
+  > Which cards?
+
+  - **Ada Lovelace** · 2026-11-20 10:06 UTC
+
+    > 3-D Secure ones.
+
+- **Ada Lovelace** · 2026-11-20 10:20 UTC · about `checks/01JD3K8Q2W5V7X9Y0Z1A2B3C40`
+
+  > Agreed with Ben.
+
