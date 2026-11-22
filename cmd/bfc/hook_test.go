@@ -464,3 +464,56 @@ func TestHookChecksAgainWhenThePlanOrTheBranchChanges(t *testing.T) {
 		})
 	}
 }
+
+// Issue #110 AC-1, AC-2, AC-3: once a Task is claimed the plan is
+// in-progress and edits stay allowed, remembered like an approved plan;
+// editing plan.md returns it to review and blocks the next edit.
+func TestHookAllowsEditsWhileThePlanIsInProgress(t *testing.T) {
+	t.Parallel()
+	dir, short := approvedPlan(t)
+	commit(t, dir)
+	mustBfc(t, dir, "claim", short, "T-1")
+	if got := state(t, dir, short); got != "in-progress" {
+		t.Fatalf("state = %s", got)
+	}
+	cache := filepath.Join(gitIn(t, dir, "rev-parse", "--path-format=absolute", "--git-dir"), "beforecode", "hook-approved")
+	for _, tool := range []string{"Edit", "Write", "MultiEdit", "NotebookEdit"} {
+		// Each tool gets the full check, not the answer the cache kept.
+		if err := os.Remove(cache); err != nil && !os.IsNotExist(err) {
+			t.Fatal(err)
+		}
+		input := abs(dir, map[string]any{"file_path": "main.go", "notebook_path": "a.ipynb", "content": "x"})
+		if r := runHook(t, dir, tool, input); r.err != nil || r.stdout != "" {
+			t.Errorf("%s while in-progress: err = %v, stdout = %s", tool, r.err, r.stdout)
+		}
+	}
+
+	edit := map[string]any{"file_path": filepath.Join(dir, "main.go"), "old_string": "a", "new_string": "b"}
+	trace := filepath.Join(t.TempDir(), "trace")
+	setEnv(t, "GIT_TRACE", trace)
+	if r := runHook(t, dir, "Edit", edit); r.err != nil || r.stdout != "" {
+		t.Fatalf("remembered edit: err = %v, stdout = %s", r.err, r.stdout)
+	}
+	if n := gitStarts(t, trace); n != 1 {
+		t.Errorf("an edit while nothing changed started %d git processes, want 1", n)
+	}
+
+	mustStdin(t, dir, validPlan+"\nOne more line.\n", "edit", short, "--stdin", "--force")
+	r := runHook(t, dir, "Edit", edit)
+	reason, ok := r.denied(t)
+	if r.err != nil || !ok || !strings.Contains(reason, "in-review") {
+		t.Errorf("after plan.md changed: err = %v, reason = %q", r.err, reason)
+	}
+}
+
+// Issue #110 AC-4: the block message names bfc claim.
+func TestHookBlockMessageNamesClaim(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	mustBfc(t, dir, "use", short)
+	r := runHook(t, dir, "Write", map[string]any{"file_path": filepath.Join(dir, "main.go"), "content": "x"})
+	reason, ok := r.denied(t)
+	if !ok || !strings.Contains(reason, "approved or in-progress") || !strings.Contains(reason, "bfc claim") {
+		t.Errorf("reason = %q", reason)
+	}
+}

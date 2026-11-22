@@ -52,6 +52,14 @@ func HasWork(st State) bool {
 	return st == StateApproved || st == StateInProgress
 }
 
+// EditsAllowed reports whether code may be edited for a Current plan in
+// state st (ADR 0011): approved or in-progress, whoever holds a Claim. It
+// is its own rule, apart from where Tasks are taken, though both name the
+// same states today.
+func EditsAllowed(st State) bool {
+	return st == StateApproved || st == StateInProgress
+}
+
 // CheckHasWork reports why a plan with Status st has no Tasks to take now.
 func CheckHasWork(st Status) error {
 	if !HasWork(st.State) {
