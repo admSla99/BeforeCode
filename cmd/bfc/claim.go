@@ -87,9 +87,10 @@ func runClaim(cmd *cobra.Command, query, task string, asJSON bool) error {
 	}
 	if task == "" {
 		next, ok := core.NextTask(v.Status, v.Plan)
+		if err := core.CheckHasWork(v.Status); err != nil {
+			return err
+		}
 		switch {
-		case v.Status.State != core.StateApproved && v.Status.State != core.StateInProgress:
-			return core.CheckClaim(v.Status, v.Plan, "") // says why the plan has no Tasks to claim
 		case !ok:
 			return fmt.Errorf("%s has no open Task; bfc ready lists the open Tasks of the approved plans", v.ShortID)
 		}
@@ -113,7 +114,7 @@ func runClaim(cmd *cobra.Command, query, task string, asJSON bool) error {
 	}
 	if !set.local {
 		if _, err := s.Push(ctx, set.remote); err != nil {
-			return fmt.Errorf("%s is claimed in this clone but not shared: %w", task, syncError(cmd, s, err))
+			return fmt.Errorf("%s of %s is claimed in this clone but not shared; run bfc push to share it: %w", task, v.ShortID, syncError(cmd, s, err))
 		}
 	}
 	after, err := loadPlan(ctx, s, v.ID)
@@ -153,7 +154,7 @@ type claimJSON struct {
 
 func printClaim(w io.Writer, v index.Plan, task string, asJSON bool) error {
 	var text string
-	for _, t := range core.Tasks(v.Plan) {
+	for _, t := range core.TaskViews(v.Status, v.Plan) {
 		if t.ID == task {
 			text = t.Text
 		}
@@ -215,7 +216,7 @@ type readyJSON struct {
 func printReady(w io.Writer, views []index.Plan, asJSON bool) error {
 	out := []readyJSON{}
 	for _, v := range views {
-		if v.Status.State != core.StateApproved && v.Status.State != core.StateInProgress {
+		if !core.HasWork(v.Status.State) {
 			continue
 		}
 		for _, t := range core.TaskViews(v.Status, v.Plan) {

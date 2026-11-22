@@ -46,12 +46,26 @@ func NextTask(st Status, plan []byte) (TaskView, bool) {
 	return TaskView{}, false
 }
 
+// HasWork reports whether a plan in state st is where Tasks are taken:
+// approved or in-progress (ADR 0013 section 4).
+func HasWork(st State) bool {
+	return st == StateApproved || st == StateInProgress
+}
+
+// CheckHasWork reports why a plan with Status st has no Tasks to take now.
+func CheckHasWork(st Status) error {
+	if !HasWork(st.State) {
+		return stateError(st, "only an approved or in-progress plan has Tasks to claim")
+	}
+	return nil
+}
+
 // CheckClaim reports why task of the plan with Status st and plan.md plan
 // cannot be claimed now (ADR 0013 section 4): the plan must be approved or
 // in-progress, the Task must be in plan.md, and nobody may hold it.
 func CheckClaim(st Status, plan []byte, task string) error {
-	if st.State != StateApproved && st.State != StateInProgress {
-		return stateError(st, "only an approved or in-progress plan has Tasks to claim")
+	if err := CheckHasWork(st); err != nil {
+		return err
 	}
 	for _, v := range TaskViews(st, plan) {
 		if v.ID != task {

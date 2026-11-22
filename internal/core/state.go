@@ -26,9 +26,9 @@ type Status struct {
 
 // Claim is the valid claimed Event of a Task: who holds it.
 type Claim struct {
-	Event  ulid.ULID
-	Holder Person
-	Agent  string // the harness, when an agent claimed it
+	Event  ulid.ULID `json:"event"`
+	Holder Person    `json:"holder"`
+	Agent  string    `json:"agent,omitempty"` // the harness, when an agent claimed it
 }
 
 // Derive computes a plan's Status from its Events, sorted by ULID, and the

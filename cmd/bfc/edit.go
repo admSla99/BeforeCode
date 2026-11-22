@@ -157,7 +157,7 @@ func runEdit(cmd *cobra.Command, query, doc string, src editSource) error {
 	if doc != "plan.md" {
 		return nil
 	}
-	if v.Status.State == core.StateApproved {
+	if v.Status.State == core.StateApproved || v.Status.State == core.StateInProgress {
 		_, _ = fmt.Fprintf(out, "%s is back in-review: its approvals were for the previous version of plan.md\n", v.ShortID)
 	}
 	warnPlan(cmd, doc, edited)

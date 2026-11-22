@@ -25,15 +25,16 @@ var stateFilters = []stateFilter{
 	{"open", func(s core.State) bool { return s != core.StateClosed }},
 	{"in-review", func(s core.State) bool { return s == core.StateInReview }},
 	{"approved", func(s core.State) bool { return s == core.StateApproved }},
+	{"in-progress", func(s core.State) bool { return s == core.StateInProgress }},
 	{"draft", func(s core.State) bool { return s == core.StateDraft }},
 	{"closed", func(s core.State) bool { return s == core.StateClosed }},
 	{"all", func(core.State) bool { return true }},
 }
 
-// groupOrder is the order of the state groups on the screen. Phase 3 adds
-// in-progress and done here.
+// groupOrder is the order of the state groups on the screen. done comes
+// with bfc done (#111).
 var groupOrder = []core.State{
-	core.StateInReview, core.StateApproved, core.StateDraft, core.StateClosed, core.StateInvalid,
+	core.StateInReview, core.StateApproved, core.StateInProgress, core.StateDraft, core.StateClosed, core.StateInvalid,
 }
 
 // typing says which line the keyboard is typing into.

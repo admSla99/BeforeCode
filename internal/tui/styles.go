@@ -28,7 +28,7 @@ func stateStyle(s core.State) lipgloss.Style {
 	switch s {
 	case core.StateInReview:
 		return lipgloss.NewStyle().Foreground(lipgloss.Yellow)
-	case core.StateApproved:
+	case core.StateApproved, core.StateInProgress:
 		return lipgloss.NewStyle().Foreground(lipgloss.Green)
 	case core.StateClosed, core.StateInvalid:
 		return lipgloss.NewStyle().Foreground(lipgloss.Red)
