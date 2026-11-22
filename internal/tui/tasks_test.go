@@ -6,8 +6,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/charmbracelet/x/exp/teatest/v2"
-
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
@@ -48,7 +46,6 @@ func TestAppTasksTabShowsHandoffs(t *testing.T) {
 	waitFor(t, tm, "T-3")
 	send(tm, "down", "down", "enter")
 	waitFor(t, tm, "Next: the EU switch.")
-	golden(t, screenNow(t, tm))
 	send(tm, "esc")
 	waitFor(t, tm, "T-2")
 	out := screen(t, tm)
@@ -67,15 +64,14 @@ func TestAppTasksTabWithoutTasks(t *testing.T) {
 	}
 }
 
-// screenNow is the screen at this moment, without styling, while the
-// program keeps running.
-func screenNow(t *testing.T, tm *teatest.TestModel) string {
-	t.Helper()
-	v, ok := screens.Load(tm)
-	if !ok {
-		t.Fatal("screenNow: start the model with newTestModel")
-	}
-	return v.(*vscreen).String()
+// Issue #112 AC-2: the Handoffs of the selected Task, in the viewport.
+func TestAppTasksTabHandoffsView(t *testing.T) {
+	tm := startAppWith(t, inProgressTeam(), AppOptions{Interval: time.Hour, Local: true})
+	send(tm, "tab", "tab")
+	waitFor(t, tm, "T-3")
+	send(tm, "down", "down", "enter")
+	waitFor(t, tm, "Next: the EU switch.")
+	golden(t, screen(t, tm))
 }
 
 // Issue #112 AC-4: with more Tasks than lines, the selection stays in view.
