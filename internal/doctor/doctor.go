@@ -306,16 +306,19 @@ func checkGithubWorkflow(_ context.Context, e *env) Result {
 	if err != nil {
 		return warn("cannot read %s: %v", github.WorkflowPath, err)
 	}
-	version, intact, ok := github.ReadMarker(data)
-	switch {
-	case !ok || !intact:
+	switch state, wrote := github.Check(data, e.version); {
+	case state == github.ChangedByHand:
 		return warn("%s was changed by hand; bfc setup github shows how it differs from this bfc's", github.WorkflowPath)
-	case version == github.FromSource:
+	case state == github.Source:
 		return pass("%s builds bfc from source", github.WorkflowPath)
-	case version != e.version:
-		return warn("%s was written by bfc %s, this is %s; run bfc setup github to rewrite it", github.WorkflowPath, version, e.version)
+	case state == github.OtherBfc && !github.IsRelease(e.version):
+		// A dev build cannot write the workflow, so it has nothing to offer.
+		return pass("%s runs bfc %s; this bfc is a %s build", github.WorkflowPath, wrote, e.version)
+	case state == github.OtherBfc:
+		return warn("%s was written by bfc %s, this is %s; run bfc setup github to rewrite it", github.WorkflowPath, wrote, e.version)
+	default:
+		return pass("%s runs bfc %s", github.WorkflowPath, wrote)
 	}
-	return pass("%s runs bfc %s", github.WorkflowPath, version)
 }
 
 // checkSkills reports the repository's skills. A missing directory, or a

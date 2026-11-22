@@ -33,7 +33,7 @@ var releaseTag = regexp.MustCompile(`^v[0-9]+\.[0-9]+\.[0-9]+(?:-[0-9A-Za-z.-]+)
 // v0.3.0: it downloads that release and checks its checksum. A dev build or
 // any other version that names no release is refused.
 func Workflow(version string) ([]byte, error) {
-	if !releaseTag.MatchString(version) {
+	if !IsRelease(version) {
 		return nil, fmt.Errorf("this bfc is version %q, which has no release to download; the workflow runs the release of the bfc that wrote it, so run bfc setup github with a released bfc", version)
 	}
 	return render(version, false), nil
@@ -64,8 +64,14 @@ func render(version string, fromSource bool) []byte {
 var marker = regexp.MustCompile(`^# Written by bfc setup github \(bfc (\S+), sha256 ([0-9a-f]{64})\); run it again to update this file\.\r?\n`)
 
 func markerLine(version string, body []byte) string {
-	sum := sha256.Sum256(body)
-	return fmt.Sprintf("# Written by bfc setup github (bfc %s, sha256 %s); run it again to update this file.\n", version, hex.EncodeToString(sum[:]))
+	return fmt.Sprintf("# Written by bfc setup github (bfc %s, sha256 %s); run it again to update this file.\n", version, digest(version, body))
+}
+
+// digest hashes the version with the body, so that neither changes
+// unnoticed.
+func digest(version string, body []byte) string {
+	sum := sha256.Sum256(append([]byte(version+"\n"), body...))
+	return hex.EncodeToString(sum[:])
 }
 
 // ReadMarker returns the version of bfc that wrote the workflow in data and
@@ -77,6 +83,36 @@ func ReadMarker(data []byte) (version string, intact, ok bool) {
 		return "", false, false
 	}
 	body := bytes.ReplaceAll(data[m[1]:], []byte("\r\n"), []byte("\n"))
-	sum := sha256.Sum256(body)
-	return string(data[m[2]:m[3]]), hex.EncodeToString(sum[:]) == string(data[m[4]:m[5]]), true
+	version = string(data[m[2]:m[3]])
+	return version, digest(version, body) == string(data[m[4]:m[5]]), true
+}
+
+// IsRelease reports whether version names a release of bfc, which a
+// workflow can download.
+func IsRelease(version string) bool { return releaseTag.MatchString(version) }
+
+// State is what a workflow file is, seen from a bfc of some version.
+type State int
+
+// The states of a workflow file.
+const (
+	Current       State = iota // written by this bfc, unchanged
+	OtherBfc                   // written by another release of bfc, unchanged
+	Source                     // BeforeCode's own, built from source, unchanged
+	ChangedByHand              // no marker, or changed after bfc wrote it
+)
+
+// Check returns the state of the workflow in data for the bfc of version,
+// and the version that wrote it ("" without a marker).
+func Check(data []byte, version string) (State, string) {
+	wrote, intact, ok := ReadMarker(data)
+	switch {
+	case !ok || !intact:
+		return ChangedByHand, wrote
+	case wrote == FromSource:
+		return Source, wrote
+	case wrote == version:
+		return Current, wrote
+	}
+	return OtherBfc, wrote
 }

@@ -1,4 +1,4 @@
-# Written by bfc setup github (bfc source, sha256 1236798ef68c83aa56ab87af55db6912c8af9ef10d155ecd9f8716a16d986c51); run it again to update this file.
+# Written by bfc setup github (bfc source, sha256 2bfd86e3c64bc943e13c0225a2b66049576c7d488ca0f93d3278a70da04a0107); run it again to update this file.
 # The plan check (ADR 0014): Claude Code compares the pull request with the
 # plan.md of its plan, bfc check record stores the result in the Plans ref,
 # and this workflow labels the pull request and posts one comment. It warns;
@@ -52,6 +52,7 @@ jobs:
           # No token in .git/config while Claude Code runs; the steps that
           # fetch and push get it through the environment.
           persist-credentials: false
+
       - uses: actions/setup-go@v7
         if: steps.fork.outputs.skip != 'true'
         with:
@@ -113,7 +114,7 @@ jobs:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
         run: |
           if [ -z "$ANTHROPIC_API_KEY" ]; then
-            echo "::error::The plan check needs the ANTHROPIC_API_KEY repository secret. Add it under Settings > Secrets and variables > Actions > New repository secret (see CONTRIBUTING.md)."
+            echo "::error::The plan check needs the ANTHROPIC_API_KEY repository secret. Add it under Settings > Secrets and variables > Actions > New repository secret, or with gh secret set ANTHROPIC_API_KEY."
             exit 1
           fi
 

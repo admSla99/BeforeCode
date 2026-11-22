@@ -130,3 +130,26 @@ func TestDoctorChecksThePlanCheckWorkflow(t *testing.T) {
 	out, _ = bfcVersionIn(t, dir, "v0.3.0", "doctor")
 	wantDoctor(t, out, "ok", "github workflow", "builds bfc from source")
 }
+
+// A source-built workflow, as BeforeCode's own, is replaced only with
+// --force; a dev build's bfc doctor does not send anyone to bfc setup
+// github, which it cannot run.
+func TestSetupGithubKeepsASourceWorkflowAndDoctorOnADevBuild(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	file := filepath.Join(dir, filepath.FromSlash(github.WorkflowPath))
+	writeFile(t, file, string(github.SourceWorkflow()))
+	out, err := bfcVersionIn(t, dir, "v0.3.0", "setup", "github")
+	if err == nil || !strings.Contains(out, "builds bfc from source") || !strings.Contains(out, "--force") {
+		t.Errorf("source workflow: %v\n%s", err, out)
+	}
+	if readFile(t, file) != string(github.SourceWorkflow()) {
+		t.Errorf("the source workflow was replaced without --force")
+	}
+
+	if out, err := bfcVersionIn(t, dir, "v0.3.0", "setup", "github", "--force"); err != nil {
+		t.Fatalf("%v\n%s", err, out)
+	}
+	out, _ = bfcIn(t, dir, "doctor")
+	wantDoctor(t, out, "ok", "github workflow", "runs bfc v0.3.0", "dev build")
+}

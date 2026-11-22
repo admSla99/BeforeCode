@@ -52,15 +52,17 @@ func runSetupGithub(cmd *cobra.Command, force bool) error {
 	}
 	action, what := "created", github.WorkflowPath
 	if old != nil {
-		oldVersion, intact, ok := github.ReadMarker(old)
+		state, wrote := github.Check(old, version)
 		switch {
-		case string(old) == string(want):
+		case state == github.Current:
 			action = "kept"
-		case (!ok || !intact) && !force:
-			return fmt.Errorf("%s was changed by hand, so it is kept; run bfc setup github --force to replace it with the workflow of bfc %s. The changes (- yours, + this bfc's):\n%s",
-				github.WorkflowPath, version, lineDiff(string(old), string(want)))
-		case ok && intact && oldVersion != version:
-			action, what = "updated", fmt.Sprintf("%s from bfc %s to %s", github.WorkflowPath, oldVersion, version)
+		case state == github.ChangedByHand && !force:
+			_, _ = fmt.Fprintf(out, "The changes (- yours, + bfc %s's):\n%s", version, lineDiff(string(old), string(want)))
+			return fmt.Errorf("%s was changed by hand, so it is kept; run bfc setup github --force to replace it", github.WorkflowPath)
+		case state == github.Source && !force:
+			return fmt.Errorf("%s builds bfc from source, as BeforeCode's own workflow does; run bfc setup github --force to replace it with the release workflow of bfc %s", github.WorkflowPath, version)
+		case state == github.OtherBfc:
+			action, what = "updated", fmt.Sprintf("%s from bfc %s to %s", github.WorkflowPath, wrote, version)
 		default:
 			action = "replaced"
 		}
@@ -121,7 +123,7 @@ func lineDiff(a, b string) string {
 			i++
 		}
 	}
-	var b2 strings.Builder
+	var out strings.Builder
 	shown, last := 0, -1
 	for k, l := range all {
 		near := false
@@ -132,14 +134,14 @@ func lineDiff(a, b string) string {
 			continue
 		}
 		if shown == 40 {
-			b2.WriteString(" …\n")
+			out.WriteString(" …\n")
 			break
 		}
 		if last >= 0 && k > last+1 {
-			b2.WriteString(" …\n")
+			out.WriteString(" …\n")
 		}
-		fmt.Fprintf(&b2, "%c%s\n", l.op, l.text)
+		fmt.Fprintf(&out, "%c%s\n", l.op, l.text)
 		shown, last = shown+1, k
 	}
-	return b2.String()
+	return out.String()
 }
