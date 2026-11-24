@@ -48,7 +48,7 @@ Refunds and currencies other than EUR.
 
 ### Result
 
-End with this JSON object in a `json` fence, and nothing after it. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
+Give this JSON object on stdin to `bfc check record bfc-5v7x --pr <n> --head <head sha> --base <base sha>`. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
 
 ```json
 {
@@ -57,6 +57,6 @@ End with this JSON object in a `json` fence, and nothing after it. Give every cr
     "AC-2": "<status>"
   },
   "out_of_scope": ["<one sentence per out-of-scope change>"],
-  "summary": "<the Markdown summary for the pull request>"
+  "summary": "<the Markdown summary>"
 }
 ```

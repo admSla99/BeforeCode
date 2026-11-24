@@ -14,7 +14,9 @@
       "Bash(bfc claim:*)",
       "Bash(bfc handoff:*)",
       "Bash(bfc push:*)",
-      "Bash(bfc wait:*)"
+      "Bash(bfc pull:*)",
+      "Bash(bfc wait:*)",
+      "Bash(bfc check:*)"
     ],
     "defaultMode": "acceptEdits",
     "deny": [

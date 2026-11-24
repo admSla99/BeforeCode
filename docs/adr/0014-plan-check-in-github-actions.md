@@ -1,6 +1,6 @@
 # ADR 0014: The plan check runs Claude Code headless in GitHub Actions and stores its result through `bfc`
 
-Date: 2026-11-22. Status: accepted. Settled with the maintainer in the phase 3 grilling (#21), recorded for issue #99. Builds on ADR 0001 (reading and writing the ref from Actions), ADR 0008 (agents use the CLI) and ADR 0013 (the check file).
+Date: 2026-11-22. Status: superseded by ADR 0015 (the plan check runs locally in Claude Code, on request); the check file, `bfc check record`, `bfc check find`, Findings and `bfc acknowledge` stay. Settled with the maintainer in the phase 3 grilling (#21), recorded for issue #99. Builds on ADR 0001 (reading and writing the ref from Actions), ADR 0008 (agents use the CLI) and ADR 0013 (the check file).
 
 ## Decision
 

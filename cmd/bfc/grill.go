@@ -44,11 +44,9 @@ func runPrimeGrill(cmd *cobra.Command, args []string) error {
 	return renderGrill(cmd.OutOrStdout(), gatherTopic(cmd, args, grillSkill))
 }
 
-// gatherTopic collects the skill at skill (the repository's copy wins) and
-// the plan named by args or the Current plan, with its Messages. Problems
-// become notes, like in bfc prime.
-func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
-	ctx := cmd.Context()
+// gatherSkill returns a topicView with only the skill at skill: the
+// repository's copy, else the one built into bfc.
+func gatherSkill(cmd *cobra.Command, skill string) topicView {
 	v := topicView{Skill: builtInSkill(skill)}
 	if root, err := openStore(cmd); err == nil {
 		v.root = root.Root()
@@ -56,6 +54,15 @@ func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
 			v.Skill = data
 		}
 	}
+	return v
+}
+
+// gatherTopic collects the skill at skill (the repository's copy wins) and
+// the plan named by args or the Current plan, with its Messages. Problems
+// become notes, like in bfc prime.
+func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
+	ctx := cmd.Context()
+	v := gatherSkill(cmd, skill)
 	s, setup := openPrime(cmd)
 	if setup != "" {
 		v.Note = setup
@@ -107,7 +114,12 @@ func renderGrill(w io.Writer, v topicView) error {
 func writeTopicHead(b *strings.Builder, v topicView, topic string) bool {
 	b.WriteString(withoutFrontMatter(string(v.Skill)))
 	if v.Plan == nil {
-		fmt.Fprintf(b, "\n## Plan\n\n%s\n\nName the plan: `bfc prime %s <id>`; `bfc list` shows the plans.\n", v.Note, topic)
+		name := fmt.Sprintf("Name the plan: `bfc prime %s <id>`; `bfc list` shows the plans.", topic)
+		if topic == "check" {
+			// A pull request names its own plan.
+			name = "Find the pull request's plan with `bfc check find` (the steps above), then run `bfc prime check <id>`."
+		}
+		fmt.Fprintf(b, "\n## Plan\n\n%s\n\n%s\n", v.Note, name)
 		return false
 	}
 	which := "Plan"

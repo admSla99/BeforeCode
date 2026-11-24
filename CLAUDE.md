@@ -16,7 +16,7 @@ Do not reopen these without the maintainer asking. Details and reasons are in `d
 - The Current plan is bound to the branch by its Short ID (`bfc start`), fallback `bfc use` (ADR 0009). `bfc start` is the first command that changes the current branch, on the user's explicit request.
 - Gates (`submit`, `approve`, `request-changes`, `withdraw`, `close`, `done`) and `acknowledge` are for people and refuse to run inside an agent; a PreToolUse hook blocks edits unless the Current plan is `approved` or `in-progress` (ADR 0011).
 - Data format v2 (ADR 0013): Tasks `T-1`, `T-2`, … in `plan.md`; `claimed`, `released`, `completed` and `done` Events; Handoffs and plan check results as files. Two Claims on one Task: the earlier ULID wins. Upgrading a ref is the explicit `bfc migrate`.
-- The plan check runs Claude Code headless in GitHub Actions; `bfc check record` stores the result, the workflow labels and comments through `gh`, `bfc` never calls the GitHub API. Pull requests from forks are skipped (ADR 0014).
+- The plan check runs locally in Claude Code when a developer asks for it, following `bfc prime check`; `bfc check record` stores the result and `bfc push` sends it. Nothing is written to the pull request: Findings are seen in `bfc`, and `bfc` never calls the GitHub API (ADR 0015, which replaced the GitHub Actions run of ADR 0014).
 - The Grill is stored as Messages (ADR 0002 section 7). Skills ship in the binary like the templates; the repository's copy wins.
 - Identity is the git commit author. No signing or extra trust rules yet.
 - Apache-2.0.
