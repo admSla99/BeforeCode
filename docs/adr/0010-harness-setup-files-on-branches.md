@@ -26,4 +26,4 @@ This widens the rule of ADR 0001. On normal branches live `.beforecode/config.ya
 
 ## Amendment (2026-11-22, issue #99)
 
-`bfc setup github` (ADR 0014) writes `.github/workflows/bfc-plan-check.yml`, the plan check workflow. It lives on normal branches under the same rule: committed through a pull request, rewritten for the installed `bfc` on every run, never committed by `bfc` itself. A workflow that only some teammates have is no check, for the same reason as the hook.
+*Superseded by ADR 0015 (2026-11-24): the plan check runs in Claude Code, `bfc setup github` and the workflow were removed (#139).* `bfc setup github` (ADR 0014) wrote `.github/workflows/bfc-plan-check.yml`, the plan check workflow. It lives on normal branches under the same rule: committed through a pull request, rewritten for the installed `bfc` on every run, never committed by `bfc` itself. A workflow that only some teammates have is no check, for the same reason as the hook.

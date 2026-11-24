@@ -657,3 +657,14 @@ func TestDoctorReportsTheClaudeSetup(t *testing.T) {
 	writeFile(t, filepath.Join(repo, ".claude", "skills", "beforecode", "SKILL.md"), "an older skill\n")
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "claude skill", "differs from this bfc", "bfc setup claude")
 }
+
+// Issue #139: the plan check runs in Claude Code (ADR 0015), so a workflow
+// that an older bfc setup github wrote is left over; bfc doctor says to
+// delete it.
+func TestDoctorWarnsAboutALeftOverPlanCheckWorkflow(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	wantDoctor(t, mustBfc(t, dir, "doctor"), "skip", "github workflow", "no .github/workflows/bfc-plan-check.yml")
+	writeFile(t, filepath.Join(dir, ".github", "workflows", "bfc-plan-check.yml"), "name: Plan check\n")
+	wantDoctor(t, mustBfc(t, dir, "doctor"), "warn", "github workflow", "ADR 0015", "delete")
+}

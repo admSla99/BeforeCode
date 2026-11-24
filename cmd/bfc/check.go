@@ -88,7 +88,7 @@ stored check. Nothing is pushed; bfc push sends it.`,
 	return cmd
 }
 
-// checkResult is the JSON a plan check ends with (ADR 0014).
+// checkResult is the JSON a plan check ends with (ADR 0015).
 type checkResult struct {
 	Criteria   map[string]string `json:"criteria"`
 	OutOfScope []string          `json:"out_of_scope"`

@@ -31,7 +31,7 @@ func (d *dev) inbox() inboxed {
 
 // recordCheck runs bfc check record in the developer's clone for a pull
 // request, with the result in the testdata file on stdin, as the plan check
-// workflow does (ADR 0014), and pushes it. It returns the check's ULID.
+// agent does on request (ADR 0015), and pushes it. It returns the check's ULID.
 func (d *dev) recordCheck(short string, pr int, fixture string) string {
 	d.t.Helper()
 	data, err := os.ReadFile(filepath.Join("testdata", fixture))

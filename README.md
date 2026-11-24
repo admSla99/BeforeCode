@@ -2,7 +2,7 @@
 
 **Plan before code.** BeforeCode (`bfc`) is an open source terminal app where a team writes, challenges, approves and shares plans for AI coding agents. Agents then implement only against an approved plan.
 
-Status: early development; phase 2 of [docs/design.md](docs/design.md) is done. Plans can be written, shared, reviewed and approved from the command line and the TUI, and an Intent becomes a plan through a Grill with Claude Code, which implements an approved plan while a hook blocks edits without one (`bfc setup claude`). Phase 3, team collaboration and the plan check, is under way: the slices are in #21, the decisions in ADR 0013 and 0014.
+Status: early development; phase 2 of [docs/design.md](docs/design.md) is done. Plans can be written, shared, reviewed and approved from the command line and the TUI, and an Intent becomes a plan through a Grill with Claude Code, which implements an approved plan while a hook blocks edits without one (`bfc setup claude`). Phase 3, team collaboration and the plan check, is under way: the slices are in #21, the decisions in ADR 0013 and 0015.
 
 - Plans live in Git, in a hidden ref (`refs/beforecode/plans`), so they are shared with a plain `git push` and never touch your code branches.
 - Claude Code is the first supported agent harness. The design keeps the core independent of any one harness.
@@ -59,14 +59,7 @@ git push -u origin bfc-5v7x-payments-via-stripe   # once, so that others' bfc st
 bfc show                        # without an ID: the Current plan, the one named in the branch
 ```
 
-**Check pull requests against their plans.** With a released `bfc`:
-
-```
-bfc setup github                # writes .github/workflows/bfc-plan-check.yml; commit it through a pull request
-gh secret set ANTHROPIC_API_KEY # the plan check runs Claude Code in GitHub Actions
-```
-
-A pull request names its plan by the Short ID in its branch (as `bfc start` makes it) or a line `Plan: bfc-5v7x` in its description. Ask Claude Code to check a pull request against its plan ("check PR #42 against its plan"): it follows `bfc prime check` and stores the result in the Plans ref. Where the pull request departs from the plan, the plan author sees the Finding in `bfc`, in the Inbox; nothing is written to the pull request.
+**Check pull requests against their plans.** A pull request names its plan by the Short ID in its branch (as `bfc start` makes it) or a line `Plan: bfc-5v7x` in its description. Ask Claude Code to check a pull request against its plan ("check PR #42 against its plan"): it follows `bfc prime check` and stores the result in the Plans ref. Where the pull request departs from the plan, the plan author sees the Finding in `bfc`, in the Inbox; nothing is written to the pull request.
 
 **With Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved or in progress, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team. Then:
 
