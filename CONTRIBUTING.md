@@ -56,11 +56,7 @@ These skills are for developing BeforeCode. They are different from the skills B
 
 ## The plan check
 
-Every pull request also runs `.github/workflows/bfc-plan-check.yml` (ADR 0014). It finds the pull request's plan from the Short ID in the branch name (`bfc start` names branches that way) or a line `Plan: bfc-…` in the description. Claude Code then compares the diff with that plan's `plan.md`. The result is stored in the Plans ref, and when the pull request departs from the plan it gets the `plan-mismatch` label and a comment. The check warns; it never blocks merging. A pull request without a plan, or from a fork, is skipped with a note in the job summary.
-
-The check needs the `ANTHROPIC_API_KEY` repository secret; without it, a pull request that has a plan fails the job with a message saying so. To add it, a repository admin opens **Settings → Secrets and variables → Actions → New repository secret**, names it `ANTHROPIC_API_KEY` and pastes an Anthropic API key. With the GitHub CLI: `gh secret set ANTHROPIC_API_KEY --repo admSla99/BeforeCode`, which asks for the key.
-
-The check writes `format-version` 2 results, so the Plans ref must be migrated once with `bfc migrate` and `bfc push` before the first real check.
+Ask Claude Code to check your pull request against its plan ("check PR #42 against its plan"; ADR 0015). It finds the pull request's plan from the Short ID in the branch name (`bfc start` names branches that way) or a line `Plan: bfc-…` in the description, compares the diff with that plan's `plan.md` as `bfc prime check` tells it, and stores the result in the Plans ref with `bfc check record` and `bfc push`. Findings show up in `bfc`, in the plan author's Inbox; nothing is written to the pull request, and no API key or repository secret is needed. The check warns; it never blocks merging.
 
 ## Working with git in code
 

@@ -22,7 +22,6 @@ import (
 	beforecode "github.com/admSla99/BeforeCode"
 	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/config"
-	"github.com/admSla99/BeforeCode/internal/github"
 	"github.com/admSla99/BeforeCode/internal/store"
 )
 
@@ -90,7 +89,7 @@ var checks = []check{
 	{name: "claude", run: checkClaude},
 	{name: "claude hook", run: checkClaudeHook},
 	{name: "claude skill", run: checkClaudeSkill},
-	{name: "github workflow", run: checkGithubWorkflow},
+	{name: "old plan check workflow", run: checkOldWorkflow},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -98,10 +97,10 @@ var checks = []check{
 // failed check that has a Repair: add the fetch refspec, pull the plans ref
 // when it is behind or diverged, rebuild the index, add a missing
 // format-version (ADR 0007). Without fix, the Fix of such a check names
-// bfc doctor --fix and what it would do. version is the version of this bfc.
+// bfc doctor --fix and what it would do.
 // vars are passed to store.Open as its extra environment.
-func Run(ctx context.Context, dir string, fix bool, version string, vars ...string) []Result {
-	e := &env{dir: dir, vars: vars, version: version}
+func Run(ctx context.Context, dir string, fix bool, vars ...string) []Result {
+	e := &env{dir: dir, vars: vars}
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
 		r := c.run(ctx, e)
@@ -149,11 +148,10 @@ type fixHint struct {
 
 // env is what the checks learn about the repository, shared between them.
 type env struct {
-	dir     string
-	vars    []string // extra environment of git, see store.Open
-	version string   // of this bfc
-	gitOK   bool
-	s       *store.Store // nil outside a repository
+	dir   string
+	vars  []string // extra environment of git, see store.Open
+	gitOK bool
+	s     *store.Store // nil outside a repository
 
 	cfg      config.Config
 	cfgFound bool
@@ -295,32 +293,25 @@ func checkClaude(_ context.Context, e *env) Result {
 	return pass("%s is %s", command, path)
 }
 
-// checkGithubWorkflow reports the plan check workflow (ADR 0014): a
-// warning when it is missing, changed by hand or written by another bfc.
-func checkGithubWorkflow(_ context.Context, e *env) Result {
-	if e.s == nil || !e.cfgFound {
-		return skip("needs " + config.Path)
+// oldWorkflowPath is where bfc setup github wrote the plan check workflow
+// before ADR 0015 moved the check into Claude Code.
+const oldWorkflowPath = ".github/workflows/bfc-plan-check.yml"
+
+// checkOldWorkflow warns about a plan check workflow left over from
+// ADR 0014: it would keep running on every pull request and fail without
+// its secret.
+func checkOldWorkflow(_ context.Context, e *env) Result {
+	if e.s == nil {
+		return skip("needs a git repository")
 	}
-	data, err := os.ReadFile(filepath.Join(e.s.Root(), filepath.FromSlash(github.WorkflowPath)))
-	if errors.Is(err, os.ErrNotExist) {
-		return warn("%s is missing, so pull requests are not checked against their plans; bfc setup github writes it", github.WorkflowPath)
+	_, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(oldWorkflowPath)))
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return pass("none")
+	case err != nil:
+		return warn("cannot read %s: %v", oldWorkflowPath, err)
 	}
-	if err != nil {
-		return warn("cannot read %s: %v", github.WorkflowPath, err)
-	}
-	switch state, wrote := github.Check(data, e.version); {
-	case state == github.ChangedByHand:
-		return warn("%s was changed by hand; bfc setup github shows how it differs from this bfc's", github.WorkflowPath)
-	case state == github.Source:
-		return pass("%s builds bfc from source", github.WorkflowPath)
-	case state == github.OtherBfc && !github.IsRelease(e.version):
-		// A dev build cannot write the workflow, so it has nothing to offer.
-		return pass("%s runs bfc %s; this bfc is a %s build", github.WorkflowPath, wrote, e.version)
-	case state == github.OtherBfc:
-		return warn("%s was written by bfc %s, this is %s; run bfc setup github to rewrite it", github.WorkflowPath, wrote, e.version)
-	default:
-		return pass("%s runs bfc %s", github.WorkflowPath, wrote)
-	}
+	return warn("%s is left over: the plan check runs in Claude Code when you ask for it (ADR 0015); delete the file through a pull request", oldWorkflowPath)
 }
 
 // checkSkills reports the repository's skills. A missing directory, or a

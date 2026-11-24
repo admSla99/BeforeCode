@@ -81,7 +81,7 @@ func CurrentPlan(branch string, used ulid.ULID, plans []PlanHandle) (Current, er
 // planLine is a line "Plan: bfc-…" in the description of a pull request.
 var planLine = regexp.MustCompile(`(?im)^\s*plan:\s*(bfc-[0-9a-z]{4,16})\s*$`)
 
-// PullRequestPlan returns the plan a pull request belongs to (ADR 0014):
+// PullRequestPlan returns the plan a pull request belongs to (ADR 0015):
 // the Short ID in its branch name, resolved like the Current plan's, else
 // the one in a "Plan: bfc-…" line of its description. found is false when
 // neither names a plan; a Short ID that names no plan, or several, is an

@@ -18,7 +18,6 @@ func newSetupCmd() *cobra.Command {
 		Short: "Set up a harness to work with bfc in this repository",
 		Args:  cobra.NoArgs,
 	}
-	setup.AddCommand(newSetupGithubCmd())
 	setup.AddCommand(&cobra.Command{
 		Use:   "claude",
 		Short: "Set up Claude Code: the beforecode skill, the edit hook and permissions",
