@@ -7,6 +7,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
@@ -71,6 +72,7 @@ func TestPrimeCheckOfAPlan(t *testing.T) {
 		"each `met`, `not-met` or `cannot-verify`",
 		`"out_of_scope": [`,
 		`"summary": `,
+		"`bfc check record bfc-5v7x --pr <n> --head <head sha> --base <base sha>`",
 	} {
 		if !strings.Contains(out, want) {
 			t.Errorf("missing %q", want)
@@ -176,5 +178,39 @@ func TestPrimeCheckStaysWithin8kB(t *testing.T) {
 	}
 	if !strings.Contains(out, "is cut here; run `bfc show bfc-5v7x` for all of it.") {
 		t.Errorf("no cut note")
+	}
+}
+
+// Issue #138 AC-2, AC-3: a request to check a pull request against its plan
+// leads the agent to bfc prime check, whose skill walks the whole local
+// run, from the pull request to bfc push.
+func TestTheLocalPlanCheckIsInTheInstructions(t *testing.T) {
+	t.Parallel()
+	for name, text := range map[string]string{
+		"bfc prime":        primeInstructions,
+		"beforecode skill": string(claude.Skill),
+	} {
+		if !strings.Contains(text, "against its plan") || !strings.Contains(text, "`bfc prime check`") {
+			t.Errorf("%s does not lead a plan check to bfc prime check:\n%s", name, text)
+		}
+	}
+	skill := readFile(t, filepath.Join(repoSkills, "plan-check", "SKILL.md"))
+	for _, want := range []string{"gh pr view", "git fetch origin", "bfc check find --branch", "--body-file -", "bfc prime check <id>", "bfc check record", "bfc push", "Inbox"} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("the plan-check skill lacks %q", want)
+		}
+	}
+}
+
+// Issue #138 AC-2: a pull request is checked against its own plan, so
+// without an ID bfc prime check asks for it instead of taking the Current
+// plan.
+func TestPrimeCheckWithoutIDNamesNoPlan(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	mustBfc(t, dir, "use", short)
+	out := mustBfc(t, dir, "prime", "check")
+	if strings.Contains(out, "## Current plan") || !strings.Contains(out, "bfc check find") || !strings.Contains(out, "bfc prime check <id>") {
+		t.Errorf("prime check without an ID:\n%s", out)
 	}
 }

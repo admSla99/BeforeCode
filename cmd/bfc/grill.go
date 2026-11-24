@@ -44,11 +44,9 @@ func runPrimeGrill(cmd *cobra.Command, args []string) error {
 	return renderGrill(cmd.OutOrStdout(), gatherTopic(cmd, args, grillSkill))
 }
 
-// gatherTopic collects the skill at skill (the repository's copy wins) and
-// the plan named by args or the Current plan, with its Messages. Problems
-// become notes, like in bfc prime.
-func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
-	ctx := cmd.Context()
+// gatherSkill returns a topicView with only the skill at skill: the
+// repository's copy, else the one built into bfc.
+func gatherSkill(cmd *cobra.Command, skill string) topicView {
 	v := topicView{Skill: builtInSkill(skill)}
 	if root, err := openStore(cmd); err == nil {
 		v.root = root.Root()
@@ -56,6 +54,15 @@ func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
 			v.Skill = data
 		}
 	}
+	return v
+}
+
+// gatherTopic collects the skill at skill (the repository's copy wins) and
+// the plan named by args or the Current plan, with its Messages. Problems
+// become notes, like in bfc prime.
+func gatherTopic(cmd *cobra.Command, args []string, skill string) topicView {
+	ctx := cmd.Context()
+	v := gatherSkill(cmd, skill)
 	s, setup := openPrime(cmd)
 	if setup != "" {
 		v.Note = setup

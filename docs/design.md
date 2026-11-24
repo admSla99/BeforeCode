@@ -22,7 +22,7 @@ Source: <https://claude.com/resources/articles/the-ai-native-sdlc-playbook> (21 
 Source: <https://until.dev>, <https://github.com/until-dev/plugins>. Closed source apart from an MIT plugin; early access.
 
 - Loop: Brainstorm, Plan, Submit, Run, Check. Rule: "No code until the Plan is agreed."
-- A plan check runs on each pull request and reports what is missing, changed, or out of scope. A difference is fixed in code, fixed in the plan, or acknowledged by a person.
+- A plan check, asked for in Claude Code, checks a pull request and reports what is missing, changed, or out of scope. A difference is fixed in code, fixed in the plan, or acknowledged by a person.
 - Approval is by another person; the author cannot approve their own plan and an agent cannot replace a human reviewer.
 - Enforcement through hooks in several harnesses (Claude Code, Codex, Cursor, OpenCode and others).
 
@@ -50,11 +50,11 @@ Plannotator (plan review UI with annotations fed back to the agent), GitHub Spec
 | Plan format | Two documents: a short `intent.md` and a `plan.md` for agents with acceptance criteria |
 | Approval | Configurable; one approver for now |
 | Identity | Git commit author. No signing or further rules yet |
-| Plan check | Claude Code headless in GitHub Actions on every push to a pull request; `bfc check record` stores the result in the plans ref. A Finding labels the pull request and appears in the plan author's Inbox. Pull requests from forks are skipped (ADR 0014) |
+| Plan check | Claude Code in a developer's clone, when they ask for it ("check PR #42 against its plan"); `bfc check record` stores the result in the plans ref. A Finding appears in `bfc` (`bfc show`, the plan author's Inbox), not on the pull request (ADR 0015) |
 | Agent interface | Agents use the `bfc` CLI with `--json`, like people and scripts; instructions come from the binary (`bfc prime`). No MCP server, no daemon (ADR 0008) |
 | Current plan | Bound to the branch by its Short ID (`bfc start`), fallback `bfc use` (ADR 0009) |
 | Gates | `submit`, `approve`, `request-changes`, `withdraw`, `close` and `done` are for people and refuse to run inside an agent, like `acknowledge`. A Claude Code hook blocks edits unless the Current plan is approved or in progress (ADR 0011) |
-| AI usage | Everyone uses their own local Claude Code or API key, including for the AI in discussions. The plan check in CI uses one shared key stored in repository secrets |
+| AI usage | Everyone uses their own local Claude Code or API key, including for the AI in discussions and the plan check. There is no shared key |
 | Users | Developers with read and write access to the repository. Clients also use the TUI; a web view comes later |
 | Notifications | In the TUI (Inbox, the start screen) only. Email later |
 | Sensitive data | Plans are readable by everyone with repository access. Acceptable for internal use |
@@ -229,16 +229,16 @@ Agents use the same `bfc` commands as people, with `--json` where they read (ADR
 
 **Skills ship in the binary** like the templates. `bfc init` writes them to `.beforecode/skills/`, and a Skill file in the repository wins over the built-in one.
 
-### Plan check in GitHub Actions
+### Plan check
 
-Details and the rejected alternatives in `docs/adr/0014-plan-check-in-github-actions.md`.
+Details and the rejected alternatives in `docs/adr/0015-plan-check-locally-on-request.md`, which replaced the GitHub Actions workflow of ADR 0014 (removed in #139).
 
-1. `bfc setup github` writes `.github/workflows/bfc-plan-check.yml`, which downloads the release `bfc` of the version that wrote it (`bfc_<version>_linux_amd64.tar.gz`, checked against the release's `checksums.txt`; a `dev` build refuses, issue #104). Its first line names that version and a hash of the rest: running it again rewrites the file for the installed `bfc`, while a file changed by hand is kept, with the difference shown, unless `--force`. It prints the next steps: commit the file through a pull request and add the secret. It is committed through a pull request (ADR 0010) and needs the `ANTHROPIC_API_KEY` repository secret. BeforeCode's own workflow comes from the same template (`internal/github`) and builds `bfc` from the pull request instead; a test keeps the two in step.
-2. Opening a pull request, every later push and every edit of its description run the workflow. It fetches the plans ref (`bfc bootstrap`; a repository without one is skipped with a notice) and finds the plan with `bfc check find --branch <head ref> --body-file <file> --json`: the Short ID in the branch name (ADR 0009), else a `Plan: bfc-a1b2` line in the description (issue #103). It prints `{"found": false}` or the plan's `id`, `short_id`, `title` and `state`; a Short ID that names no plan is an error. Without a plan it leaves a notice in the job summary and stops. Pull requests from forks are skipped with a notice (#29).
-3. Claude Code runs headless, prompted with `bfc prime check <id>` (the `plan-check` Skill and the plan), allowed only to read and to run `git diff`, `git log`, `bfc show` and `bfc prime`. It reports each acceptance criterion as met, not met, or cannot verify, lists out-of-scope changes, and ends with the result as JSON. While it runs, the job's token is in neither the environment nor `.git/config`, edit tools are denied, and the job fails without storing anything when the checkout changed or the reply contains the API key; `bfc`'s own git calls after it run without git hooks.
-4. `bfc check record <id> --pr <n> --head <sha> --base <sha> [--json]` reads the result on stdin, as the JSON object itself or as the agent's whole reply, whose last `json` fence holds it (`{"criteria": {"AC-1": "met", …}, "out_of_scope": ["…"], "summary": "<markdown>"}`), refuses it with every problem when it leaves out an acceptance criterion of the current `plan.md`, names one that is not there, or uses a status other than `met`, `not-met` and `cannot-verify`, and otherwise writes `checks/<ulid>.md` with the `plan_blob` of the current `plan.md` in one commit (ADR 0013). It prints the ULID, or with `--json` the stored check (the shape of `checks` in `bfc show --json`, without `stale`). A closed plan takes no checks. `bfc push` sends it. With a Finding the workflow adds the label `plan-mismatch` and one summary comment through `gh`, updated in place by later runs; `bfc` never calls the GitHub API. A plan that is not approved is still checked, and the comment says so.
-5. After the next sync the plan author sees the Finding in the Inbox. They fix the code (the next push runs a new check), update the plan, or acknowledge the difference with `bfc acknowledge <check-ULID> [-m <reason>]` (the reason from stdin without `-m`): a Message with `ref: checks/<ULID>` in the plan that holds the check, found by the ULID alone, which stays in the Discussion. Its Findings no longer wait on anyone; a newer check of the same pull request needs its own Acknowledgement. Like the Gates it refuses inside an agent and `bfc setup claude` denies it (issue #105). `bfc ask --ref checks/<ULID>` asks about a check.
-6. With no Findings the workflow removes the label. The check warns; it does not block the pull request yet.
+1. A developer asks Claude Code to check a pull request against its plan, in their own words. The `beforecode` skill and `bfc prime` point the agent to `bfc prime check`, which without an ID prints the `plan-check` Skill and asks for the plan rather than taking the Current plan: a pull request is checked against its own plan (issue #138).
+2. The agent reads the pull request with `gh pr view` (head branch and commit, base branch and commit, description), fetches its commits with `git fetch origin <base> pull/<n>/head`, and finds the plan with `bfc check find --branch <head ref> --body-file -` (the description on stdin): the Short ID in the branch name (ADR 0009), else a `Plan: bfc-a1b2` line in the description (issue #103). It prints the Short ID, or with `--json` `{"found": false}` or the plan's `id`, `short_id`, `title` and `state`; a Short ID that names no plan is an error. Without a plan the agent tells the user and stops. It never comments on or labels the pull request.
+3. `bfc prime check <id>` prints the Skill and the plan: its acceptance criteria, its `## Out of scope` and `plan.md`, then the result JSON and the `bfc check record` command to pipe it into. The agent judges the diff `<base>...<head>`: each acceptance criterion met, not met, or cannot verify, plus the out-of-scope changes, and a Markdown summary.
+4. `bfc check record <id> --pr <n> --head <sha> --base <sha> [--json]` reads the result on stdin, as the JSON object itself or as a reply whose last `json` fence holds it (`{"criteria": {"AC-1": "met", …}, "out_of_scope": ["…"], "summary": "<markdown>"}`), refuses it with every problem when it leaves out an acceptance criterion of the current `plan.md`, names one that is not there, or uses a status other than `met`, `not-met` and `cannot-verify`, and otherwise writes `checks/<ulid>.md` with the `plan_blob` of the current `plan.md` in one commit (ADR 0013). Its author is the git author of the clone, with `agent` set. It prints the ULID, or with `--json` the stored check (the shape of `checks` in `bfc show --json`, without `stale`). A closed plan takes no checks. The agent runs `bfc push` and reports the summary and the ULID to the user. `bfc setup claude` allows agents `bfc check`.
+5. After the next sync the plan author sees the Finding in the Inbox. They fix the code (and ask for a new check), update the plan, or acknowledge the difference with `bfc acknowledge <check-ULID> [-m <reason>]` (the reason from stdin without `-m`): a Message with `ref: checks/<ULID>` in the plan that holds the check, found by the ULID alone, which stays in the Discussion. Its Findings no longer wait on anyone; a newer check of the same pull request needs its own Acknowledgement. Like the Gates it refuses inside an agent and `bfc setup claude` denies it (issue #105). `bfc ask --ref checks/<ULID>` asks about a check.
+6. The check warns; it does not block the pull request.
 
 ## 4. Storage: Git is the database
 
@@ -275,7 +275,7 @@ plans/
     events/01JD3M….yaml         # created, submitted, withdrawn, approved, changes-requested, closed; v2: claimed, released, completed, done
     messages/01JD3N….md         # one message per file; questions, answers and threads
     handoff/01JD3Q….md          # v2: the holder's note when a Task is released or completed
-    checks/01JD3R….md           # v2: plan check result from GitHub Actions
+    checks/01JD3R….md           # v2: plan check result (bfc check record)
 ```
 
 ### Why this shape
@@ -348,7 +348,6 @@ flowchart TB
     end
 
     remote[("GitHub remote<br/>refs/beforecode/plans<br/>source of truth for the team")]
-    ci["GitHub Actions<br/>plan check with Claude Code"]
 
     dev --> tui
     rev --> tui
@@ -360,8 +359,7 @@ flowchart TB
     core --> index
     core --> skills
     store <-->|"push · fetch"| remote
-    ci -->|"reads plan, writes check result"| remote
-    ci -->|"label + comment"| pr["Pull request"]
+    agents -.->|"reads (plan check on request)"| pr["Pull request"]
 ```
 
 Everything inside the `bfc` box runs locally for each team member; team members meet only through the GitHub remote. A sync server and a web view can be added later without changing the core.
@@ -372,7 +370,7 @@ Everything inside the `bfc` box runs locally for each team member; team members 
 2. **Grill**: in the TUI the core loads a Skill and starts Claude Code headless through the agent adapter; in Claude Code the developer asks for a grill and the agent follows `bfc prime grill <id>`. Either way each Question and answer is stored as a Message with `bfc ask` and `bfc reply`. The agent then writes `plan.md` through `bfc edit --stdin`, following `bfc prime plan <id>`.
 3. **Review**: after sync a colleague sees the plan, comments, asks questions, and approves. The approval is an event carrying their name. Gates are taken by people only.
 4. **Build**: the developer runs `bfc start <id>` and Claude Code in that branch. The agent runs `bfc prime` when the user talks about the plan and reads it with `bfc show --json`, and a hook blocks edits unless the Current plan is `approved` or `in-progress` (issue #110): the agent claims a Task with `bfc claim`, which makes the plan `in-progress`, and the agent leaves a Handoff with `bfc handoff`. The Build screen, which starts agents on claimed Tasks in worktrees, comes in phase 4.
-5. **Check**: GitHub Actions compares the pull request with the plan, stores the result in the plans ref with `bfc check record`, and reports Findings to the pull request and, after sync, the plan author's Inbox.
+5. **Check**: asked in Claude Code, the agent compares the pull request with the plan (`bfc prime check`), stores the result in the plans ref with `bfc check record`, and the plan author sees the Findings in the Inbox after sync (ADR 0015).
 
 ### Agent adapter interface
 
@@ -412,7 +410,7 @@ Each phase ends in a usable version with a clear exit criterion. Phases 0 to 2 a
 | **0. Foundations and GitHub verification** | Go module, package layout, CI, license, contribution docs, skills in the repo. Spike: hidden ref on real GitHub (push, fetch, concurrent write, read and write from Actions). ADR for data format v1 | CI is green and the spike confirms the hidden ref works on GitHub |
 | **1. Plans in the hidden ref, no AI (MVP)** | `bfc init`, `bootstrap`, `new`, `list`, `show`, `edit`, `submit`, `approve`, `push`, `pull`, `doctor`. `intent.md` and `plan.md`, state from events, short IDs, SQLite index, TUI list and detail | Two people on two machines create, edit and approve a plan through GitHub without conflicts |
 | **2. Claude Code integration** | Decisions in ADR 0008 to 0012. The Current plan (`bfc start`, `bfc use`), Gates for people, `bfc ask` and `bfc reply`, the agent adapter for Claude Code headless, `bfc prime` and `bfc show --json`, `bfc hook pre-tool-use`, `bfc setup claude`, the `beforecode` skill, skills in the binary with `bfc prime grill`, `bfc edit --stdin` with `bfc prime plan`, the TUI Grill screen | A developer goes from an Intent through a Grill in the TUI to an approved plan, and Claude Code set up with `bfc setup claude` implements it while the hook blocks edits without an approved plan |
-| **3. Team collaboration and plan check** | Decisions in ADR 0013 and 0014 (#99). Data format v2 and `bfc migrate`. The plan check: `bfc check record`, the `plan-check` Skill, the workflow and `bfc setup github`, `bfc acknowledge`, the Inbox. Tasks, `bfc ready`, `bfc claim`, `bfc handoff`, `bfc done`, the hook in `in-progress`. The Discussion in the plan detail, AI in Threads, `bfc ask --wait`, `bfc export`. Questions with addressees and configurable approval were done in phase 2 | A pull request outside the plan gets the label and the plan author sees the finding in the Inbox |
+| **3. Team collaboration and plan check** | Decisions in ADR 0013, 0014 and 0015 (#99, #138). Data format v2 and `bfc migrate`. The plan check: `bfc check record`, the `plan-check` Skill, the workflow and `bfc setup github`, `bfc acknowledge`, the Inbox. Tasks, `bfc ready`, `bfc claim`, `bfc handoff`, `bfc done`, the hook in `in-progress`. The Discussion in the plan detail, AI in Threads, `bfc ask --wait`, `bfc export`. Questions with addressees and configurable approval were done in phase 2 | A pull request outside the plan, checked in Claude Code on request, gives a Finding that the plan author sees in the Inbox |
 | **4. Harness independence** | Adapters for Codex, OpenCode, Gemini CLI and a generic adapter over ACP. Export of rules to `AGENTS.md`. The Build screen and worktrees (moved from phase 3) | The same plan is implemented by at least one other harness without changing the plan |
 | **5. Notifications and learning from the loop** | Email notifications. Archive of finished plans, metrics, proposed skill changes from recurring findings | A reviewer gets an email and a plan retro proposes a skill change |
 | **6. Web and server (later)** | Web view for clients, realtime chat, stricter identity, GitLab, multiple repositories | A client without the TUI answers a question on a plan |
@@ -421,7 +419,7 @@ The plan check part of phase 3 is implemented: `bfc check record`, `bfc prime ch
 
 ## 8. Open points
 
-- **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, so the plan check cannot write its result or label the pull request. Not needed while all users have write access; the plan check skips pull requests from forks with a notice (ADR 0014). Revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
+- **Forks.** Whether a GitHub fork carries the plans ref is not verified, and on pull requests from forks `GITHUB_TOKEN` is read-only, which matters for writing to the plans ref from a fork. Not needed while all users have write access; the plan check runs in a clone with write access, so forks do not affect it (ADR 0015). Revisit before accepting outside contributions through `bfc`. See ADR 0001 and #29.
 - **Exact `plan.md` template.** The v1 template is in `.beforecode/templates/` (ADR 0002); refined on the first real plan.
 - **MCP.** Dropped as the agent interface (ADR 0008). Revisit in phase 4 only if a harness cannot run shell commands.
 - **Task dependencies.** Tasks are an ordered list without dependencies (ADR 0013). Revisit if real plans need parallel tracks.

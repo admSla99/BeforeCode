@@ -261,3 +261,20 @@ func TestCheckFindNamesThePlanOfAPullRequest(t *testing.T) {
 		t.Errorf("a branch that names no plan: %s", out)
 	}
 }
+
+// Issue #138 AC-4: the agent pipes the description of the pull request
+// from gh pr view into bfc check find, and may run bfc check without asking.
+func TestCheckFindReadsTheDescriptionFromStdin(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	out, err := bfcStdin(t, dir, "Fixes the checkout.\n\nPlan: "+short+"\n", "check", "find", "--branch", "fix-checkout", "--body-file", "-")
+	if err != nil || strings.TrimSpace(out) != short {
+		t.Errorf("from stdin: %v\n%s", err, out)
+	}
+
+	mustBfc(t, dir, "setup", "claude")
+	settings := readFile(t, filepath.Join(dir, ".claude", "settings.json"))
+	if !strings.Contains(settings, `"Bash(bfc check:*)"`) {
+		t.Errorf("settings do not allow bfc check:\n%s", settings)
+	}
+}
