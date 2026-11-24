@@ -66,7 +66,7 @@ bfc setup github                # writes .github/workflows/bfc-plan-check.yml; c
 gh secret set ANTHROPIC_API_KEY # the plan check runs Claude Code in GitHub Actions
 ```
 
-A pull request names its plan by the Short ID in its branch (as `bfc start` makes it) or a line `Plan: bfc-5v7x` in its description. When it departs from the plan it gets the `plan-mismatch` label and a comment, and the plan author sees the Finding in the Inbox.
+A pull request names its plan by the Short ID in its branch (as `bfc start` makes it) or a line `Plan: bfc-5v7x` in its description. Ask Claude Code to check a pull request against its plan ("check PR #42 against its plan"): it follows `bfc prime check` and stores the result in the Plans ref. Where the pull request departs from the plan, the plan author sees the Finding in `bfc`, in the Inbox; nothing is written to the pull request.
 
 **With Claude Code.** `bfc setup claude` writes `.claude/settings.json` (a hook that blocks edits unless the Current plan is approved or in progress, and permissions that let Claude Code run `bfc` but not the Gates) and the `beforecode` skill, which sends Claude Code to `bfc prime` whenever you talk about plans. Commit `.claude` through a pull request so it reaches the whole team. Then:
 

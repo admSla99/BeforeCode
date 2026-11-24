@@ -195,7 +195,7 @@ func TestTheLocalPlanCheckIsInTheInstructions(t *testing.T) {
 		}
 	}
 	skill := readFile(t, filepath.Join(repoSkills, "plan-check", "SKILL.md"))
-	for _, want := range []string{"gh pr view", "git fetch origin", "bfc check find --branch", "--body-file -", "bfc prime check <id>", "bfc check record", "bfc push", "Inbox"} {
+	for _, want := range []string{"gh pr view", "git fetch origin", "bfc pull", "bfc check find --branch", "--body-file -", "bfc prime check <id>", "bfc check record", "<<'EOF'", "bfc push", "Inbox", "gh pr comment"} {
 		if !strings.Contains(skill, want) {
 			t.Errorf("the plan-check skill lacks %q", want)
 		}
@@ -210,7 +210,18 @@ func TestPrimeCheckWithoutIDNamesNoPlan(t *testing.T) {
 	dir, short, _ := draftWithPlan(t)
 	mustBfc(t, dir, "use", short)
 	out := mustBfc(t, dir, "prime", "check")
-	if strings.Contains(out, "## Current plan") || !strings.Contains(out, "bfc check find") || !strings.Contains(out, "bfc prime check <id>") {
+	if strings.Contains(out, "## Current plan") || strings.Contains(out, "bfc list") || !strings.Contains(out, "bfc check find") || !strings.Contains(out, "bfc prime check <id>") {
 		t.Errorf("prime check without an ID:\n%s", out)
+	}
+}
+
+// Issue #138: without the Plans ref, bfc prime check without an ID still
+// says how to get them, before the agent runs bfc check find.
+func TestPrimeCheckWithoutIDKeepsTheSetupNote(t *testing.T) {
+	t.Parallel()
+	dir := t.TempDir()
+	gitIn(t, dir, "init", "-q")
+	if out := mustBfc(t, dir, "prime", "check"); !strings.Contains(out, "bfc init") && !strings.Contains(out, "bfc bootstrap") {
+		t.Errorf("no setup note:\n%s", out)
 	}
 }

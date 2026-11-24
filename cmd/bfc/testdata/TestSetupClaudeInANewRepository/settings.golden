@@ -25,6 +25,7 @@
       "Bash(bfc claim:*)",
       "Bash(bfc handoff:*)",
       "Bash(bfc push:*)",
+      "Bash(bfc pull:*)",
       "Bash(bfc wait:*)",
       "Bash(bfc check:*)"
     ],

@@ -263,7 +263,7 @@ func TestCheckFindNamesThePlanOfAPullRequest(t *testing.T) {
 }
 
 // Issue #138 AC-4: the agent pipes the description of the pull request
-// from gh pr view into bfc check find, and may run bfc check without asking.
+// from gh pr view into bfc check find.
 func TestCheckFindReadsTheDescriptionFromStdin(t *testing.T) {
 	t.Parallel()
 	dir, short, _ := draftWithPlan(t)
@@ -271,10 +271,17 @@ func TestCheckFindReadsTheDescriptionFromStdin(t *testing.T) {
 	if err != nil || strings.TrimSpace(out) != short {
 		t.Errorf("from stdin: %v\n%s", err, out)
 	}
+}
 
+// Issue #138 AC-4: an agent runs the plan check's commands without asking.
+func TestAgentsMayRunThePlanCheck(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
 	mustBfc(t, dir, "setup", "claude")
 	settings := readFile(t, filepath.Join(dir, ".claude", "settings.json"))
-	if !strings.Contains(settings, `"Bash(bfc check:*)"`) {
-		t.Errorf("settings do not allow bfc check:\n%s", settings)
+	for _, want := range []string{`"Bash(bfc check:*)"`, `"Bash(bfc pull:*)"`} {
+		if !strings.Contains(settings, want) {
+			t.Errorf("settings do not allow %s:\n%s", want, settings)
+		}
 	}
 }

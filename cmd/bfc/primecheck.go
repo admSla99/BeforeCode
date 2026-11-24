@@ -28,7 +28,10 @@ func runPrimeCheck(cmd *cobra.Command, args []string) error {
 		// A pull request is checked against its own plan, never the
 		// Current plan by accident.
 		v := gatherSkill(cmd, checkSkill)
-		v.Note = "Find the pull request's plan with `bfc check find` (the steps above), then run `bfc prime check <id>`."
+		v.Note = "No plan is named: a pull request is checked against its own plan."
+		if _, setup := openPrime(cmd); setup != "" {
+			v.Note = setup
+		}
 		return renderCheckTopic(cmd.OutOrStdout(), v)
 	}
 	return renderCheckTopic(cmd.OutOrStdout(), gatherTopic(cmd, args, checkSkill))
@@ -72,7 +75,7 @@ func renderCheckTopic(w io.Writer, v topicView) error {
 // as bfc check record reads it.
 func resultShape(shortID string, criteria []core.Criterion) string {
 	var b strings.Builder
-	fmt.Fprintf(&b, "\n### Result\n\nPipe this JSON object into `bfc check record %s --pr <n> --head <head sha> --base <base sha>`. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.\n\n```json\n{\n  \"criteria\": {", shortID)
+	fmt.Fprintf(&b, "\n### Result\n\nGive this JSON object on stdin to `bfc check record %s --pr <n> --head <head sha> --base <base sha>`. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.\n\n```json\n{\n  \"criteria\": {", shortID)
 	for i, c := range criteria {
 		if i > 0 {
 			b.WriteString(",")

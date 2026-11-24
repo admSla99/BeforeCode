@@ -48,7 +48,7 @@ Refunds and currencies other than EUR.
 
 ### Result
 
-Pipe this JSON object into `bfc check record bfc-5v7x --pr <n> --head <head sha> --base <base sha>`. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
+Give this JSON object on stdin to `bfc check record bfc-5v7x --pr <n> --head <head sha> --base <base sha>`. Give every criterion above once, each `met`, `not-met` or `cannot-verify`; `out_of_scope` is `[]` when there are none.
 
 ```json
 {

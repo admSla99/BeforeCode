@@ -107,3 +107,14 @@ func TestDoctorCoversThePlanCheckSkill(t *testing.T) {
 	}
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "skills", "plan-check is missing", "built into bfc", "bfc init")
 }
+
+// Issue #138: a repository set up before ADR 0015 keeps the plan-check
+// skill of the GitHub Actions run, which wins over the built-in one; bfc
+// doctor says so and how to take the new one.
+func TestDoctorWarnsAboutAPlanCheckSkillFromBeforeTheLocalRun(t *testing.T) {
+	t.Parallel()
+	repo := newLocalRepo(t)
+	writeFile(t, filepath.Join(repo, ".beforecode", "skills", "plan-check", "SKILL.md"),
+		"---\nname: plan-check\n---\n\nEnd with the result in a json fence.\n")
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "skills", "plan-check", "bfc check record", "delete")
+}

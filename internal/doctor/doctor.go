@@ -7,6 +7,7 @@
 package doctor
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -353,6 +354,13 @@ func checkSkills(_ context.Context, e *env) Result {
 	if len(missing) > 0 {
 		return warn("%s is missing from %s, so the one built into bfc is used; bfc init writes it, then commit %s",
 			strings.Join(missing, ", "), beforecode.SkillsDir, beforecode.SkillsDir)
+	}
+	// The repository's copy wins over the built-in one, so a plan-check
+	// skill written for the GitHub Actions run (before ADR 0015) would
+	// leave the local check without its last steps.
+	if data, err := os.ReadFile(filepath.Join(dir, "plan-check", "SKILL.md")); err == nil && !bytes.Contains(data, []byte("bfc check record")) {
+		return warn("%s/plan-check/SKILL.md is from before the local plan check (ADR 0015) and never stores the result with bfc check record; delete it to use the one built into bfc (bfc init writes it again), then commit %s",
+			beforecode.SkillsDir, beforecode.SkillsDir)
 	}
 	return pass("%s: %s", beforecode.SkillsDir, strings.Join(names, ", "))
 }

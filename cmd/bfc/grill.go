@@ -114,7 +114,12 @@ func renderGrill(w io.Writer, v topicView) error {
 func writeTopicHead(b *strings.Builder, v topicView, topic string) bool {
 	b.WriteString(withoutFrontMatter(string(v.Skill)))
 	if v.Plan == nil {
-		fmt.Fprintf(b, "\n## Plan\n\n%s\n\nName the plan: `bfc prime %s <id>`; `bfc list` shows the plans.\n", v.Note, topic)
+		name := fmt.Sprintf("Name the plan: `bfc prime %s <id>`; `bfc list` shows the plans.", topic)
+		if topic == "check" {
+			// A pull request names its own plan.
+			name = "Find the pull request's plan with `bfc check find` (the steps above), then run `bfc prime check <id>`."
+		}
+		fmt.Fprintf(b, "\n## Plan\n\n%s\n\n%s\n", v.Note, name)
 		return false
 	}
 	which := "Plan"
