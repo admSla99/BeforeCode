@@ -10,7 +10,6 @@ import (
 // subcommand prints usage.
 func newRootCmd(version string) *cobra.Command {
 	root := &cobra.Command{
-		Annotations:  map[string]string{versionAnnotation: version},
 		Use:          "bfc",
 		Short:        "Plan before code: write, grill, approve and share plans for AI coding agents",
 		SilenceUsage: true,
@@ -30,15 +29,6 @@ func newRootCmd(version string) *cobra.Command {
 		newSearchCmd(), newBootstrapCmd(), newPullCmd(), newPushCmd(), newSyncCmd(), newDoctorCmd(), newMigrateCmd(), newCheckCmd(), newAcknowledgeCmd(), newInboxCmd(), newReadyCmd(), newClaimCmd(), newHandoffCmd(), newCloseCmd(), newDoneCmd(), newExportCmd(), newHookCmd(), newSetupCmd(), newTUICmd())
 	guardGates(root) // the Gates are for people (ADR 0011)
 	return root
-}
-
-// versionAnnotation holds the version of bfc on the root command, for the
-// commands that need it.
-const versionAnnotation = "bfc-version"
-
-// bfcVersion is the version of this bfc, "dev" for a build without one.
-func bfcVersion(cmd *cobra.Command) string {
-	return cmd.Root().Annotations[versionAnnotation]
 }
 
 func newVersionCmd(version string) *cobra.Command {

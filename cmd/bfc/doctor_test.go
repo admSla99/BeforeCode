@@ -664,7 +664,7 @@ func TestDoctorReportsTheClaudeSetup(t *testing.T) {
 func TestDoctorWarnsAboutALeftOverPlanCheckWorkflow(t *testing.T) {
 	t.Parallel()
 	dir := newLocalRepo(t)
-	wantDoctor(t, mustBfc(t, dir, "doctor"), "skip", "github workflow", "no .github/workflows/bfc-plan-check.yml")
+	wantDoctor(t, mustBfc(t, dir, "doctor"), "ok", "old plan check workflow", "none")
 	writeFile(t, filepath.Join(dir, ".github", "workflows", "bfc-plan-check.yml"), "name: Plan check\n")
-	wantDoctor(t, mustBfc(t, dir, "doctor"), "warn", "github workflow", "ADR 0015", "delete")
+	wantDoctor(t, mustBfc(t, dir, "doctor"), "warn", "old plan check workflow", "ADR 0015", "delete")
 }

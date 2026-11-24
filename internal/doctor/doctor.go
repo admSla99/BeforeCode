@@ -89,7 +89,7 @@ var checks = []check{
 	{name: "claude", run: checkClaude},
 	{name: "claude hook", run: checkClaudeHook},
 	{name: "claude skill", run: checkClaudeSkill},
-	{name: "github workflow", run: checkGithubWorkflow},
+	{name: "old plan check workflow", run: checkOldWorkflow},
 }
 
 // Run checks the setup of the repository around dir and returns one Result
@@ -97,10 +97,10 @@ var checks = []check{
 // failed check that has a Repair: add the fetch refspec, pull the plans ref
 // when it is behind or diverged, rebuild the index, add a missing
 // format-version (ADR 0007). Without fix, the Fix of such a check names
-// bfc doctor --fix and what it would do. version is the version of this bfc.
+// bfc doctor --fix and what it would do.
 // vars are passed to store.Open as its extra environment.
-func Run(ctx context.Context, dir string, fix bool, version string, vars ...string) []Result {
-	e := &env{dir: dir, vars: vars, version: version}
+func Run(ctx context.Context, dir string, fix bool, vars ...string) []Result {
+	e := &env{dir: dir, vars: vars}
 	results := make([]Result, 0, len(checks))
 	for _, c := range checks {
 		r := c.run(ctx, e)
@@ -148,11 +148,10 @@ type fixHint struct {
 
 // env is what the checks learn about the repository, shared between them.
 type env struct {
-	dir     string
-	vars    []string // extra environment of git, see store.Open
-	version string   // of this bfc
-	gitOK   bool
-	s       *store.Store // nil outside a repository
+	dir   string
+	vars  []string // extra environment of git, see store.Open
+	gitOK bool
+	s     *store.Store // nil outside a repository
 
 	cfg      config.Config
 	cfgFound bool
@@ -298,16 +297,19 @@ func checkClaude(_ context.Context, e *env) Result {
 // before ADR 0015 moved the check into Claude Code.
 const oldWorkflowPath = ".github/workflows/bfc-plan-check.yml"
 
-// checkGithubWorkflow warns about a plan check workflow left over from
+// checkOldWorkflow warns about a plan check workflow left over from
 // ADR 0014: it would keep running on every pull request and fail without
 // its secret.
-func checkGithubWorkflow(_ context.Context, e *env) Result {
+func checkOldWorkflow(_ context.Context, e *env) Result {
 	if e.s == nil {
 		return skip("needs a git repository")
 	}
 	_, err := os.Stat(filepath.Join(e.s.Root(), filepath.FromSlash(oldWorkflowPath)))
-	if errors.Is(err, os.ErrNotExist) {
-		return skip("no " + oldWorkflowPath)
+	switch {
+	case errors.Is(err, os.ErrNotExist):
+		return pass("none")
+	case err != nil:
+		return warn("cannot read %s: %v", oldWorkflowPath, err)
 	}
 	return warn("%s is left over: the plan check runs in Claude Code when you ask for it (ADR 0015); delete the file through a pull request", oldWorkflowPath)
 }
