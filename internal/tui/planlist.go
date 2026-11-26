@@ -99,8 +99,19 @@ func (m PlanList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(msg.Width)
 	case plansLoadedMsg:
+		var selected string
+		if v := m.visible(); m.cursor < len(v) {
+			selected = v[m.cursor].ShortID
+		}
 		m.all, m.loadErr, m.loaded = msg.plans, msg.err, true
-		m.cursor = min(m.cursor, max(len(m.visible())-1, 0))
+		v := m.visible()
+		m.cursor = min(m.cursor, max(len(v)-1, 0))
+		// Keep the selected plan when it is still shown.
+		for i, p := range v {
+			if p.ShortID == selected {
+				m.cursor = i
+			}
+		}
 	case PlanCreatedMsg:
 		m.status = ""
 		if msg.Err != nil {

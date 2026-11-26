@@ -203,3 +203,44 @@ func runAll(cmd tea.Cmd) []tea.Msg {
 	}
 	return msgs
 }
+
+// bfc-z3wd AC-7: a plan that appears above the selected one keeps the same
+// plan selected.
+func TestAppKeepsTheSelectedPlanWhenOneAppearsAbove(t *testing.T) {
+	t.Parallel()
+	f := newFakeTeam()
+	app := NewApp(f, f, watching(f, true))
+	app.now = func() time.Time { return t0 }
+	tm := newTestModel(t, app, 80, 24)
+	toPlanList(t, tm)
+	send(tm, "j", "j")
+	waitFor(t, tm, "▶ Rate-limit the public API")
+	f.outside(func() {
+		f.plans.plans = append([]PlanRow{{ShortID: "bfc-w4tc", State: core.StateInReview, Title: "Written by the agent", Author: "ada@example.com", LastActivity: at(18, 0)}}, f.plans.plans...)
+	})
+	waitFor(t, tm, "Written by the agent")
+	if out := screen(t, tm); !strings.Contains(out, "▶ Rate-limit the public API") {
+		t.Errorf("the selection moved to another plan:\n%s", out)
+	}
+}
+
+// bfc-z3wd AC-7: an Inbox item that appears above the selected one keeps
+// the same item selected.
+func TestInboxKeepsTheSelectedItemWhenOneAppearsAbove(t *testing.T) {
+	t.Parallel()
+	f := newFakeTeam()
+	f.plans.waiting = waitingOnAda()
+	app := NewApp(f, f, watching(f, true))
+	app.now = func() time.Time { return t0 }
+	tm := newTestModel(t, app, 80, 24)
+	waitFor(t, tm, "Questions (1)")
+	send(tm, "j", "j")
+	waitFor(t, tm, "▶ bfc-k2m9")
+	f.outside(func() {
+		f.plans.waiting.Reviews = append([]core.PlanRef{{ShortID: "bfc-w4tc", Title: "Written by the agent"}}, f.plans.waiting.Reviews...)
+	})
+	waitFor(t, tm, "Reviews (2)")
+	if out := screen(t, tm); !strings.Contains(out, "▶ bfc-k2m9") {
+		t.Errorf("the selection moved to another item:\n%s", out)
+	}
+}

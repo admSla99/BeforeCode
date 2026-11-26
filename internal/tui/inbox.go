@@ -58,6 +58,7 @@ func (m Inbox) Init() tea.Cmd { return m.load }
 
 // inboxItem is one line of the Inbox that Enter can open.
 type inboxItem struct {
+	key     string // names the item across loads
 	shortID string
 	line    string
 }
@@ -69,14 +70,15 @@ func (m Inbox) sections() []struct {
 } {
 	var findings, reviews, questions []inboxItem
 	for _, f := range m.waiting.Findings {
-		findings = append(findings, inboxItem{f.ShortID, fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, f.Finding.Text())})
+		line := fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, f.Finding.Text())
+		findings = append(findings, inboxItem{"finding " + line, f.ShortID, line})
 	}
 	for _, r := range m.waiting.Reviews {
-		reviews = append(reviews, inboxItem{r.ShortID, r.ShortID + "  " + r.Title})
+		reviews = append(reviews, inboxItem{"review " + r.ShortID, r.ShortID, r.ShortID + "  " + r.Title})
 	}
 	for _, q := range m.waiting.Questions {
 		body, _, _ := strings.Cut(strings.TrimSpace(q.Message.Body), "\n")
-		questions = append(questions, inboxItem{q.ShortID, fmt.Sprintf("%s  from %s: %s", q.ShortID, q.Message.Author.Email, body)})
+		questions = append(questions, inboxItem{"question " + q.Message.ID.String(), q.ShortID, fmt.Sprintf("%s  from %s: %s", q.ShortID, q.Message.Author.Email, body)})
 	}
 	return []struct {
 		name  string
@@ -100,8 +102,19 @@ func (m Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(msg.Width)
 	case inboxLoadedMsg:
+		var selected string
+		if items := m.items(); m.cursor < len(items) {
+			selected = items[m.cursor].key
+		}
 		m.waiting, m.loadErr, m.loaded = msg.waiting, msg.err, true
-		m.cursor = min(m.cursor, max(len(m.items())-1, 0))
+		items := m.items()
+		m.cursor = min(m.cursor, max(len(items)-1, 0))
+		// Keep the selected item when it is still shown.
+		for i, it := range items {
+			if it.key == selected {
+				m.cursor = i
+			}
+		}
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):
