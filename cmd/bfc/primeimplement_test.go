@@ -9,6 +9,7 @@ import (
 
 	"github.com/oklog/ulid/v2"
 
+	"github.com/admSla99/BeforeCode/internal/agent/claude"
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
@@ -235,5 +236,20 @@ func TestPrimeImplementCommand(t *testing.T) {
 
 	if _, err := bfcIn(t, dir, "prime", "implement", short, "T-1", "T-2"); err == nil {
 		t.Error("three arguments after implement are accepted")
+	}
+}
+
+// bfc-nxpr AC-11: bfc prime and both copies of the beforecode skill point
+// to bfc prime implement for implementing a plan or a Task.
+func TestImplementIsInTheInstructions(t *testing.T) {
+	t.Parallel()
+	for name, text := range map[string]string{
+		"bfc prime":                   primeInstructions,
+		"built-in beforecode skill":   string(claude.Skill),
+		"repository beforecode skill": readFile(t, filepath.Join("..", "..", ".claude", "skills", "beforecode", "SKILL.md")),
+	} {
+		if !strings.Contains(text, "`bfc prime implement [id] [T-n]`") || !strings.Contains(text, "implement a plan or a Task") {
+			t.Errorf("%s does not point to bfc prime implement:\n%s", name, text)
+		}
 	}
 }

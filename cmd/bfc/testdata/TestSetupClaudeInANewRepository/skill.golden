@@ -1,6 +1,6 @@
 ---
 name: beforecode
-description: Plans for this repository live in BeforeCode (`bfc`). Use whenever the user mentions BeforeCode or bfc, or talks about plans, intents or acceptance criteria; grilling an idea; writing or reviewing a plan; checking a pull request against its plan; what to work on next or which plan is approved; or what waits on them (reviews, questions), even without saying "BeforeCode".
+description: Plans for this repository live in BeforeCode (`bfc`). Use whenever the user mentions BeforeCode or bfc, or talks about plans, intents or acceptance criteria; grilling an idea; writing or reviewing a plan; implementing a plan or a Task; checking a pull request against its plan; what to work on next or which plan is approved; or what waits on them (reviews, questions), even without saying "BeforeCode".
 ---
 
 # BeforeCode
@@ -13,6 +13,7 @@ Before you plan, grill or implement, run `bfc prime` and follow what it prints:
 - `bfc prime <id>`: the same for one plan.
 - `bfc prime grill <id>`: grill a plan's Intent.
 - `bfc prime plan <id>`: write a plan's `plan.md`.
+- `bfc prime implement [id] [T-n]`: implement a plan or a Task, one Task at a time.
 - `bfc prime check`: check a pull request against its plan.
 
 Gates (submit, approve, request changes, withdraw, close) are for people, never for you. When a plan needs one, tell the user to run `bfc` and take it in the TUI.
