@@ -57,6 +57,7 @@ func runTUI(cmd *cobra.Command) error {
 	}()
 	opts := tuiOptions(cmd)
 	opts.Grill = &tuiGrill{cmd: cmd}
+	opts.Watcher = &tuiWatcher{cmd: cmd}
 	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{cmd: cmd}, opts)
 	_, err := tea.NewProgram(app, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
 	return err
@@ -296,6 +297,31 @@ func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewActio
 	}
 	_, err = writeReview(ctx, s, shortID, reviewEvents[a], reason)
 	return err
+}
+
+// tuiWatcher is the Watcher of the TUI: it reads the tip of the local Plans
+// ref, every tui.DefaultWatchInterval. The app runs one read at a time and
+// starts the next only after the previous one's result arrived, so the
+// store opened by the first read is kept without a lock.
+type tuiWatcher struct {
+	cmd *cobra.Command
+	s   *store.Store
+}
+
+// Tip returns the commit the Plans ref points to, or "" without a Plans ref.
+func (w *tuiWatcher) Tip(ctx context.Context) (string, error) {
+	if w.s == nil {
+		s, err := openStore(w.cmd)
+		if err != nil {
+			return "", err
+		}
+		w.s = s
+	}
+	tip, err := w.s.Tip(ctx)
+	if errors.Is(err, store.ErrNotInitialised) {
+		return "", nil
+	}
+	return tip, err
 }
 
 // tuiSyncer is the Syncer of the TUI: bfc sync without printing, on the

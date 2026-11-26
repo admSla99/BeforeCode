@@ -99,8 +99,10 @@ func (m PlanList) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(msg.Width)
 	case plansLoadedMsg:
+		shortID := func(p PlanRow) string { return p.ShortID }
+		before := m.visible()
 		m.all, m.loadErr, m.loaded = msg.plans, msg.err, true
-		m.cursor = min(m.cursor, max(len(m.visible())-1, 0))
+		m.cursor = keepSelection(before, m.visible(), m.cursor, shortID)
 	case PlanCreatedMsg:
 		m.status = ""
 		if msg.Err != nil {
@@ -193,6 +195,20 @@ func editLine(line *string, msg tea.KeyPressMsg) (done, cancelled bool) {
 
 // visible returns the plans that pass the filters, in screen order: by
 // group, and within a group in the loaded order (newest activity first).
+// keepSelection returns the cursor into after that selects the row of
+// before[cursor] again, named by key; when that row is gone, the cursor is
+// clamped to after.
+func keepSelection[T any](before, after []T, cursor int, key func(T) string) int {
+	if cursor < len(before) {
+		for i, row := range after {
+			if key(row) == key(before[cursor]) {
+				return i
+			}
+		}
+	}
+	return min(cursor, max(len(after)-1, 0))
+}
+
 func (m PlanList) visible() []PlanRow {
 	var out []PlanRow
 	q := strings.ToLower(m.search)
