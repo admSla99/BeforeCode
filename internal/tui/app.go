@@ -12,7 +12,9 @@ import (
 // background sync. The screens know nothing about
 // sync; the app syncs on a timer and after every local change, shows the
 // status in the detail's status bar, and reloads the screens when a sync
-// brings changes.
+// brings changes. It also watches the tip of the local Plans ref and
+// reloads the screens when another process, such as an agent running the
+// CLI, moved it.
 type App struct {
 	plans  Plans
 	syncer Syncer
@@ -25,6 +27,7 @@ type App struct {
 	detail *PlanDetailScreen
 	grill  *GrillScreen // the Grill of the detail's plan, over the detail
 	sync   syncState
+	watch  watchState
 	width  int
 	height int
 }
@@ -37,10 +40,33 @@ type AppOptions struct {
 	Local bool
 	// Grill runs the Grill screen; nil leaves the Grill out.
 	Grill Grill
+	// Watcher reads the tip of the local Plans ref; nil leaves watching
+	// out.
+	Watcher Watcher
+	// WatchInterval is the time between two reads of the tip;
+	// DefaultWatchInterval when zero.
+	WatchInterval time.Duration
+}
+
+// DefaultWatchInterval is the time between two reads of the Plans ref's
+// tip: a write by an agent shows within a few seconds, at the cost of one
+// git rev-parse.
+const DefaultWatchInterval = 2 * time.Second
+
+// Watcher reads the tip of the local Plans ref, so that the app notices a
+// write by another process. cmd/bfc implements it on the Plans ref; tests
+// use a fake.
+type Watcher interface {
+	// Tip returns the commit the Plans ref points to, or "" when there is
+	// no Plans ref.
+	Tip(ctx context.Context) (string, error)
 }
 
 // NewApp returns the TUI.
 func NewApp(plans Plans, syncer Syncer, opts AppOptions) App {
+	if opts.WatchInterval <= 0 {
+		opts.WatchInterval = DefaultWatchInterval
+	}
 	return App{
 		plans: plans, syncer: syncer, opts: opts, now: time.Now,
 		inbox: NewInbox(plans), list: NewPlanList(plans), sync: newSyncState(opts.Local),
@@ -59,9 +85,86 @@ func (m App) runSync() tea.Msg {
 	return syncDoneMsg{m.syncer.Sync(context.Background())}
 }
 
-// Init loads the Inbox and the list and starts the first sync at once.
+// watchState is what the app knows about the tip of the Plans ref. The
+// screens are reloaded only after a read of the tip, so they never show an
+// older state than the tip recorded. One read runs at a time: a read asked
+// for while one runs follows it, so an older read never overwrites a newer
+// one.
+type watchState struct {
+	tip     string // the tip the screens were last loaded for
+	known   bool   // tip was read at least once
+	reading bool   // a read is in flight
+	again   bool   // read once more when the running read ends
+}
+
+// watchTickMsg is the watch timer: read the tip.
+type watchTickMsg struct{}
+
+// watchDoneMsg is the result of one read of the tip.
+type watchDoneMsg struct {
+	tip string
+	err error
+}
+
+func (m App) watchLater() tea.Cmd {
+	return tea.Tick(m.opts.WatchInterval, func(time.Time) tea.Msg { return watchTickMsg{} })
+}
+
+// readTip starts a read of the tip, or queues one when a read runs.
+func (m *App) readTip() tea.Cmd {
+	if m.watch.reading {
+		m.watch.again = true
+		return nil
+	}
+	m.watch.reading = true
+	w := m.opts.Watcher
+	return func() tea.Msg {
+		tip, err := w.Tip(context.Background())
+		return watchDoneMsg{tip, err}
+	}
+}
+
+// tipRead applies a read of the tip: the screens reload when it moved, and
+// at the first read, which loads them in the first place.
+func (m *App) tipRead(msg watchDoneMsg) []tea.Cmd {
+	m.watch.reading = false
+	var cmds []tea.Cmd
+	switch {
+	case msg.err != nil && !m.watch.known:
+		m.watch.known = true
+		cmds = m.reloadScreens() // the screens show the error
+	case msg.err == nil && (!m.watch.known || msg.tip != m.watch.tip):
+		m.watch.tip, m.watch.known = msg.tip, true
+		cmds = m.reloadScreens()
+	}
+	if m.watch.again {
+		m.watch.again = false
+		cmds = append(cmds, m.readTip())
+	}
+	return cmds
+}
+
+// reloadScreens reloads every screen that is open.
+func (m App) reloadScreens() []tea.Cmd {
+	cmds := []tea.Cmd{m.inbox.load, m.list.load}
+	if m.detail != nil {
+		cmds = append(cmds, m.detail.load)
+	}
+	if m.grill != nil {
+		cmds = append(cmds, func() tea.Msg { return reloadGrillMsg{} })
+	}
+	return cmds
+}
+
+// Init starts the first sync at once and loads the Inbox and the list:
+// with a Watcher after the first read of the tip, so that a write between
+// the load and the read is not missed.
 func (m App) Init() tea.Cmd {
-	return tea.Batch(m.inbox.Init(), m.list.Init(), func() tea.Msg { return syncTickMsg{} })
+	syncNow := func() tea.Msg { return syncTickMsg{} }
+	if m.opts.Watcher != nil {
+		return tea.Batch(syncNow, func() tea.Msg { return watchTickMsg{} })
+	}
+	return tea.Batch(m.inbox.Init(), m.list.Init(), syncNow)
 }
 
 // Update handles a message.
@@ -78,15 +181,18 @@ func (m App) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		}
 	case syncDoneMsg:
 		m.sync, start = m.sync.done(msg.result, m.now())
-		if msg.result.Changed {
-			cmds = append(cmds, m.inbox.load, m.list.load)
-			if m.detail != nil {
-				cmds = append(cmds, m.detail.load)
-			}
-			if m.grill != nil {
-				cmds = append(cmds, func() tea.Msg { return reloadGrillMsg{} })
-			}
+		switch {
+		case msg.result.Changed && m.opts.Watcher != nil:
+			// The read reloads once, unless the timer already did for
+			// the tip the sync made.
+			cmds = append(cmds, m.readTip())
+		case msg.result.Changed:
+			cmds = append(cmds, m.reloadScreens()...)
 		}
+	case watchTickMsg:
+		return m, tea.Batch(m.readTip(), m.watchLater())
+	case watchDoneMsg:
+		return m, tea.Batch(m.tipRead(msg)...)
 	case PlanCreatedMsg:
 		if msg.Err == nil {
 			m.sync, start = m.sync.localChange()

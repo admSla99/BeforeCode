@@ -283,3 +283,37 @@ func TestTUIAdapterInboxIsWhatBfcInboxLists(t *testing.T) {
 		t.Errorf("err = %#v, want NotSetUpError", err)
 	}
 }
+
+// bfc-z3wd AC-9: the TUI's Watcher reads the tip of the Plans ref; a plan
+// written by the CLI moves it; without a Plans ref the tip is empty.
+func TestTUIWatcherReadsTheTipOfThePlansRef(t *testing.T) {
+	t.Parallel()
+	dir := newLocalRepo(t)
+	cmd := &cobra.Command{}
+	cmd.SetContext(inPlace(t, dir))
+	w := &tuiWatcher{cmd: cmd}
+	ctx := context.Background()
+	before, err := w.Tip(ctx)
+	if want := strings.TrimSpace(gitIn(t, dir, "rev-parse", plansRef)); err != nil || before != want {
+		t.Fatalf("Tip = %q, %v; want %q", before, err, want)
+	}
+	newPlan(t, dir, "Written by the agent")
+	after, err := w.Tip(ctx)
+	if want := strings.TrimSpace(gitIn(t, dir, "rev-parse", plansRef)); err != nil || after != want || after == before {
+		t.Errorf("after bfc new Tip = %q, %v; want the new tip %q", after, err, want)
+	}
+	// A write by another process: git itself moves the ref.
+	moved := strings.TrimSpace(gitIn(t, dir, "commit-tree", after+"^{tree}", "-p", after, "-m", "outside"))
+	gitIn(t, dir, "update-ref", plansRef, moved)
+	if tip, err := w.Tip(ctx); err != nil || tip != moved {
+		t.Errorf("after another process moved the ref Tip = %q, %v; want %q", tip, err, moved)
+	}
+
+	empty := t.TempDir()
+	gitIn(t, empty, "init", "-q", "-b", "main")
+	none := &cobra.Command{}
+	none.SetContext(inPlace(t, empty))
+	if tip, err := (&tuiWatcher{cmd: none}).Tip(ctx); tip != "" || err != nil {
+		t.Errorf("without a Plans ref Tip = %q, %v; want \"\", nil", tip, err)
+	}
+}
