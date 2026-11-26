@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"os"
+	"path/filepath"
 
 	"github.com/spf13/cobra"
 
@@ -18,6 +19,9 @@ import (
 type place struct {
 	dir string
 	env []string
+	// executable is the binary bfc update replaces, instead of the running
+	// one, so that tests do not replace the test binary.
+	executable string
 }
 
 type placeKey struct{}
@@ -42,6 +46,19 @@ func workDir(cmd *cobra.Command) (string, error) {
 		return p.dir, nil
 	}
 	return os.Getwd()
+}
+
+// executable is the path of the bfc binary the command replaces, with
+// symlinks resolved.
+func executable(cmd *cobra.Command) (string, error) {
+	if p := placeOf(cmd); p.executable != "" {
+		return p.executable, nil
+	}
+	exe, err := os.Executable()
+	if err != nil {
+		return "", err
+	}
+	return filepath.EvalSymlinks(exe)
 }
 
 // extraEnv is the environment the command adds for git and the editor.
