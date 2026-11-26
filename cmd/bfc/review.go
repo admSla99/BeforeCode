@@ -40,7 +40,8 @@ func newApproveCmd() *cobra.Command {
 		Use:   "approve <id>",
 		Short: "Approve the current plan.md of a plan in review",
 		Long: `Approve the current version of plan.md of a plan in review. The plan author
-cannot approve their own plan. An Approval counts only while plan.md stays
+cannot approve their own plan, unless it was submitted under self-approval
+(approval.required_approvals: 0). An Approval counts only while plan.md stays
 exactly as approved; after an edit the plan needs new Approvals.`,
 		Args: cobra.ExactArgs(1),
 		RunE: func(cmd *cobra.Command, args []string) error {
@@ -210,6 +211,8 @@ func writeReview(ctx context.Context, s *store.Store, query string, typ core.Eve
 		if e.RequiredApprovals, err = requiredApprovals(s); err != nil {
 			return index.Plan{}, err
 		}
+		// 0 is self-approval, written as an explicit 0 (ADR 0016).
+		e.SelfApproval = e.RequiredApprovals == 0
 	}
 	if action.planBlob {
 		e.PlanBlob, err = s.ObjectID(ctx, core.PlanDir(v.ID)+"/plan.md")
