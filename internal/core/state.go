@@ -15,6 +15,9 @@ type Status struct {
 	// RequiredApprovals is the number fixed by the submitted event of the
 	// open review round; 0 outside a round.
 	RequiredApprovals int
+	// SelfApproval is set while the open review round allows self-approval
+	// (ADR 0016): the plan author's own Approval counts.
+	SelfApproval bool
 	// Approvers are the emails of the valid Approvals in the open review
 	// round, in the order they were given.
 	Approvers []string
@@ -123,7 +126,9 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 			case Submitted:
 				if valid = isAuthor(e.Author) && !inRound; valid {
 					// A missing count means the policy default of 1 (ADR 0002 §4).
+					// Self-approval still needs one Approval (ADR 0016).
 					inRound, round, st.RequiredApprovals = true, nil, max(e.RequiredApprovals, 1)
+					st.SelfApproval = e.SelfApproval
 					submitted = true
 				}
 			case Claimed:
@@ -147,14 +152,14 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 				}
 			case Withdrawn:
 				if valid = isAuthor(e.Author) && inRound; valid {
-					inRound, round, st.RequiredApprovals = false, nil, 0
+					inRound, round, st.RequiredApprovals, st.SelfApproval = false, nil, 0, false
 				}
 			case ChangesRequested:
 				if valid = !isAuthor(e.Author) && inRound; valid {
-					inRound, round, st.RequiredApprovals = false, nil, 0
+					inRound, round, st.RequiredApprovals, st.SelfApproval = false, nil, 0, false
 				}
 			case Approved:
-				if valid = !isAuthor(e.Author) && e.Agent == "" && inRound; valid {
+				if valid = (!isAuthor(e.Author) || st.SelfApproval) && e.Agent == "" && inRound; valid {
 					round = append(round, e)
 				}
 			case Done:
@@ -164,12 +169,12 @@ func derive(plan ulid.ULID, events []Event, planBlob string) (Status, []ulid.ULI
 				// changed elsewhere before the done arrived does not undo it.
 				inProgress := inRound && len(st.Tasks) > 0 && len(validApprovers(round, e.PlanBlob)) >= st.RequiredApprovals
 				if valid = e.Agent == "" && inProgress; valid {
-					st.State, st.RequiredApprovals, st.Approvers = StateDone, 0, nil
+					st.State, st.RequiredApprovals, st.SelfApproval, st.Approvers = StateDone, 0, false, nil
 					skip(events[start+2+i:]...)
 					return st, skipped
 				}
 			case Closed:
-				st.State, st.RequiredApprovals = StateClosed, 0
+				st.State, st.RequiredApprovals, st.SelfApproval = StateClosed, 0, false
 				skip(events[start+2+i:]...)
 				return st, skipped
 			}

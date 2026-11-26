@@ -50,7 +50,8 @@ func CheckSubmit(st Status, actor Person, plan []byte) error {
 }
 
 // CheckApprove reports why actor cannot approve the current plan.md of the
-// plan with Status st, or nil if they can.
+// plan with Status st, or nil if they can. The plan author can only under
+// self-approval (ADR 0016).
 func CheckApprove(st Status, actor Person) error {
 	switch st.State {
 	case StateInReview:
@@ -59,7 +60,7 @@ func CheckApprove(st Status, actor Person) error {
 	default:
 		return stateError(st, "only a plan in review can be approved")
 	}
-	if samePerson(actor, st.Author) {
+	if samePerson(actor, st.Author) && !st.SelfApproval {
 		return fmt.Errorf("%s is your own plan; someone other than the plan author must approve it", st.ShortID)
 	}
 	for _, email := range st.Approvers {

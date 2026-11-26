@@ -45,10 +45,13 @@ type Event struct {
 
 	ShortID           string // created
 	PlanBlob          string // submitted, approved, changes-requested, done
-	RequiredApprovals int    // submitted
+	RequiredApprovals int    // submitted; 0 when missing, which counts as 1
 	Message           string // changes-requested, closed: ULID of a Message
 	Task              string // claimed, released, completed: T-<n> (ADR 0013 section 4)
 	Handoff           string // released, completed: ULID of the Handoff
+	// SelfApproval marks a submitted written with an explicit
+	// required_approvals: 0: the plan author's own Approval counts (ADR 0016).
+	SelfApproval bool
 }
 
 // eventFile is the YAML layout: common fields first, then the fields of the
@@ -61,7 +64,7 @@ type eventFile struct {
 	Agent             string    `yaml:"agent,omitempty"`
 	ShortID           string    `yaml:"short_id,omitempty"`
 	PlanBlob          string    `yaml:"plan_blob,omitempty"`
-	RequiredApprovals int       `yaml:"required_approvals,omitempty"`
+	RequiredApprovals *int      `yaml:"required_approvals,omitempty"` // nil when missing, so 0 is self-approval
 	Message           string    `yaml:"message,omitempty"`
 	Task              string    `yaml:"task,omitempty"`
 	Handoff           string    `yaml:"handoff,omitempty"`
@@ -69,6 +72,13 @@ type eventFile struct {
 
 // EncodeEvent returns the file content of e.
 func EncodeEvent(e Event) []byte {
+	var required *int
+	switch {
+	case e.SelfApproval:
+		required = new(int)
+	case e.RequiredApprovals != 0:
+		required = &e.RequiredApprovals
+	}
 	var b bytes.Buffer
 	enc := yaml.NewEncoder(&b)
 	enc.SetIndent(2)
@@ -80,7 +90,7 @@ func EncodeEvent(e Event) []byte {
 		Agent:             e.Agent,
 		ShortID:           e.ShortID,
 		PlanBlob:          e.PlanBlob,
-		RequiredApprovals: e.RequiredApprovals,
+		RequiredApprovals: required,
 		Message:           e.Message,
 		Task:              e.Task,
 		Handoff:           e.Handoff,
@@ -111,11 +121,16 @@ func ParseEvent(id ulid.ULID, data []byte) (Event, error) {
 	if f.At.IsZero() {
 		return Event{}, fmt.Errorf("event %s: at is missing", id)
 	}
-	return Event{
+	e := Event{
 		ID: id, Type: f.Type, Plan: plan, Author: f.Author, At: f.At.UTC(), Agent: f.Agent,
-		ShortID: f.ShortID, PlanBlob: f.PlanBlob, RequiredApprovals: f.RequiredApprovals, Message: f.Message,
+		ShortID: f.ShortID, PlanBlob: f.PlanBlob, Message: f.Message,
 		Task: f.Task, Handoff: f.Handoff,
-	}, nil
+	}
+	if f.RequiredApprovals != nil {
+		e.RequiredApprovals = *f.RequiredApprovals
+		e.SelfApproval = f.Type == Submitted && e.RequiredApprovals == 0
+	}
+	return e, nil
 }
 
 // State is the Plan state, derived from Events and never stored.

@@ -50,6 +50,17 @@ func TestCheckApprove(t *testing.T) {
 	}
 	wantErr(t, CheckApprove(status(StateInReview), Person{Email: "ADA@example.com"}), "your own plan")
 	wantErr(t, CheckApprove(status(StateInReview, "jana@example.com"), jana), "already approved")
+
+	self := status(StateInReview)
+	self.SelfApproval, self.RequiredApprovals = true, 1
+	if err := CheckApprove(self, ada); err != nil {
+		t.Errorf("author under self-approval: %v", err)
+	}
+	if err := CheckApprove(self, jana); err != nil {
+		t.Errorf("another person under self-approval: %v", err)
+	}
+	self.Approvers = []string{"ada@example.com"}
+	wantErr(t, CheckApprove(self, ada), "already approved")
 	for _, st := range []State{StateDraft, StateApproved, StateClosed, StateInvalid} {
 		wantErr(t, CheckApprove(status(st), jana), "bfc-abcd is "+string(st))
 	}

@@ -38,6 +38,7 @@ func TestEventsParseBack(t *testing.T) {
 		{ID: eventID, Type: core.Created, Plan: planID, Author: ada, At: at, ShortID: "bfc-5v7x"},
 		{ID: eventID, Type: core.Submitted, Plan: planID, Author: ada, At: at, PlanBlob: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad", RequiredApprovals: 2},
 		{ID: eventID, Type: core.Approved, Plan: planID, Author: ada, At: at, Agent: "claude-code", PlanBlob: "3b18e5"},
+		{ID: eventID, Type: core.Submitted, Plan: planID, Author: ada, At: at, PlanBlob: "3b18e512dba79e4c8300dd08aeb37f8e728b8dad", SelfApproval: true},
 	}
 	for _, e := range cases {
 		got, err := core.ParseEvent(eventID, core.EncodeEvent(e))
@@ -46,6 +47,22 @@ func TestEventsParseBack(t *testing.T) {
 		}
 		if got != e {
 			t.Errorf("round trip of %+v gave %+v", e, got)
+		}
+	}
+}
+
+// Self-approval is written as an explicit required_approvals: 0, so a
+// missing count still means 1 (ADR 0016).
+func TestSelfApprovalIsAnExplicitZero(t *testing.T) {
+	e := core.Event{ID: eventID, Type: core.Submitted, Plan: planID, Author: ada, At: at, PlanBlob: "3b18e5", SelfApproval: true}
+	if got := string(core.EncodeEvent(e)); !strings.HasSuffix(got, "plan_blob: 3b18e5\nrequired_approvals: 0\n") {
+		t.Errorf("EncodeEvent =\n%s", got)
+	}
+	const common = "type: submitted\nplan: 01JD3K8Q2W5V7X9Y0Z1A2B3C4D\nauthor: {name: A, email: a@example.com}\nat: 2026-11-16T21:30:00Z\n"
+	for data, want := range map[string]bool{common: false, common + "required_approvals: 1\n": false, common + "required_approvals: 0\n": true} {
+		got, err := core.ParseEvent(eventID, []byte(data))
+		if err != nil || got.SelfApproval != want {
+			t.Errorf("ParseEvent(%q) = %+v, %v; want SelfApproval %t", data, got, err, want)
 		}
 	}
 }

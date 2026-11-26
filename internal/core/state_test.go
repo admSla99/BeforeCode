@@ -24,10 +24,11 @@ const (
 
 // ev builds a list of events in ULID order from short descriptions:
 //
-//	"<type> <who> [blob] [n] [T-n]" with who in {ada, jana, peter, agent:jana}
+//	"<type> <who> [blob] [n|self] [T-n]" with who in {ada, jana, peter, agent:jana, agent:ada}
 //
-// blob is v1 or v2; n is required_approvals for submitted; T-n is the Task
-// of a claimed event.
+// blob is v1 or v2; n is required_approvals for submitted, self marks a
+// submitted with required_approvals: 0 (self-approval, ADR 0016); T-n is the
+// Task of a claimed event.
 func ev(t *testing.T, specs ...string) []core.Event {
 	t.Helper()
 	var out []core.Event
@@ -56,6 +57,8 @@ func ev(t *testing.T, specs ...string) []core.Event {
 				e.Task = extra
 			case "handoff":
 				e.Handoff = handoffID
+			case "self":
+				e.SelfApproval = true
 			default:
 				if _, err := fmt.Sscan(extra, &e.RequiredApprovals); err != nil {
 					t.Fatalf("bad event spec %q", spec)
@@ -101,6 +104,15 @@ func TestDeriveFollowsTheDataFormat(t *testing.T) {
 		{"approval in draft is skipped", []string{"created ada", "approved jana v1", "submitted ada v1 1"}, blobV1, core.StateInReview, nil},
 		{"stale approval after plan.md changed", []string{"created ada", "submitted ada v1 1", "approved jana v1"}, blobV2, core.StateInReview, nil},
 		{"approval of the new version", []string{"created ada", "submitted ada v1 1", "approved jana v1", "approved peter v2"}, blobV2, core.StateApproved, []string{"peter@example.com"}},
+
+		// Self-approval (ADR 0016): required_approvals: 0 in submitted.
+		{"author approves under self-approval", []string{"created ada", "submitted ada v1 self", "approved ada v1"}, blobV1, core.StateApproved, []string{"ada@example.com"}},
+		{"another person approves under self-approval", []string{"created ada", "submitted ada v1 self", "approved jana v1"}, blobV1, core.StateApproved, []string{"jana@example.com"}},
+		{"self-approval still needs an Approval", []string{"created ada", "submitted ada v1 self"}, blobV1, core.StateInReview, nil},
+		{"agent cannot approve under self-approval", []string{"created ada", "submitted ada v1 self", "approved agent:ada v1"}, blobV1, core.StateInReview, nil},
+		{"stale self-approval after plan.md changed", []string{"created ada", "submitted ada v1 self", "approved ada v1"}, blobV2, core.StateInReview, nil},
+		{"self-approval ends with its round", []string{"created ada", "submitted ada v1 self", "withdrawn ada", "submitted ada v1 1", "approved ada v1"}, blobV1, core.StateInReview, nil},
+		{"author still cannot request changes under self-approval", []string{"created ada", "submitted ada v1 self", "changes-requested ada v1"}, blobV1, core.StateInReview, nil},
 
 		// withdrawn.
 		{"author withdraws from review", []string{"created ada", "submitted ada v1 1", "withdrawn ada"}, blobV1, core.StateDraft, nil},
@@ -151,8 +163,21 @@ func TestDeriveFollowsTheDataFormat(t *testing.T) {
 func TestDeriveReportsAuthorShortIDAndRequiredApprovals(t *testing.T) {
 	got := core.Derive(planID, ev(t, "created ada", "submitted ada v1 3"), blobV1)
 
-	if got.Author != ada || got.ShortID != "bfc-5v7x" || got.RequiredApprovals != 3 {
+	if got.Author != ada || got.ShortID != "bfc-5v7x" || got.RequiredApprovals != 3 || got.SelfApproval {
 		t.Errorf("Derive = %+v", got)
+	}
+}
+
+// Under self-approval the plan needs one Approval, which may be the
+// author's own (ADR 0016).
+func TestDeriveReportsSelfApproval(t *testing.T) {
+	got := core.Derive(planID, ev(t, "created ada", "submitted ada v1 self"), blobV1)
+	if !got.SelfApproval || got.RequiredApprovals != 1 {
+		t.Errorf("Derive = %+v, want SelfApproval with 1 required", got)
+	}
+	got = core.Derive(planID, ev(t, "created ada", "submitted ada v1 self", "withdrawn ada"), blobV1)
+	if got.SelfApproval {
+		t.Errorf("SelfApproval outside a review round: %+v", got)
 	}
 }
 
@@ -170,6 +195,7 @@ func TestSkippedEventsAreThoseDeriveIgnores(t *testing.T) {
 		{"before created", []string{"submitted ada v1 1", "created ada"}, blobV1, []int{0}},
 		{"second created", []string{"created ada", "created jana"}, "", []int{1}},
 		{"not allowed for the author", []string{"created ada", "submitted jana v1 1", "submitted ada v1 1", "approved ada v1", "approved agent:jana v1", "changes-requested ada v1", "withdrawn jana"}, blobV1, []int{1, 3, 4, 5, 6}},
+		{"self-approval keeps the author's Approval", []string{"created ada", "submitted ada v1 self", "approved ada v1", "approved agent:ada v1", "changes-requested ada v1"}, blobV1, []int{3, 4}},
 		{"does not fit the state", []string{"created ada", "approved jana v1", "withdrawn ada", "changes-requested jana v1", "submitted ada v1 1", "submitted ada v1 1"}, blobV1, []int{1, 2, 3, 5}},
 		{"approval after the round ended", []string{"created ada", "submitted ada v1 1", "changes-requested peter v1", "approved jana v1"}, blobV1, []int{3}},
 		{"another plan", []string{"created ada", "closed jana otherplan"}, "", []int{1}},
