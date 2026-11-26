@@ -19,14 +19,15 @@ import (
 // primeTopics are the topics of bfc prime <topic> [id], each printing what
 // an agent needs for one task.
 var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
-	"grill": runPrimeGrill,
-	"plan":  runPrimePlan,
-	"check": runPrimeCheck,
+	"grill":     runPrimeGrill,
+	"plan":      runPrimePlan,
+	"check":     runPrimeCheck,
+	"implement": runPrimeImplement,
 }
 
 func newPrimeCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "prime [topic] [id]",
+		Use:   "prime [topic] [id] [T-n]",
 		Short: "Print the instructions for an agent and the Current plan",
 		Long: `Print Markdown for an AI agent: how to work with bfc, what waits on the
 git author of this clone, then the Current plan (or the plan given by ID)
@@ -34,14 +35,15 @@ with its open Questions and plan.md, or intent.md while there is no plan.md.
 The output is capped at 8 kB. bfc prime reads only this clone and never
 fails over plans: what it cannot show it says.
 
-A topic as the first argument prints the instructions for one task instead.`,
-		Args: cobra.MaximumNArgs(2),
+A topic as the first argument prints the instructions for one task instead:
+check, grill, implement or plan.`,
+		Args: cobra.MaximumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				if topic, ok := primeTopics[args[0]]; ok {
 					return topic(cmd, args[1:])
 				}
-				if len(args) == 2 {
+				if len(args) >= 2 {
 					known := "none yet"
 					if len(primeTopics) > 0 {
 						known = strings.Join(slices.Sorted(maps.Keys(primeTopics)), ", ")

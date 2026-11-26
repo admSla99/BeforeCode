@@ -1,0 +1,74 @@
+# Implement one Task
+
+Tests first.
+
+## Current plan: bfc-5v7x Payments via Stripe
+
+- State: in-progress
+- Author: Ada Lovelace <ada@example.com>
+
+## Task T-2
+
+- Chosen because you named it.
+- State: paused, last held by ada@example.com
+
+Wire the flag,
+behind the setting.
+
+### Commands for T-2
+
+- Claim it: `bfc claim bfc-5v7x T-2 --json`
+- Hand it off: `bfc handoff bfc-5v7x T-2 --done -m <note>` when it is finished, without `--done` when it is not; then `bfc push`
+- Ask the author: `bfc ask bfc-5v7x --to ada@example.com --ref plan.md#AC-n -m <question>`
+
+### Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+- AC-2: A successful payment sends one email,
+  even when the webhook is delivered twice.
+
+### plan.md
+
+```markdown
+## Context
+
+Cards fail.
+
+## Approach
+
+Stripe.
+
+## Affected areas
+
+payments/
+
+## Out of scope
+
+Refunds.
+
+## Tasks
+
+- T-1: Add the client.
+- T-2: Wire the flag,
+  behind the setting.
+
+## Acceptance criteria
+
+- AC-1: An invalid card returns 402.
+- AC-2: A successful payment sends one email,
+  even when the webhook is delivered twice.
+```
+
+### Handoffs of T-2
+
+#### Handoff 00000000Z80000000000000000, released by Ada Lovelace <ada@example.com>, 1970-01-01 00:00
+
+First half.
+
+## Left
+the setting
+
+#### Handoff 00000001YG0000000000000000, released by Ada Lovelace <ada@example.com>, 1970-01-01 00:00
+
+Second try.
+
