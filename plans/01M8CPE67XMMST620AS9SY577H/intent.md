@@ -20,9 +20,10 @@ People who write and review plans in the TUI: the plan author answering Question
 
 ## Layout
 
-The prototype in issue #115 (branch `prototype-115-discussion`) compared a `discussion` tab, a side pane and markers in the document. The recommendation is the `discussion` tab (A), with a picker of headings and ACs when `n` starts a Thread. The maintainer has not yet named the layout in the issue; plan.md waits for that choice.
+The prototype in issue #115 (branch `prototype-115-discussion`) compared a `discussion` tab, a side pane and markers in the document. The maintainer chose the `discussion` tab (A), with a picker of headings and ACs when a Thread is started.
 
 ## Out of scope
 
 - The AI answering Questions sent `to: ai` (#116).
 - Markers in the rendered document and starting a Thread from the cursor line (possible later, layout C).
+
