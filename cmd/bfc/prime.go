@@ -19,14 +19,15 @@ import (
 // primeTopics are the topics of bfc prime <topic> [id], each printing what
 // an agent needs for one task.
 var primeTopics = map[string]func(cmd *cobra.Command, args []string) error{
-	"grill": runPrimeGrill,
-	"plan":  runPrimePlan,
-	"check": runPrimeCheck,
+	"grill":     runPrimeGrill,
+	"plan":      runPrimePlan,
+	"check":     runPrimeCheck,
+	"implement": runPrimeImplement,
 }
 
 func newPrimeCmd() *cobra.Command {
 	return &cobra.Command{
-		Use:   "prime [topic] [id]",
+		Use:   "prime [topic] [id] [T-n]",
 		Short: "Print the instructions for an agent and the Current plan",
 		Long: `Print Markdown for an AI agent: how to work with bfc, what waits on the
 git author of this clone, then the Current plan (or the plan given by ID)
@@ -34,14 +35,15 @@ with its open Questions and plan.md, or intent.md while there is no plan.md.
 The output is capped at 8 kB. bfc prime reads only this clone and never
 fails over plans: what it cannot show it says.
 
-A topic as the first argument prints the instructions for one task instead.`,
-		Args: cobra.MaximumNArgs(2),
+A topic as the first argument prints the instructions for one task instead:
+check, grill, implement or plan.`,
+		Args: cobra.MaximumNArgs(3),
 		RunE: func(cmd *cobra.Command, args []string) error {
 			if len(args) > 0 {
 				if topic, ok := primeTopics[args[0]]; ok {
 					return topic(cmd, args[1:])
 				}
-				if len(args) == 2 {
+				if len(args) >= 2 {
 					known := "none yet"
 					if len(primeTopics) > 0 {
 						known = strings.Join(slices.Sorted(maps.Keys(primeTopics)), ", ")
@@ -141,6 +143,7 @@ const primeInstructions = "# BeforeCode\n\n" +
 	"  - `bfc start <id>`: only when the user asks to work on a plan; it switches the branch, which makes the plan the Current plan.\n" +
 	"  - `bfc ready [id] --json` and `bfc claim [id] [T-n] --json`: list the open and Paused Tasks of approved plans, and take one before you work on it; the first Claim wins, so when it fails, take another.\n" +
 	"  - `bfc handoff [id] T-n -m <what is done, what comes next> [--done]`: before you stop working on a Task you hold, hand it off: `--done` when it is finished, else it is Paused for the next one. Then run `bfc push`.\n" +
+	"  - `bfc prime implement [id] [T-n]`: when the user asks you to implement a plan or a Task; it prints the steps, from the Claim to the Handoff, with the Task, its acceptance criteria and earlier Handoffs.\n" +
 	"  - `bfc prime check`: when the user asks you to check a pull request against its plan; it prints the steps, from the pull request to the stored check.\n" +
 	"- Gates are for people: `submit`, `approve`, `request-changes`, `withdraw`, `close` and `done` refuse to run inside an agent, and so does `acknowledge`. " +
 	"When a plan needs one, tell the user to open `bfc` and take it there.\n" +

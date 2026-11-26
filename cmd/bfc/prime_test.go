@@ -198,12 +198,12 @@ func TestPrimeCommandNeverFails(t *testing.T) {
 }
 
 // AC-7: a second argument makes the first a topic; an unknown topic is an
-// error that lists the known ones.
+// error that lists the known ones (bfc-nxpr AC-11: implement among them).
 func TestPrimeCommandRefusesAnUnknownTopic(t *testing.T) {
 	t.Parallel()
 	dir := newLocalRepo(t)
 	out, err := bfcIn(t, dir, "prime", "grilling", "bfc-zzzz")
-	if err == nil || !strings.Contains(out, `unknown topic "grilling"`) || !strings.Contains(out, "known topics: check, grill, plan") {
+	if err == nil || !strings.Contains(out, `unknown topic "grilling"`) || !strings.Contains(out, "known topics: check, grill, implement, plan") {
 		t.Errorf("err = %v\n%s", err, out)
 	}
 }

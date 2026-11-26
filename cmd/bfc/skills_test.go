@@ -1,6 +1,7 @@
 package main
 
 import (
+	"fmt"
 	"io/fs"
 	"os"
 	"path/filepath"
@@ -100,7 +101,7 @@ func TestDoctorCoversThePlanCheckSkill(t *testing.T) {
 	if _, err := os.Stat(filepath.Join(repo, ".beforecode", "skills", "plan-check", "SKILL.md")); err != nil {
 		t.Fatalf("bfc init did not write plan-check: %v", err)
 	}
-	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "skills", "grill-intent, plan-check, write-plan")
+	wantDoctor(t, mustBfc(t, repo, "doctor"), "ok", "skills", "grill-intent, implement-task, plan-check, write-plan")
 
 	if err := os.RemoveAll(filepath.Join(repo, ".beforecode", "skills", "plan-check")); err != nil {
 		t.Fatal(err)
@@ -117,4 +118,53 @@ func TestDoctorWarnsAboutAPlanCheckSkillFromBeforeTheLocalRun(t *testing.T) {
 	writeFile(t, filepath.Join(repo, ".beforecode", "skills", "plan-check", "SKILL.md"),
 		"---\nname: plan-check\n---\n\nEnd with the result in a json fence.\n")
 	wantDoctor(t, mustBfc(t, repo, "doctor"), "warn", "skills", "plan-check", "bfc check record", "delete")
+}
+
+// bfc-nxpr AC-7 to AC-10: the implement-task skill is built in and holds
+// the steps in order, each with "Done when", the rules for a failing check
+// or a missing decision, the Handoff headings and the pull-request step.
+func TestImplementTaskSkillIsBuiltIn(t *testing.T) {
+	t.Parallel()
+	data, err := beforecode.Skills.ReadFile(implementSkill)
+	if err != nil {
+		t.Fatalf("implement-task is not built in: %v", err)
+	}
+	skill := string(data)
+
+	// AC-7: the numbered steps, in this order.
+	steps := []string{"Current plan", "bfc pull", "bfc claim", "Read", "tests first", "Implement", "checks", "Commit", "bfc handoff", "bfc push", "Stop"}
+	at := 0
+	for i, s := range steps {
+		head := fmt.Sprintf("\n%d. **", i+1)
+		j := strings.Index(skill[at:], head)
+		if j < 0 {
+			t.Fatalf("step %d is missing", i+1)
+		}
+		at += j + len(head)
+		end := strings.Index(skill[at:], "\n"+fmt.Sprint(i+2)+". **")
+		if end < 0 {
+			end = strings.Index(skill[at:], "\n## ")
+		}
+		step := skill[at : at+end]
+		if !strings.Contains(step, s) {
+			t.Errorf("step %d does not cover %q:\n%s", i+1, s, step)
+		}
+		if !strings.Contains(step, "Done when") {
+			t.Errorf("step %d has no \"Done when\"", i+1)
+		}
+	}
+	for _, want := range []string{
+		// AC-7
+		"only when the user asked", "CLAUDE.md", "CONTRIBUTING.md", "push the code branch",
+		// AC-8
+		"without `--done`", "bfc ask <id> --to <plan author email>", "Never hand off with `--done` while a check fails", "one Task per turn",
+		// AC-9
+		"one-line summary", "## Changed", "## Acceptance criteria", "## Tests", "## Left", "## Questions",
+		// AC-10
+		"gh pr create", "Plan: <Short ID>", "Never merge", "Gate",
+	} {
+		if !strings.Contains(skill, want) {
+			t.Errorf("implement-task does not say %q", want)
+		}
+	}
 }
