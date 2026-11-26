@@ -1,5 +1,5 @@
 // Package config reads and writes .beforecode/config.yaml as specified in
-// docs/adr/0003-config-file-v1.md (versions 1 to 3). It works on bytes only.
+// docs/adr/0003-config-file-v1.md (versions 1 to 4). It works on bytes only.
 package config
 
 import (
@@ -17,7 +17,7 @@ const Path = ".beforecode/config.yaml"
 
 // Version is the config version this binary writes. It also reads every
 // older version.
-const Version = 3
+const Version = 4
 
 // DefaultClaudeCommand is the command that starts Claude Code when
 // claude.command is not set.
@@ -35,8 +35,9 @@ const (
 
 // Config is the content of .beforecode/config.yaml.
 type Config struct {
-	// RequiredApprovals is the Approval policy: how many Approvals a Plan
-	// needs. At least 1.
+	// RequiredApprovals is the Approval policy: how many Approvals by people
+	// other than the plan author a Plan needs. 0 is self-approval (ADR
+	// 0016): one Approval, which may be the author's own.
 	RequiredApprovals int
 	// SyncEnabled is false in Local mode.
 	SyncEnabled bool
@@ -108,8 +109,10 @@ func Parse(data []byte) (Config, error) {
 		return Config{}, fmt.Errorf("%s: version %d is newer than this bfc understands (%d); update bfc", Path, *f.Version, Version)
 	case *f.Version < 1:
 		return Config{}, fmt.Errorf("%s: unsupported version %d", Path, *f.Version)
-	case f.Approval.RequiredApprovals == nil || *f.Approval.RequiredApprovals < 1:
-		return Config{}, fmt.Errorf("%s: approval.required_approvals must be an integer of at least 1", Path)
+	case f.Approval.RequiredApprovals == nil || *f.Approval.RequiredApprovals < 0:
+		return Config{}, fmt.Errorf("%s: approval.required_approvals must be an integer of at least 0", Path)
+	case *f.Approval.RequiredApprovals == 0 && *f.Version < 4:
+		return Config{}, fmt.Errorf("%s: approval.required_approvals: 0 (self-approval) needs version 4", Path)
 	case f.Sync.Enabled == nil:
 		return Config{}, fmt.Errorf("%s: sync.enabled is missing", Path)
 	case *f.Sync.Enabled && (f.Sync.Remote == nil || *f.Sync.Remote == ""):
@@ -151,6 +154,7 @@ version: %d
 
 approval:
   # Approvals by people other than the plan author needed before a plan is approved.
+  # 0: the plan author may approve their own plan (self-approval).
   required_approvals: %d
 
 sync:

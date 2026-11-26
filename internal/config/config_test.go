@@ -32,15 +32,19 @@ func TestParseRejectsInvalidFilesNamingTheProblem(t *testing.T) {
 			"approvers",
 		},
 		"newer version": {
-			"version: 4\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
+			"version: 5\napproval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
 			"update bfc",
 		},
 		"missing version": {
 			"approval:\n  required_approvals: 1\nsync:\n  enabled: false\n",
 			"version",
 		},
-		"zero approvals": {
-			"version: 1\napproval:\n  required_approvals: 0\nsync:\n  enabled: false\n",
+		"zero approvals before version 4": {
+			"version: 3\napproval:\n  required_approvals: 0\nsync:\n  enabled: false\n",
+			"needs version 4",
+		},
+		"negative approvals": {
+			"version: 4\napproval:\n  required_approvals: -1\nsync:\n  enabled: false\n",
 			"required_approvals",
 		},
 		"missing approvals": {
@@ -111,6 +115,7 @@ func TestRenderedFileParsesBackAndExplainsItself(t *testing.T) {
 		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", ClaudeCommand: "claude"},
 		{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: 45 * time.Second, ClaudeCommand: "claude"},
 		{RequiredApprovals: 3, SyncEnabled: false, ClaudeCommand: "claude"},
+		{RequiredApprovals: 0, SyncEnabled: false, ClaudeCommand: "claude"},
 		{RequiredApprovals: 1, SyncEnabled: false, ClaudeCommand: "/opt/claude code/bin/claude", EnforceOff: true},
 	} {
 		data := config.Render(c)
@@ -124,6 +129,20 @@ func TestRenderedFileParsesBackAndExplainsItself(t *testing.T) {
 		if !strings.Contains(string(data), "# ") {
 			t.Errorf("rendered file has no comments:\n%s", data)
 		}
+	}
+}
+
+// required_approvals: 0 is self-approval (ADR 0016), from version 4.
+func TestParseReadsSelfApprovalInVersionFour(t *testing.T) {
+	got, err := config.Parse([]byte("version: 4\napproval:\n  required_approvals: 0\nsync:\n  enabled: false\n"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got.RequiredApprovals != 0 {
+		t.Errorf("RequiredApprovals = %d, want 0", got.RequiredApprovals)
+	}
+	if data := config.Render(got); !strings.Contains(string(data), "version: 4\n") {
+		t.Errorf("Render does not write version 4:\n%s", data)
 	}
 }
 
@@ -151,7 +170,7 @@ func TestTheSyncIntervalDefaultsTo15Seconds(t *testing.T) {
 
 func TestRenderWritesTheCurrentVersion(t *testing.T) {
 	data := string(config.Render(config.Config{RequiredApprovals: 1, SyncEnabled: true, Remote: "origin", SyncInterval: 15 * time.Second}))
-	for _, want := range []string{"version: 3\n", "interval: 15\n", "claude:\n", "  command: claude\n", "  enforce: true\n"} {
+	for _, want := range []string{"version: 4\n", "interval: 15\n", "claude:\n", "  command: claude\n", "  enforce: true\n"} {
 		if !strings.Contains(data, want) {
 			t.Errorf("rendered file has no %q:\n%s", want, data)
 		}
