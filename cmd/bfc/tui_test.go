@@ -302,6 +302,12 @@ func TestTUIWatcherReadsTheTipOfThePlansRef(t *testing.T) {
 	if want := strings.TrimSpace(gitIn(t, dir, "rev-parse", plansRef)); err != nil || after != want || after == before {
 		t.Errorf("after bfc new Tip = %q, %v; want the new tip %q", after, err, want)
 	}
+	// A write by another process: git itself moves the ref.
+	moved := strings.TrimSpace(gitIn(t, dir, "commit-tree", after+"^{tree}", "-p", after, "-m", "outside"))
+	gitIn(t, dir, "update-ref", plansRef, moved)
+	if tip, err := w.Tip(ctx); err != nil || tip != moved {
+		t.Errorf("after another process moved the ref Tip = %q, %v; want %q", tip, err, moved)
+	}
 
 	empty := t.TempDir()
 	gitIn(t, empty, "init", "-q", "-b", "main")

@@ -11,7 +11,6 @@ import (
 	"path"
 	"slices"
 	"strings"
-	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
@@ -64,15 +63,10 @@ func runTUI(cmd *cobra.Command) error {
 	return err
 }
 
-// tuiWatchInterval is the time between two reads of the Plans ref's tip:
-// a write by an agent shows within a few seconds, at the cost of one git
-// rev-parse.
-const tuiWatchInterval = 2 * time.Second
-
 // tuiOptions reads the sync interval and local mode from the config file.
 // Without a repository or a readable config file, the defaults apply.
 func tuiOptions(cmd *cobra.Command) tui.AppOptions {
-	opts := tui.AppOptions{Interval: config.DefaultSyncInterval, WatchInterval: tuiWatchInterval}
+	opts := tui.AppOptions{Interval: config.DefaultSyncInterval}
 	if s, err := openStore(cmd); err == nil {
 		if set, err := syncSettings(s); err == nil {
 			opts.Interval, opts.Local = set.interval, set.local
@@ -306,8 +300,9 @@ func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewActio
 }
 
 // tuiWatcher is the Watcher of the TUI: it reads the tip of the local Plans
-// ref. The app reads one tip at a time, so the store opened by the first
-// read is kept without a lock.
+// ref, every tui.DefaultWatchInterval. The app runs one read at a time and
+// starts the next only after the previous one's result arrived, so the
+// store opened by the first read is kept without a lock.
 type tuiWatcher struct {
 	cmd *cobra.Command
 	s   *store.Store

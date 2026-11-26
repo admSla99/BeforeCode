@@ -70,8 +70,8 @@ func (m Inbox) sections() []struct {
 } {
 	var findings, reviews, questions []inboxItem
 	for _, f := range m.waiting.Findings {
-		line := fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, f.Finding.Text())
-		findings = append(findings, inboxItem{"finding " + line, f.ShortID, line})
+		key := fmt.Sprintf("finding %s %d %s %s", f.ShortID, f.Finding.PR, f.Finding.Criterion, f.Finding.OutOfScope)
+		findings = append(findings, inboxItem{key, f.ShortID, fmt.Sprintf("%s  PR #%d  %s", f.ShortID, f.Finding.PR, f.Finding.Text())})
 	}
 	for _, r := range m.waiting.Reviews {
 		reviews = append(reviews, inboxItem{"review " + r.ShortID, r.ShortID, r.ShortID + "  " + r.Title})
@@ -102,19 +102,9 @@ func (m Inbox) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		m.width, m.height = msg.Width, msg.Height
 		m.help.SetWidth(msg.Width)
 	case inboxLoadedMsg:
-		var selected string
-		if items := m.items(); m.cursor < len(items) {
-			selected = items[m.cursor].key
-		}
+		before := m.items()
 		m.waiting, m.loadErr, m.loaded = msg.waiting, msg.err, true
-		items := m.items()
-		m.cursor = min(m.cursor, max(len(items)-1, 0))
-		// Keep the selected item when it is still shown.
-		for i, it := range items {
-			if it.key == selected {
-				m.cursor = i
-			}
-		}
+		m.cursor = keepSelection(before, m.items(), m.cursor, func(it inboxItem) string { return it.key })
 	case tea.KeyPressMsg:
 		switch {
 		case key.Matches(msg, m.keys.Quit):

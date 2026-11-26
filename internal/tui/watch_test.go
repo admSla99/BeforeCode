@@ -5,8 +5,6 @@ import (
 	"testing"
 	"time"
 
-	tea "charm.land/bubbletea/v2"
-
 	"github.com/admSla99/BeforeCode/internal/core"
 )
 
@@ -46,7 +44,9 @@ func TestAppShowsAPlanWrittenOutside(t *testing.T) {
 				f.plans.plans = append([]PlanRow{{ShortID: "bfc-w4tc", State: core.StateDraft, Title: "Written by the agent", Author: "ada@example.com", LastActivity: at(18, 0)}}, f.plans.plans...)
 			})
 			waitFor(t, tm, "Written by the agent")
-			screen(t, tm)
+			if out := screen(t, tm); !strings.Contains(out, "bfc-w4tc") {
+				t.Errorf("the new plan is not listed:\n%s", out)
+			}
 		})
 	}
 }
@@ -136,7 +136,9 @@ func TestInboxShowsAQuestionWrittenOutside(t *testing.T) {
 		f.plans.waiting.Questions = append(f.plans.waiting.Questions, q)
 	})
 	waitFor(t, tm, "Questions (2)")
-	screen(t, tm)
+	if out := screen(t, tm); !strings.Contains(out, "Asked by the agent.") {
+		t.Errorf("the new Question is not listed:\n%s", out)
+	}
 }
 
 // bfc-z3wd AC-6: while the tip stays, the watcher only reads it.
@@ -148,60 +150,60 @@ func TestAppDoesNotReloadWhileTheTipStays(t *testing.T) {
 	_, before := f.counts()
 	waitReads(t, f, 4)
 	_, after := f.counts()
-	screen(t, tm)
+	if out := screen(t, tm); !strings.Contains(out, "Affected areas") {
+		t.Errorf("the detail is no longer shown:\n%s", out)
+	}
 	if after != before {
 		t.Errorf("%d loads while the tip stayed, want none", after-before)
 	}
 }
 
-// bfc-z3wd AC-8: a sync that brought changes reloads the screens once; the
-// watcher does not reload again for the tip the sync made.
+// bfc-z3wd AC-8: a sync that brought changes reloads the screens once:
+// the watcher does not reload again for the tip the sync made.
 func TestAppSyncAndWatcherReloadOnce(t *testing.T) {
 	t.Parallel()
 	f := newFakeTeam()
-	m := NewApp(f, f, AppOptions{Interval: time.Hour, Watcher: f, WatchInterval: time.Hour})
-	m.tip = "tip-0"
-	m.sync.running = true
-	f.outside(func() {}) // the sync moved the tip to tip-1
-
-	next, cmd := m.Update(syncDoneMsg{SyncResult{Outcome: SyncOK, Changed: true}})
-	m = next.(App)
-	var quiet *watchDoneMsg
-	for _, msg := range runAll(cmd) {
-		if w, ok := msg.(watchDoneMsg); ok {
-			quiet = &w
-		}
+	release := make(chan struct{})
+	f.syncFn = func() SyncResult {
+		<-release
+		f.outside(func() {
+			f.plans.plans = append([]PlanRow{{ShortID: "bfc-w4tc", State: core.StateDraft, Title: "Pulled by the sync", Author: "ada@example.com", LastActivity: at(18, 0)}}, f.plans.plans...)
+		})
+		return SyncResult{Outcome: SyncOK, Changed: true}
 	}
-	if quiet == nil || !quiet.quiet || quiet.tip != "tip-1" {
-		t.Fatalf("after the sync the tip is read %+v, want a quiet read of tip-1", quiet)
-	}
-	next, _ = m.Update(*quiet)
-	m = next.(App)
+	app := NewApp(f, f, watching(f, false))
+	app.now = func() time.Time { return t0 }
+	tm := newTestModel(t, app, 80, 24)
+	toPlanList(t, tm)
+	waitReads(t, f, 1)
 	_, before := f.counts()
-	next, cmd = m.Update(watchDoneMsg{tip: "tip-1"})
-	m = next.(App)
-	runAll(cmd)
-	if _, after := f.counts(); after != before || m.tip != "tip-1" {
-		t.Errorf("the watch tick on the synced tip loaded %d times, want 0", after-before)
+	close(release)
+	waitFor(t, tm, "Pulled by the sync")
+	waitReads(t, f, 4)
+	_, after := f.counts()
+	screen(t, tm)
+	// One reload loads the Inbox and the list.
+	if after-before != 2 {
+		t.Errorf("%d loads after the sync, want 2 (one reload)", after-before)
 	}
 }
 
-// runAll runs cmd and the commands of every batch in it, and returns the
-// messages they produced. It must not meet a timer.
-func runAll(cmd tea.Cmd) []tea.Msg {
-	if cmd == nil {
-		return nil
+// bfc-z3wd: a read asked for while one runs waits for it, so two reads
+// never run at once and an older tip never overwrites a newer one.
+func TestAppReadsOneTipAtATime(t *testing.T) {
+	t.Parallel()
+	f := newFakeTeam()
+	m := NewApp(f, f, watching(f, true))
+	first := m.readTip()
+	if first == nil || m.readTip() != nil {
+		t.Fatal("a second read started while the first runs")
 	}
-	msg := cmd()
-	batch, ok := msg.(tea.BatchMsg)
-	if !ok {
-		return []tea.Msg{msg}
+	f.outside(func() {})
+	next, _ := m.Update(first())
+	m = next.(App)
+	if !m.watch.reading || m.watch.again {
+		t.Fatal("the queued read did not start after the first ended")
 	}
-	var msgs []tea.Msg
-	for _, c := range batch {
-		msgs = append(msgs, runAll(c)...)
-	}
-	return msgs
 }
 
 // bfc-z3wd AC-7: a plan that appears above the selected one keeps the same
