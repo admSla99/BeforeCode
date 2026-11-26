@@ -24,7 +24,7 @@ sync:
 | Key | Type | Rule |
 | --- | --- | --- |
 | `version` | integer, required | `1`. A greater value makes `bfc` stop with "update bfc". |
-| `approval.required_approvals` | integer ≥ 1, required | Copied into each `submitted` event at submit time (ADR 0002, section 4). Same name as that field. |
+| `approval.required_approvals` | integer ≥ 1, required (≥ 0 from version 4, ADR 0016) | Copied into each `submitted` event at submit time (ADR 0002, section 4). Same name as that field. |
 | `sync.enabled` | boolean, required | `false` is local mode. |
 | `sync.remote` | string | Required when `sync.enabled` is `true`, absent when it is `false`. The **name** of a git remote, not its URL. |
 
@@ -92,3 +92,15 @@ claude:
 - `bfc doctor` reports whether `claude.command` is found (`exec.LookPath`). Claude Code is optional for `bfc`, so a missing command is a warning, not a failure.
 - `claude.command` is one executable, not a shell line; arguments for it are not supported. It is a name looked up on `PATH` or an absolute path: a relative path would be resolved against a different directory by `bfc doctor` and by the agent adapter, which runs in the agent's working directory.
 - A version 2 binary stops on a version 3 file with "update bfc".
+
+## Version 4 (2026-11-26, issue #143)
+
+`approval.required_approvals` may be `0`, which is self-approval: the plan author's own Approval counts, and one Approval is still needed (ADR 0016).
+
+| Key | Type | Rule |
+| --- | --- | --- |
+| `approval.required_approvals` | integer ≥ 0, required | `0` only in version 4; in an older file it is an error that names version 4. Negative values are errors. |
+
+- No key is added; the version changes because an older binary must stop with "update bfc" instead of rejecting the value.
+- `bfc init` writes version 4 with the default `required_approvals: 1` and a comment that explains `0`.
+- A version 3 binary stops on a version 4 file with "update bfc".

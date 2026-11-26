@@ -23,7 +23,7 @@ Source: <https://until.dev>, <https://github.com/until-dev/plugins>. Closed sour
 
 - Loop: Brainstorm, Plan, Submit, Run, Check. Rule: "No code until the Plan is agreed."
 - A plan check, asked for in Claude Code, checks a pull request and reports what is missing, changed, or out of scope. A difference is fixed in code, fixed in the plan, or acknowledged by a person.
-- Approval is by another person; the author cannot approve their own plan and an agent cannot replace a human reviewer.
+- Approval is by another person; the author cannot approve their own plan and an agent cannot replace a human reviewer. A developer working alone can turn on self-approval (`required_approvals: 0`, ADR 0016): the author then approves their own plan at the same Gate.
 - Enforcement through hooks in several harnesses (Claude Code, Codex, Cursor, OpenCode and others).
 
 BeforeCode shares the idea and differs by being fully open source, Git-only, and by adding grilling and team discussion on the plan.
@@ -48,7 +48,7 @@ Plannotator (plan review UI with annotations fed back to the agent), GitHub Spec
 | Hosting | GitHub only. The hidden ref is verified on real GitHub (ADR 0001) |
 | Scope | One repository. No plans spanning repositories |
 | Plan format | Two documents: a short `intent.md` and a `plan.md` for agents with acceptance criteria |
-| Approval | Configurable; one approver for now |
+| Approval | Configurable; one approver by default, or self-approval for a developer working alone (`required_approvals: 0`, ADR 0016) |
 | Identity | Git commit author. No signing or further rules yet |
 | Plan check | Claude Code in a developer's clone, when they ask for it ("check PR #42 against its plan"); `bfc check record` stores the result in the plans ref. A Finding appears in `bfc` (`bfc show`, the plan author's Inbox), not on the pull request (ADR 0015) |
 | Agent interface | Agents use the `bfc` CLI with `--json`, like people and scripts; instructions come from the binary (`bfc prime`). No MCP server, no daemon (ADR 0008) |
@@ -80,7 +80,7 @@ stateDiagram-v2
     draft --> draft: grill, edit, questions
     draft --> in_review: submit
     in_review --> draft: changes requested, withdraw
-    in_review --> approved: approve (not the author)
+    in_review --> approved: approve (not the author, unless self-approval)
     approved --> in_review: plan.md edited
     approved --> draft: changes requested, withdraw
     approved --> in_progress: task claimed
@@ -251,7 +251,7 @@ The index is `.git/beforecode/index.db`. It records the plans ref commit it was 
 ```
 # On normal branches (changed through pull requests)
 .beforecode/
-  config.yaml                 # approval policy, sync (ADR 0003); claude.command, claude.enforce in version 3 (ADR 0003)
+  config.yaml                 # approval policy, sync (ADR 0003); claude.command, claude.enforce in version 3; self-approval in version 4 (ADR 0003, 0016)
   skills/                     # defaults embedded in bfc; the repository's copy wins
     grill-intent/SKILL.md       # phase 2
     grill-architecture/SKILL.md
