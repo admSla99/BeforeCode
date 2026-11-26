@@ -39,6 +39,7 @@ func TestPrimeGrillOfAPlanWithAnsweredAndOpenQuestions(t *testing.T) {
 	open := core.Message{
 		ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C5C"), Author: adaP, At: primeAt, Agent: claudeCode,
 		To: []string{"ada@example.com"}, Ref: "intent.md", Body: "How do we know it worked?",
+		Options: []string{"A test-card checkout", "A live payment"}, Recommended: "A test-card checkout",
 	}
 	chat := core.Message{ID: ulid.MustParseStrict("01JD3K8Q2W5V7X9Y0Z1A2B3C5D"), Author: benP, At: primeAt, Body: "Nice idea."}
 	golden(t, renderGrillString(t, topicView{Skill: testGrillSkill, Plan: p, Current: true, Messages: []core.Message{asked, answer, open, chat}}))

@@ -289,7 +289,8 @@ func throughAgent(by, agent string) string {
 
 // writeDiscussion prints every Message of msgs as the Threads read (see
 // core.Discussion): a line with its ULID, author and time, a line with its
-// addressees, ref and, for a Question, whether it is open, then its text.
+// addressees, ref and, for a Question, whether it is open, then its text
+// and its options, the recommended one marked.
 // Each reply is indented under the Message it replies to.
 func writeDiscussion(b *strings.Builder, msgs []core.Message) {
 	if len(msgs) == 0 {
@@ -319,6 +320,12 @@ func writeDiscussion(b *strings.Builder, msgs []core.Message) {
 		}
 		for _, line := range strings.Split(p.Body, "\n") {
 			fmt.Fprintf(b, "%s  %s\n", pad, line)
+		}
+		for _, o := range p.Options {
+			if o == p.Recommended {
+				o += " (recommended)"
+			}
+			fmt.Fprintf(b, "%s  - %s\n", pad, o)
 		}
 	}
 }
