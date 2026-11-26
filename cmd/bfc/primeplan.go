@@ -48,7 +48,7 @@ func renderPlanTopic(w io.Writer, v topicView) error {
 	fmt.Fprintf(&b, "- Ask what is missing: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`, then `bfc reply <id> --verbatim -m \"<their words>\"`\n", p.ShortID, authorAddress(p))
 	writeFenced(&b, "plan.md template", v.Template)
 	writeFenced(&b, "intent.md", p.Intent)
-	writeGrillSection(&b, v)
+	writeGrillSection(&b, v, false)
 	if written {
 		writeFenced(&b, "plan.md as written", p.Plan)
 	}

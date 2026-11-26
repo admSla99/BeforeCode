@@ -104,7 +104,7 @@ func renderGrill(w io.Writer, v topicView) error {
 	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md [--option \"<likely answer>\"... --recommend \"<option>\"] --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, authorAddress(p))
 	b.WriteString("- Record the answer: `bfc reply <id> --verbatim -m \"<their words>\"`\n")
 	writeFenced(&b, "intent.md", p.Intent)
-	writeGrillSection(&b, v)
+	writeGrillSection(&b, v, true)
 	_, err := io.WriteString(w, b.String())
 	return err
 }
@@ -150,14 +150,35 @@ func writeFenced(b *strings.Builder, heading string, doc []byte) {
 	fmt.Fprintf(b, "\n### %s\n\n%smarkdown\n%s%s\n", heading, fence, text, fence)
 }
 
-// writeGrillSection writes the Grill of the plan grouped by round, then
-// the other Questions, each with its replies.
-func writeGrillSection(b *strings.Builder, v topicView) {
+// writeGrillSection writes the Questions of the plan with their replies:
+// with byRound the Grill grouped by round, then the other Questions (bfc
+// prime grill); otherwise every Question in the order it was asked.
+func writeGrillSection(b *strings.Builder, v topicView, byRound bool) {
 	b.WriteString("\n### The Grill so far\n\n")
 	if v.Unread != "" {
 		b.WriteString("The Grill so far cannot be read: " + v.Unread + "\n")
 	}
+	if !byRound {
+		writeQuestions(b, v.Messages)
+		return
+	}
 	writeGrill(b, v.Messages, v.Plan.Status.Author.Email)
+}
+
+// writeQuestions prints each Question of msgs with its replies, in the
+// order they were asked. Messages that neither ask nor answer are left out.
+func writeQuestions(b *strings.Builder, msgs []core.Message) {
+	open := core.OpenQuestions(msgs)
+	n := 0
+	for _, q := range msgs {
+		if q.IsQuestion() {
+			n++
+			writeQuestion(b, n, q, msgs, open, false)
+		}
+	}
+	if n == 0 {
+		b.WriteString("No Questions yet.\n")
+	}
 }
 
 // writeGrill prints the Grill Questions of msgs by round (ADR 0017), each
@@ -174,7 +195,7 @@ func writeGrill(b *strings.Builder, msgs []core.Message, author string) {
 		for _, q := range r {
 			grill[q.Question.ID] = true
 			n++
-			writeQuestion(b, n, q.Question, msgs, open)
+			writeQuestion(b, n, q.Question, msgs, open, true)
 		}
 		b.WriteString("\n")
 	}
@@ -206,19 +227,19 @@ func writeGrill(b *strings.Builder, msgs []core.Message, author string) {
 	b.WriteString("\n#### Other Questions\n\n")
 	for _, q := range others {
 		n++
-		writeQuestion(b, n, q, msgs, open)
+		writeQuestion(b, n, q, msgs, open, true)
 	}
 }
 
-// writeQuestion prints the Question q as item n, with its options and its
-// replies among msgs.
-func writeQuestion(b *strings.Builder, n int, q core.Message, msgs, open []core.Message) {
+// writeQuestion prints the Question q as item n, with its options when
+// asked to, and its replies among msgs.
+func writeQuestion(b *strings.Builder, n int, q core.Message, msgs, open []core.Message, options bool) {
 	status := "answered"
 	if slices.ContainsFunc(open, func(o core.Message) bool { return o.ID == q.ID }) {
 		status = "open"
 	}
 	fmt.Fprintf(b, "%d. Question %s%s to %s (%s):\n%s", n, q.ID, refSuffix(q.Ref), strings.Join(q.To, ", "), status, indent(q.Body))
-	if len(q.Options) > 0 {
+	if options && len(q.Options) > 0 {
 		b.WriteString("   Options:\n")
 		for _, o := range q.Options {
 			if o == q.Recommended {

@@ -109,3 +109,33 @@ func TestGrillCutsLongOptions(t *testing.T) {
 	waitFor(t, tm, "Write my own answer")
 	finalGolden(t, tm)
 }
+
+// bfc-121s AC-8: the answer line of a Question with options fits 80x24,
+// with the options still listed and esc back to them in the help line.
+func TestGrillAnswerLineWithOptions(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().withOpenQuestion("Which currency?", "EUR", "USD", "EUR")
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "› EUR (recommended)")
+	pressKey(tm, tea.KeyDown)
+	waitFor(t, tm, "› Write my own answer")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "esc options")
+	typeText(tm, "CHF")
+	waitFor(t, tm, "CHF▌")
+	finalGolden(t, tm)
+}
+
+// bfc-121s AC-8: while a picked option is being stored, the screen shows it
+// on the answer line and fits 80x24.
+func TestGrillSavingAPickedOption(t *testing.T) {
+	t.Parallel()
+	g := newFakeGrill().withOpenQuestion("Which currency?", "EUR", "USD", "EUR")
+	g.answerHold = make(chan struct{})
+	tm := newGrillModel(t, g)
+	waitFor(t, tm, "› EUR (recommended)")
+	pressKey(tm, tea.KeyEnter)
+	waitFor(t, tm, "EUR  (saving…)")
+	finalGolden(t, tm)
+	close(g.answerHold)
+}
