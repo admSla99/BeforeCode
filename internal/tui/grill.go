@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"fmt"
+	"slices"
 	"strings"
 	"time"
 
@@ -34,7 +35,7 @@ type GrillTurnKind int
 
 // The kinds of turn.
 const (
-	TurnAsk       GrillTurnKind = iota // ask the next Question
+	TurnAsk       GrillTurnKind = iota // ask the next round of Questions
 	TurnSummary                        // finish the Grill with a summary
 	TurnWritePlan                      // write plan.md
 )
@@ -42,13 +43,18 @@ const (
 // GrillTurn is one turn of the agent.
 type GrillTurn struct {
 	Kind GrillTurnKind
-	// Answer is the author's answer to the previous Question, for a
-	// TurnAsk that follows one; empty to continue without one.
-	Answer string
+	// Round is the round a TurnAsk asks, from 1 (ADR 0017).
+	Round int
+	// Answers are the author's answers to the round before, for a TurnAsk
+	// that follows one; none to continue without them.
+	Answers []GrillAnswer
 	// Force lets a TurnWritePlan replace a written plan.md: the author
 	// said yes.
 	Force bool
 }
+
+// GrillAnswer is a Question of the Grill and the author's answer to it.
+type GrillAnswer struct{ Question, Answer string }
 
 // GrillEvent is one piece of a turn's output.
 type GrillEvent struct {
@@ -66,7 +72,7 @@ type GrillSnapshot struct {
 	Author         string // the author's name
 	AuthorEmail    string
 	// Questions are the Grill's Questions from the AI to the author, in
-	// the order they were asked.
+	// the order they were asked, each with its round.
 	Questions []GrillQuestion
 	// Others are Messages that neither ask nor answer a Grill Question,
 	// such as comments of other people, oldest first.
@@ -81,20 +87,85 @@ type GrillQuestion struct {
 	Text   string
 	Answer string // the author's answer, "" while open
 	Open   bool
+	Round  int // the round it was asked in, from 1 (core.GrillRounds)
+	// Options are the likely answers the agent gave, and Recommended the
+	// one it recommends; none when it gave none.
+	Options     []string
+	Recommended string
 }
+
+// customAnswer is the last item of a Question's options: the author writes
+// the answer.
+const customAnswer = "Write my own answer"
 
 // GrillMessage is a Message outside the Grill's Questions and their
 // answers, such as a comment by someone else.
 type GrillMessage struct{ Who, Text string }
 
-// open returns the newest open Question, or nil.
+// open returns the Question the author answers now: the first open one of
+// the last round, else the oldest open one; nil when none is open.
 func (s GrillSnapshot) open() *GrillQuestion {
-	for i := len(s.Questions) - 1; i >= 0; i-- {
+	last := s.lastRound()
+	for i := range s.Questions {
+		if s.Questions[i].Open && s.Questions[i].Round == last {
+			return &s.Questions[i]
+		}
+	}
+	for i := range s.Questions {
 		if s.Questions[i].Open {
 			return &s.Questions[i]
 		}
 	}
 	return nil
+}
+
+// lastRound is the round of the newest Question, 0 before the first.
+func (s GrillSnapshot) lastRound() int {
+	last := 0
+	for _, q := range s.Questions {
+		last = max(last, q.Round)
+	}
+	return last
+}
+
+// round returns the Questions of round r.
+func (s GrillSnapshot) round(r int) []GrillQuestion {
+	var out []GrillQuestion
+	for _, q := range s.Questions {
+		if q.Round == r {
+			out = append(out, q)
+		}
+	}
+	return out
+}
+
+// limitReached reports whether the last of core.MaxGrillRounds rounds is
+// asked and answered: no new round is asked.
+func (s GrillSnapshot) limitReached() bool {
+	return s.lastRound() >= core.MaxGrillRounds && s.open() == nil
+}
+
+// answers returns the answered Questions of round r with their answers.
+func (s GrillSnapshot) answers(r int) []GrillAnswer {
+	var out []GrillAnswer
+	for _, q := range s.round(r) {
+		if !q.Open {
+			out = append(out, GrillAnswer{Question: q.Text, Answer: q.Answer})
+		}
+	}
+	return out
+}
+
+// withAnswer returns s with the Question of this ID answered by text, as
+// stored; the next snapshot confirms it.
+func (s GrillSnapshot) withAnswer(id, text string) GrillSnapshot {
+	s.Questions = slices.Clone(s.Questions)
+	for i, q := range s.Questions {
+		if q.ID == id {
+			s.Questions[i].Open, s.Questions[i].Answer = false, text
+		}
+	}
+	return s
 }
 
 // grillPhase is where the Grill stands (docs/design.md, section 3).
@@ -109,10 +180,11 @@ const (
 	phaseEnded                         // the agent wrote its summary
 	phaseWriting                       // the write-plan turn runs
 	phaseNothingLeft                   // the agent asked nothing: nothing is left to ask
+	phaseLimit                         // the last round is answered: no new round is asked
 )
 
-// GrillScreen is the Grill of one plan: one Question at a time, with the
-// answered ones below it. It writes through Grill only; the app syncs
+// GrillScreen is the Grill of one plan: the Questions of a round one at a
+// time, with the answered ones below them (ADR 0017). It writes through Grill only; the app syncs
 // after its GrillChangedMsg and PlanEditedMsg.
 type GrillScreen struct {
 	grill   Grill
@@ -135,7 +207,13 @@ type GrillScreen struct {
 	notice  string    // one line of news: sync, errors, cancels
 	failed  bool      // notice is an error
 	confirm bool      // asking whether to replace plan.md
-	cancel  context.CancelFunc
+	// choiceFor is the Question the option list was set up for; cursor is
+	// the selected item, len(Options) for the custom answer, and typing is
+	// set while the answer line is open.
+	choiceFor string
+	cursor    int
+	typing    bool
+	cancel    context.CancelFunc
 	// stopped is set when the author cancelled the running turn, quitting
 	// when ctrl+c waits for it to end before bfc quits.
 	stopped, quitting bool
@@ -184,7 +262,10 @@ type grillStartedMsg struct {
 	err error
 }
 
-type grillAnsweredMsg struct{ err error }
+type grillAnsweredMsg struct {
+	id, text string // the Question and its answer
+	err      error
+}
 
 type grillTickMsg struct{}
 
@@ -266,12 +347,12 @@ func (m GrillScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 	case grillAnsweredMsg:
 		if msg.err != nil {
 			m.phase, m.notice, m.failed = phaseWaiting, "answer not saved: "+msg.err.Error(), true
+			if !m.typing {
+				m.input = ""
+			}
 			return m, nil
 		}
-		answer := m.input
-		m.input = ""
-		m, cmd := m.start(GrillTurn{Kind: TurnAsk, Answer: answer})
-		return m, tea.Batch(cmd, m.reload(), grillChanged)
+		return m.answered(msg)
 	case grillTickMsg:
 		if m.running() {
 			m.frame++
@@ -281,6 +362,29 @@ func (m GrillScreen) Update(msg tea.Msg) (tea.Model, tea.Cmd) {
 		return m.press(msg)
 	}
 	return m, nil
+}
+
+// answered goes on after an answer was stored: to the next open Question
+// of the round, else to the next round, unless it was the last.
+func (m GrillScreen) answered(msg grillAnsweredMsg) (tea.Model, tea.Cmd) {
+	m.snap, m.input = m.snap.withAnswer(msg.id, msg.text), ""
+	switch {
+	case m.snap.open() != nil:
+		m.phase = phaseWaiting
+		m.setChoice()
+	case m.snap.limitReached():
+		m.phase = phaseLimit
+	default:
+		round := m.snap.lastRound()
+		m, cmd := m.start(GrillTurn{Kind: TurnAsk, Round: round + 1, Answers: m.snap.answers(round)})
+		return m, tea.Batch(cmd, m.reload(), grillChanged)
+	}
+	return m, tea.Batch(m.reload(), grillChanged)
+}
+
+// nextTurn is the turn that asks the next round.
+func (m GrillScreen) nextTurn() GrillTurn {
+	return GrillTurn{Kind: TurnAsk, Round: m.snap.lastRound() + 1}
 }
 
 // loadedSnap takes a new snapshot; the one a turn's end asked for decides
@@ -304,14 +408,47 @@ func (m GrillScreen) loadedSnap(msg grillLoadedMsg) (tea.Model, tea.Cmd) {
 		// The turn decides once it has ended.
 	case m.phase == phaseWaiting && open == nil:
 		m.phase, m.input = phaseIdle, ""
+		if m.snap.limitReached() {
+			m.phase = phaseLimit
+		}
 		m.notice = strings.TrimSpace(m.notice + " The open Question was answered elsewhere.")
 		m.failed = false
 	case m.phase == phaseIdle && open != nil && msg.n == 0:
 		m.phase = phaseWaiting // a Question from an earlier session waits
+	case m.phase == phaseIdle && m.snap.limitReached():
+		m.phase = phaseLimit
+	case m.phase == phaseLimit && open != nil:
+		m.phase = phaseWaiting // a Question that sync brought waits
 	case m.phase == phaseNothingLeft && open != nil:
 		m.phase = phaseWaiting // a Question that sync brought waits
 	}
+	m.setChoice()
 	return m, nil
+}
+
+// setChoice sets up the option list when a new Question waits: the
+// recommended option selected, or the first; the answer line alone for a
+// Question without options.
+func (m *GrillScreen) setChoice() {
+	q := m.snap.open()
+	if m.phase != phaseWaiting || q == nil || q.ID == m.choiceFor {
+		return
+	}
+	m.choiceFor, m.cursor, m.typing, m.input = q.ID, 0, len(q.Options) == 0, ""
+	for i, o := range q.Options {
+		if o == q.Recommended {
+			m.cursor = i
+		}
+	}
+}
+
+// choosing reports whether the author picks from the option list now.
+func (m GrillScreen) choosing() bool { return m.phase == phaseWaiting && !m.typing }
+
+// hasOptions reports whether the open Question has options.
+func (m GrillScreen) hasOptions() bool {
+	q := m.snap.open()
+	return q != nil && len(q.Options) > 0
 }
 
 // decide sets the phase after a turn that asked for a Question, was
@@ -416,8 +553,13 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m, nil
 	case m.phase == phaseSaving || !m.loaded:
 		return m, nil
+	case m.phase == phaseWaiting && m.typing && m.hasOptions() && key.Matches(msg, m.keys.BackToOptions):
+		m.typing = false
+		return m, nil
 	case key.Matches(msg, m.keys.Cancel):
 		return m, func() tea.Msg { return closeGrillMsg{} }
+	case m.choosing():
+		return m.pick(msg)
 	case m.phase == phaseWaiting:
 		switch {
 		case key.Matches(msg, m.keys.FinishTyping):
@@ -426,16 +568,16 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 			if strings.TrimSpace(m.input) == "" {
 				return m, nil
 			}
-			q, g, short, text := m.snap.open(), m.grill, m.shortID, strings.TrimSpace(m.input)
-			m.input, m.phase = text, phaseSaving
-			return m, func() tea.Msg { return grillAnsweredMsg{g.Answer(context.Background(), short, q.ID, text)} }
+			return m.answer(strings.TrimSpace(m.input))
 		}
 		editLine(&m.input, msg)
 		return m, nil
 	case key.Matches(msg, m.keys.Send) && m.phase == phaseError:
 		return m.start(m.turn) // retry the turn that failed
+	case key.Matches(msg, m.keys.Send) && m.phase == phaseLimit:
+		return m, nil // no round after the last
 	case key.Matches(msg, m.keys.Send):
-		return m.start(GrillTurn{Kind: TurnAsk})
+		return m.start(m.nextTurn())
 	case key.Matches(msg, m.keys.Finish) && m.phase != phaseEnded && (len(m.snap.Questions) > 0 || m.phase == phaseNothingLeft):
 		return m.start(GrillTurn{Kind: TurnSummary})
 	case key.Matches(msg, m.keys.Write) && m.phase == phaseEnded:
@@ -446,6 +588,36 @@ func (m GrillScreen) press(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
 		return m.start(GrillTurn{Kind: TurnWritePlan})
 	}
 	return m, nil
+}
+
+// pick handles a key while the author picks from the option list: ↑↓
+// select, enter answers with the option or opens the answer line for the
+// custom item.
+func (m GrillScreen) pick(msg tea.KeyPressMsg) (tea.Model, tea.Cmd) {
+	q := m.snap.open()
+	switch {
+	case key.Matches(msg, m.keys.Up):
+		m.cursor = max(m.cursor-1, 0)
+	case key.Matches(msg, m.keys.Down):
+		m.cursor = min(m.cursor+1, len(q.Options))
+	case key.Matches(msg, m.keys.Finish):
+		return m.start(GrillTurn{Kind: TurnSummary})
+	case key.Matches(msg, m.keys.Send) && m.cursor == len(q.Options):
+		m.typing = true
+	case key.Matches(msg, m.keys.Send):
+		return m.answer(q.Options[m.cursor])
+	}
+	return m, nil
+}
+
+// answer stores text as the author's answer to the open Question.
+func (m GrillScreen) answer(text string) (tea.Model, tea.Cmd) {
+	q, g, short := m.snap.open(), m.grill, m.shortID
+	m.input, m.phase = text, phaseSaving
+	id := q.ID
+	return m, func() tea.Msg {
+		return grillAnsweredMsg{id: id, text: text, err: g.Answer(context.Background(), short, id, text)}
+	}
 }
 
 // View draws the screen: header, the Question, the answered ones, then
@@ -481,13 +653,20 @@ func (m GrillScreen) View() tea.View {
 }
 
 func (m GrillScreen) header() string {
-	n := len(m.snap.Questions)
-	if m.phase == phaseThinking && m.turn.Kind == TurnAsk && m.snap.open() == nil {
-		n++ // the Question being asked
-	}
-	count := fmt.Sprintf("Question %d", max(n, 1))
-	if m.phase == phaseNothingLeft {
-		count = plural(n, "Question") + " asked"
+	limit := core.MaxGrillRounds
+	q := m.snap.open()
+	var count string
+	switch {
+	case m.phase == phaseThinking && m.turn.Kind == TurnAsk && q == nil:
+		count = fmt.Sprintf("round %d/%d", max(m.turn.Round, 1), limit) // the round being asked
+	case q != nil:
+		round := m.snap.round(q.Round)
+		i := slices.IndexFunc(round, func(o GrillQuestion) bool { return o.ID == q.ID })
+		count = fmt.Sprintf("round %d/%d · Q%d/%d", max(q.Round, 1), limit, i+1, len(round))
+	case m.phase == phaseNothingLeft:
+		count = plural(len(m.snap.Questions), "Question") + " asked"
+	default:
+		count = fmt.Sprintf("round %d/%d", max(m.snap.lastRound(), 1), limit)
 	}
 	return styleTitle.Render("Grill") + "  " + m.snap.ShortID + " " + m.snap.Title + "  " +
 		styleDim.Render(string(m.snap.State)+" · "+count)
@@ -518,11 +697,35 @@ func (m GrillScreen) focus(w int) []string {
 	case m.phase == phaseNothingLeft:
 		lines := []string{styleTitle.Render("Nothing left to ask")}
 		lines = append(lines, wrap(m.stream, w)...)
-		return append(lines, "", "f finishes the Grill with a summary; Enter asks for another Question.")
+		return append(lines, "", "f finishes the Grill with a summary; Enter asks for another round.")
+	case m.phase == phaseLimit:
+		return []string{
+			styleTitle.Render("Round limit reached"),
+			fmt.Sprintf("All %d rounds are asked and answered. f finishes the Grill with a summary.", core.MaxGrillRounds),
+		}
 	case q != nil:
-		return append([]string{styleTitle.Render("Question")}, wrap(q.Text, w)...)
+		lines := append([]string{styleTitle.Render("Question")}, wrap(q.Text, w)...)
+		if len(q.Options) == 0 {
+			return lines
+		}
+		lines = append(lines, "")
+		for i, o := range append(slices.Clone(q.Options), customAnswer) {
+			// The option is cut, not the mark after it.
+			if i < len(q.Options) && q.Options[i] == q.Recommended {
+				const rec = " (recommended)"
+				o = truncate(oneLine(o), max(w-2-len(rec), 1)) + rec
+			} else {
+				o = oneLine(o)
+			}
+			mark := "  "
+			if m.choosing() && i == m.cursor {
+				mark, o = styleAccent.Render("› "), styleAccent.Render(o)
+			}
+			lines = append(lines, mark+o)
+		}
+		return lines
 	case len(m.snap.Questions) == 0:
-		return []string{"No Questions yet. Enter starts the Grill: Claude Code reads the Intent", "and asks one Question at a time; your answers are stored on the plan."}
+		return []string{"No Questions yet. Enter starts the Grill: Claude Code reads the Intent", fmt.Sprintf("and asks in rounds, at most %d; your answers are stored on the plan.", core.MaxGrillRounds)}
 	default:
 		return []string{"No open Question. Enter continues the Grill; f finishes it."}
 	}
@@ -559,10 +762,10 @@ func (m GrillScreen) footer() []string {
 	if m.confirm {
 		lines = append(lines, "plan.md is already written. Replace it with the agent's version? "+styleDim.Render("(y: yes, n: no)"))
 	}
-	switch m.phase {
-	case phaseWaiting:
+	switch {
+	case m.phase == phaseWaiting && m.typing:
 		lines = append(lines, styleAccent.Render("› ")+m.input+"▌")
-	case phaseSaving:
+	case m.phase == phaseSaving:
 		lines = append(lines, styleAccent.Render("› ")+m.input+styleDim.Render("  (saving…)"))
 	}
 	return append(lines, m.statusBar(), m.help.ShortHelpView(m.helpKeys()))
@@ -585,6 +788,8 @@ func (m GrillScreen) statusBar() string {
 		s = "✓ Grill finished"
 	case phaseNothingLeft:
 		s = "✓ nothing left to ask"
+	case phaseLimit:
+		s = fmt.Sprintf("✓ %d rounds asked", core.MaxGrillRounds)
 	default:
 		s = "idle"
 	}
@@ -605,12 +810,18 @@ func (m GrillScreen) helpKeys() []key.Binding {
 		return []key.Binding{k.CancelTurn, k.Quit}
 	case m.phase == phaseSaving:
 		return []key.Binding{k.Quit}
+	case m.choosing():
+		return []key.Binding{k.Up, k.SendAnswer, k.Finish, k.Cancel, k.Quit}
+	case m.phase == phaseWaiting && m.hasOptions():
+		return []key.Binding{k.SendAnswer, k.FinishTyping, k.BackToOptions, k.Quit}
 	case m.phase == phaseWaiting:
 		return []key.Binding{k.SendAnswer, k.FinishTyping, k.Cancel, k.Quit}
 	case m.phase == phaseEnded:
 		return []key.Binding{k.Write, k.Continue, k.Cancel, k.Quit}
 	case m.phase == phaseNothingLeft:
 		return []key.Binding{k.Finish, k.Continue, k.Cancel, k.Quit}
+	case m.phase == phaseLimit:
+		return []key.Binding{k.Finish, k.Cancel, k.Quit}
 	case m.phase == phaseError && len(m.snap.Questions) == 0:
 		return []key.Binding{k.Retry, k.Cancel, k.Quit}
 	case m.phase == phaseError:

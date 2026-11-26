@@ -6,7 +6,7 @@ Ask one question per round.
 
 - State: draft
 - Author: Ada Lovelace <ada@example.com>, whom you grill.
-- Record a Question: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md --json -m "<question>"`; keep the `id` it prints
+- Record a Question: `bfc ask bfc-5v7x --to ada@example.com --ref intent.md [--option "<likely answer>"... --recommend "<option>"] --json -m "<question>"`; keep the `id` it prints
 - Record the answer: `bfc reply <id> --verbatim -m "<their words>"`
 
 ### intent.md
@@ -23,10 +23,20 @@ Cards fail.
 
 ### The Grill so far
 
+#### Round 1 of 3
+
 1. Question 01JD3K8Q2W5V7X9Y0Z1A2B3C5A about intent.md to ada@example.com (answered):
    > Which cards fail?
    > All of them, or some?
    Reply 01JD3K8Q2W5V7X9Y0Z1A2B3C5B by Ada Lovelace:
    > Only 3-D Secure cards.
+
+#### Round 2 of 3
+
 2. Question 01JD3K8Q2W5V7X9Y0Z1A2B3C5C about intent.md to ada@example.com (open):
    > How do we know it worked?
+   Options:
+   - A test-card checkout (recommended)
+   - A live payment
+
+Now: round 2 of 3, 1 Question open; wait for the answers.

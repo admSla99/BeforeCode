@@ -7,6 +7,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/oklog/ulid/v2"
 	"github.com/spf13/cobra"
 
 	beforecode "github.com/admSla99/BeforeCode"
@@ -100,7 +101,7 @@ func renderGrill(w io.Writer, v topicView) error {
 	}
 	p := v.Plan
 	fmt.Fprintf(&b, "- Author: %s <%s>, whom you grill.\n", orDash(p.Status.Author.Name), orDash(p.Status.Author.Email))
-	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, authorAddress(p))
+	fmt.Fprintf(&b, "- Record a Question: `bfc ask %s --to %s --ref intent.md [--option \"<likely answer>\"... --recommend \"<option>\"] --json -m \"<question>\"`; keep the `id` it prints\n", p.ShortID, authorAddress(p))
 	b.WriteString("- Record the answer: `bfc reply <id> --verbatim -m \"<their words>\"`\n")
 	writeFenced(&b, "intent.md", p.Intent)
 	writeGrillSection(&b, v)
@@ -149,39 +150,88 @@ func writeFenced(b *strings.Builder, heading string, doc []byte) {
 	fmt.Fprintf(b, "\n### %s\n\n%smarkdown\n%s%s\n", heading, fence, text, fence)
 }
 
-// writeGrillSection writes the Questions of the plan with their answers.
+// writeGrillSection writes the Grill of the plan grouped by round, then
+// the other Questions, each with its replies.
 func writeGrillSection(b *strings.Builder, v topicView) {
 	b.WriteString("\n### The Grill so far\n\n")
 	if v.Unread != "" {
 		b.WriteString("The Grill so far cannot be read: " + v.Unread + "\n")
 	}
-	writeGrill(b, v.Messages)
+	writeGrill(b, v.Messages, v.Plan.Status.Author.Email)
 }
 
-// writeGrill prints each Question of msgs with its answers, in the order
-// they were asked. Messages that neither ask nor answer are left out.
-func writeGrill(b *strings.Builder, msgs []core.Message) {
+// writeGrill prints the Grill Questions of msgs by round (ADR 0017), each
+// with its options and replies, says which round the Grill is in, and then
+// lists the other Questions. Messages that neither ask nor answer are left
+// out.
+func writeGrill(b *strings.Builder, msgs []core.Message, author string) {
 	open := core.OpenQuestions(msgs)
+	rounds := core.GrillRounds(msgs, author)
+	grill := map[ulid.ULID]bool{}
 	n := 0
-	for _, q := range msgs {
-		if !q.IsQuestion() {
-			continue
+	for i, r := range rounds {
+		fmt.Fprintf(b, "#### Round %d of %d\n\n", i+1, core.MaxGrillRounds)
+		for _, q := range r {
+			grill[q.Question.ID] = true
+			n++
+			writeQuestion(b, n, q.Question, msgs, open)
 		}
-		n++
-		status := "answered"
-		if slices.ContainsFunc(open, func(o core.Message) bool { return o.ID == q.ID }) {
-			status = "open"
+		b.WriteString("\n")
+	}
+	if len(rounds) == 0 {
+		b.WriteString("No Grill Questions yet.\n\n")
+	}
+	switch cur := core.CurrentGrillRound(rounds); {
+	case cur > core.MaxGrillRounds:
+		fmt.Fprintf(b, "All %d rounds are asked and answered: ask no new Question; the Grill is ready to finish.\n", core.MaxGrillRounds)
+	case cur == len(rounds):
+		open := len(rounds[cur-1].Open())
+		noun := "Questions"
+		if open == 1 {
+			noun = "Question"
 		}
-		fmt.Fprintf(b, "%d. Question %s%s to %s (%s):\n%s", n, q.ID, refSuffix(q.Ref), strings.Join(q.To, ", "), status, indent(q.Body))
-		for _, r := range msgs {
-			if r.ReplyTo != q.ID.String() {
-				continue
-			}
-			fmt.Fprintf(b, "   Reply %s by %s:\n%s", r.ID, throughAgent(orDash(r.Author.Name), r.Agent), indent(r.Body))
+		fmt.Fprintf(b, "Now: round %d of %d, %d %s open; wait for the answers.\n", cur, core.MaxGrillRounds, open, noun)
+	default:
+		fmt.Fprintf(b, "Now: round %d of %d.\n", cur, core.MaxGrillRounds)
+	}
+	var others []core.Message
+	for _, m := range msgs {
+		if m.IsQuestion() && !grill[m.ID] {
+			others = append(others, m)
 		}
 	}
-	if n == 0 {
-		b.WriteString("No Questions yet.\n")
+	if len(others) == 0 {
+		return
+	}
+	b.WriteString("\n#### Other Questions\n\n")
+	for _, q := range others {
+		n++
+		writeQuestion(b, n, q, msgs, open)
+	}
+}
+
+// writeQuestion prints the Question q as item n, with its options and its
+// replies among msgs.
+func writeQuestion(b *strings.Builder, n int, q core.Message, msgs, open []core.Message) {
+	status := "answered"
+	if slices.ContainsFunc(open, func(o core.Message) bool { return o.ID == q.ID }) {
+		status = "open"
+	}
+	fmt.Fprintf(b, "%d. Question %s%s to %s (%s):\n%s", n, q.ID, refSuffix(q.Ref), strings.Join(q.To, ", "), status, indent(q.Body))
+	if len(q.Options) > 0 {
+		b.WriteString("   Options:\n")
+		for _, o := range q.Options {
+			if o == q.Recommended {
+				o += " (recommended)"
+			}
+			fmt.Fprintf(b, "   - %s\n", o)
+		}
+	}
+	for _, r := range msgs {
+		if r.ReplyTo != q.ID.String() {
+			continue
+		}
+		fmt.Fprintf(b, "   Reply %s by %s:\n%s", r.ID, throughAgent(orDash(r.Author.Name), r.Agent), indent(r.Body))
 	}
 }
 

@@ -22,12 +22,12 @@ import (
 )
 
 func newAskCmd() *cobra.Command {
-	var to []string
-	var ref, text string
+	var to, options []string
+	var ref, recommend, text string
 	var asJSON, wait bool
 	var wf waitFlags
 	cmd := &cobra.Command{
-		Use:   "ask <id> --to <email|ai>... [--ref <ref>] [-m <text>]",
+		Use:   "ask <id> --to <email|ai>... [--ref <ref>] [--option <text>... [--recommend <text>]] [-m <text>]",
 		Short: "Ask a Question on a plan",
 		Long: `Ask a Question on a plan: a Message addressed to people (by email) and/or to
 the AI (ai). It stays open until one of them answers with bfc reply, and an
@@ -36,6 +36,10 @@ about: intent.md, plan.md, plan.md#<heading anchor>, plan.md#AC-<n> or
 checks/<check ULID>. The
 text comes from -m or, without it, from stdin. Prints the ULID of the
 Question; bfc reply answers it by that ULID.
+
+--option gives a likely answer; repeat it for 2 to 5 options, each one line.
+--recommend names the option you recommend. The Grill screen of the TUI
+offers them as a list; an answer is still plain text.
 
 With --wait it pushes the Question and waits for the answer like bfc wait:
 it prints the answer, or after --timeout (default 9m) exits with code 2.`,
@@ -54,6 +58,14 @@ it prints the answer, or after --timeout (default 9m) exits with code 2.`,
 					return err
 				}
 			}
+			for i := range options {
+				options[i] = strings.TrimSpace(options[i])
+			}
+			recommend = strings.TrimSpace(recommend)
+			q := core.Message{To: to, Ref: ref, Options: options, Recommended: recommend}
+			if err := core.CheckOptions(q); err != nil {
+				return err
+			}
 			body, err := messageText(cmd, text)
 			if err != nil {
 				return err
@@ -66,7 +78,8 @@ it prints the answer, or after --timeout (default 9m) exits with code 2.`,
 			if err != nil {
 				return err
 			}
-			m, err := writeMessage(cmd, s, v, "ask", core.Message{To: to, Ref: ref, Body: body}, false)
+			q.Body = body
+			m, err := writeMessage(cmd, s, v, "ask", q, false)
 			if err != nil {
 				return err
 			}
@@ -87,6 +100,8 @@ it prints the answer, or after --timeout (default 9m) exits with code 2.`,
 	}
 	cmd.Flags().StringSliceVar(&to, "to", nil, "who answers: an email address or ai (repeat or separate with commas)")
 	cmd.Flags().StringVar(&ref, "ref", "", "the part of the plan the Question is about")
+	cmd.Flags().StringArrayVar(&options, "option", nil, "a likely answer (repeat for 2 to 5 options; commas are kept)")
+	cmd.Flags().StringVar(&recommend, "recommend", "", "the option you recommend")
 	cmd.Flags().StringVarP(&text, "message", "m", "", "the text of the Question (default: read from stdin)")
 	cmd.Flags().BoolVar(&asJSON, "json", false, "print the Message as JSON for scripts and agents")
 	cmd.Flags().BoolVar(&wait, "wait", false, "push the Question and wait for its answer, then print it (see bfc wait)")
@@ -262,7 +277,10 @@ type messageJSON struct {
 	To      []string    `json:"to,omitempty"`
 	ReplyTo string      `json:"reply_to,omitempty"`
 	Ref     string      `json:"ref,omitempty"`
-	Body    string      `json:"body"`
+	// Options is [] and Recommended null when the Message has none.
+	Options     []string `json:"options"`
+	Recommended *string  `json:"recommended"`
+	Body        string   `json:"body"`
 }
 
 // printMessage prints the ULID of m, or with asJSON the whole Message.
@@ -278,8 +296,14 @@ func printMessage(cmd *cobra.Command, v index.Plan, m core.Message, asJSON bool)
 
 // toMessageJSON is m of the plan v in its --json shape.
 func toMessageJSON(v index.Plan, m core.Message) messageJSON {
-	return messageJSON{
+	j := messageJSON{
 		ID: m.ID.String(), Plan: v.ID.String(), ShortID: v.ShortID, Author: m.Author,
-		At: m.At.UTC().Format(time.RFC3339), Agent: m.Agent, To: m.To, ReplyTo: m.ReplyTo, Ref: m.Ref, Body: m.Body,
+		At: m.At.UTC().Format(time.RFC3339), Agent: m.Agent, To: m.To, ReplyTo: m.ReplyTo, Ref: m.Ref,
+		Options: append([]string{}, m.Options...), Body: m.Body,
 	}
+	if m.Recommended != "" {
+		rec := m.Recommended
+		j.Recommended = &rec
+	}
+	return j
 }

@@ -54,20 +54,16 @@ func (g *tuiGrill) Snapshot(ctx context.Context, shortID string) (tui.GrillSnaps
 	}
 	open := core.OpenQuestions(msgs)
 	grill := map[string]bool{} // the Grill's Questions and their replies
-	for _, m := range msgs {
-		if !isGrillQuestion(m, v.Status.Author.Email) {
-			continue
+	for i, round := range core.GrillRounds(msgs, v.Status.Author.Email) {
+		for _, gq := range round {
+			m := gq.Question
+			id := m.ID.String()
+			grill[id] = true
+			snap.Questions = append(snap.Questions, tui.GrillQuestion{
+				ID: id, Text: m.Body, Open: slices.ContainsFunc(open, func(o core.Message) bool { return o.ID == m.ID }),
+				Round: i + 1, Options: m.Options, Recommended: m.Recommended, Answer: gq.Answer.Body,
+			})
 		}
-		id := m.ID.String()
-		grill[id] = true
-		q := tui.GrillQuestion{ID: id, Text: m.Body, Open: slices.ContainsFunc(open, func(o core.Message) bool { return o.ID == m.ID })}
-		for _, r := range msgs {
-			if r.ReplyTo == id && r.Agent == "" && strings.EqualFold(r.Author.Email, v.Status.Author.Email) {
-				q.Answer = r.Body
-				break
-			}
-		}
-		snap.Questions = append(snap.Questions, q)
 	}
 	for _, m := range msgs {
 		answer := grill[m.ReplyTo] && m.Agent == "" && strings.EqualFold(m.Author.Email, v.Status.Author.Email)
@@ -84,12 +80,6 @@ func (g *tuiGrill) Snapshot(ctx context.Context, shortID string) (tui.GrillSnaps
 		snap.Others = append(snap.Others, tui.GrillMessage{Who: who, Text: m.Body})
 	}
 	return snap, nil
-}
-
-// isGrillQuestion reports whether m is a Question of the Grill: asked by an
-// agent and addressed to the plan's author (ADR 0002 section 7).
-func isGrillQuestion(m core.Message, author string) bool {
-	return m.Agent != "" && slices.ContainsFunc(m.To, func(to string) bool { return strings.EqualFold(to, author) })
 }
 
 // Answer stores the author's answer like bfc reply --verbatim: the person's
@@ -282,10 +272,20 @@ func (r grillRun) keep(session string) error {
 // continues its session.
 func (r grillRun) prompt(resumed bool) string {
 	id := r.plan.ShortID
-	rules := "Ask exactly one Question in this turn: record it first with `bfc ask " + id + " --to " + r.plan.Status.Author.Email +
-		" --ref intent.md -m \"<question>\"`, then end your turn with the same Question as your reply. " +
-		"The bfc TUI shows it to the author and records their answer itself, so do not run `bfc reply`. " +
-		"When nothing is left to ask, record no Question: say so in one line and end your turn; the author finishes the Grill in the TUI. " +
+	round := max(r.turn.Round, 1)
+	rules := fmt.Sprintf("This turn asks Grill round %d of %d (ADR 0017). ", round, core.MaxGrillRounds) +
+		"Ask the whole round in this turn: every Question whose prerequisites are settled; a Question that depends on the answer to another Question of this round waits for the next round. " +
+		"Look up facts yourself in the Intent, the code and the docs, and ask the author only for decisions; use no sub-agents. " +
+		"Record each Question, in order, with `bfc ask " + id + " --to " + r.plan.Status.Author.Email +
+		" --ref intent.md --option \"<likely answer>\" --option \"<another>\" --recommend \"<the option you recommend>\" -m \"<question>\"`: " +
+		"2 to 5 one-line options when the Question has likely answers, and your recommendation among them; no --option when it has none. " +
+		"Never give an option that only means \"something else\": the TUI always lets the author write their own answer. " +
+		"Then end your turn with the Questions of the round, numbered, as your reply. " +
+		"The bfc TUI shows them to the author one at a time and records the answers itself, so do not run `bfc reply`. "
+	if round >= core.MaxGrillRounds {
+		rules += "This is the last round: no round follows it, so ask now what still matters most. "
+	}
+	rules += "When nothing is left to ask, record no Question: say so in one line and end your turn; the author finishes the Grill in the TUI. " +
 		"Never record a Question that only asks whether to go on or finish: it would stay open and block approval."
 	switch r.turn.Kind {
 	case tui.TurnSummary:
@@ -303,14 +303,19 @@ func (r grillRun) prompt(resumed bool) string {
 		return p + " End with one line saying plan.md is saved."
 	}
 	switch {
-	case !resumed && r.turn.Answer != "":
-		return "You are grilling the Intent of plan " + id + " with its author in the bfc TUI. Run `bfc prime grill " + id + "` and follow it; it shows the Grill so far, including the author's latest answer. " + rules
+	case !resumed && len(r.turn.Answers) > 0:
+		return "You are grilling the Intent of plan " + id + " with its author in the bfc TUI. Run `bfc prime grill " + id + "` and follow it; it shows the Grill so far, including the author's latest answers. " + rules
 	case !resumed:
 		return "You are grilling the Intent of plan " + id + " with its author in the bfc TUI. Run `bfc prime grill " + id + "` and follow it. " + rules
-	case r.turn.Answer != "":
-		return "The author answered: " + r.turn.Answer + "\n\nThe answer is recorded on the plan. Ask your next Question. " + rules
+	case len(r.turn.Answers) > 0:
+		var b strings.Builder
+		b.WriteString("The author answered the round:\n")
+		for i, a := range r.turn.Answers {
+			fmt.Fprintf(&b, "\n%d. %s\n   Answer: %s\n", i+1, strings.ReplaceAll(a.Question, "\n", " "), a.Answer)
+		}
+		return b.String() + "\nThe answers are recorded on the plan. Ask your next round. " + rules
 	}
-	return "Continue the Grill of " + id + ": ask your next Question. " + rules
+	return "Continue the Grill of " + id + ": ask your next round. " + rules
 }
 
 // toolCommand returns the first line of the command of a Bash tool call,

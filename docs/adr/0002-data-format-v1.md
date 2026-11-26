@@ -170,10 +170,12 @@ Does "exactly one" also apply when the customer retries the payment?
 | `to` | no | A list of email addresses and/or the word `ai`. A Message with `to` is a **Question**. |
 | `reply_to` | no | ULID of the Message this one replies to, in the same plan. |
 | `ref` | no | The part of the plan the Message is about: `intent.md`, `plan.md`, `plan.md#<heading anchor>` or `plan.md#AC-<n>`. A heading anchor is the GitHub-style slug of the heading text, for example `#affected-areas`. |
+| `options` | no | Only on a Question: its likely answers, 2 to 5 plain one-line strings, unique, in order, for example `options: [EUR only, 'EUR and USD']`. (Added 2026-11-26, ADR 0017, no format change.) |
+| `recommended` | no | Only with `options`: the text of the option the asker recommends. (Added 2026-11-26, ADR 0017.) |
 
 - **Thread.** A Message without `reply_to`, together with every Message that replies to it, directly or through other replies.
 - **Answered Question.** A Question is answered when a direct reply exists whose author email is in `to` and that has no `agent`. For `ai`, a direct reply with `agent` set answers it. Other replies are discussion and leave the Question open. (Clarified 2026-11-18, issue #58: a reply an agent writes under a person's git identity is the agent's, not that person's answer; this is what the Grill below relies on.)
-- **The Grill** (added 2026-11-18, issue #55, no format change) uses these Messages with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, recorded word for word by the agent, has no `agent`; its author is the plan author, so it answers the Question.
+- **The Grill** (added 2026-11-18, issue #55, no format change) uses these Messages with no format change. A Question by the AI has `agent` set and `to` the plan author. The human's answer, recorded word for word by the agent, has no `agent`; its author is the plan author, so it answers the Question. (2026-11-26, ADR 0017, no format change: a Grill Question may carry `options` and `recommended`; an answer picked from the options is plain text like any other; Grill rounds are derived from the order of the Questions and their answers.)
 - **References that go stale.** A `ref` whose heading or criterion no longer exists stays in the Message unchanged. The TUI shows it as stale.
 
 ## 8. Short ID

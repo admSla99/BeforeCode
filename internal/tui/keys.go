@@ -91,22 +91,28 @@ type grillKeys struct {
 	Send, Start, Continue, Retry, SendAnswer key.Binding
 	Finish, FinishTyping, Write, Yes, No     key.Binding
 	Cancel, CancelTurn, Quit                 key.Binding
+	// Up and Down select an option; BackToOptions leaves the answer line
+	// for the option list.
+	Up, Down, BackToOptions key.Binding
 }
 
 func newGrillKeys() grillKeys {
 	return grillKeys{
-		Send:         key.NewBinding(key.WithKeys("enter")),
-		Start:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "start the Grill")),
-		Continue:     key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
-		Retry:        key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "retry")),
-		SendAnswer:   key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "send answer")),
-		Finish:       key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "finish")),
-		FinishTyping: key.NewBinding(key.WithKeys("ctrl+f"), key.WithHelp("ctrl+f", "finish")),
-		Write:        key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "write plan.md")),
-		Yes:          key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "replace plan.md")),
-		No:           key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "keep it")),
-		Cancel:       key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
-		CancelTurn:   key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel turn")),
-		Quit:         key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
+		Send:          key.NewBinding(key.WithKeys("enter")),
+		Start:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "start the Grill")),
+		Continue:      key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "continue")),
+		Retry:         key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "retry")),
+		SendAnswer:    key.NewBinding(key.WithKeys("enter"), key.WithHelp("enter", "send answer")),
+		Finish:        key.NewBinding(key.WithKeys("f"), key.WithHelp("f", "finish")),
+		FinishTyping:  key.NewBinding(key.WithKeys("ctrl+f"), key.WithHelp("ctrl+f", "finish")),
+		Write:         key.NewBinding(key.WithKeys("w"), key.WithHelp("w", "write plan.md")),
+		Yes:           key.NewBinding(key.WithKeys("y"), key.WithHelp("y", "replace plan.md")),
+		No:            key.NewBinding(key.WithKeys("n", "esc"), key.WithHelp("n", "keep it")),
+		Cancel:        key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "back")),
+		CancelTurn:    key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "cancel turn")),
+		Quit:          key.NewBinding(key.WithKeys("ctrl+c"), key.WithHelp("ctrl+c", "quit")),
+		Up:            key.NewBinding(key.WithKeys("up", "k"), key.WithHelp("↑↓", "select")),
+		Down:          key.NewBinding(key.WithKeys("down", "j")),
+		BackToOptions: key.NewBinding(key.WithKeys("esc"), key.WithHelp("esc", "options")),
 	}
 }

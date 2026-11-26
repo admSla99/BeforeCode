@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"reflect"
 	"runtime"
 	"slices"
 	"strings"
@@ -140,7 +141,7 @@ func TestGrillTurnStartsAndResumesTheSession(t *testing.T) {
 		t.Errorf("session file = %q", got)
 	}
 
-	if _, err := runTurn(t, g, short, tui.GrillTurn{Kind: tui.TurnAsk, Answer: "Only 3-D Secure cards."}); err != nil {
+	if _, err := runTurn(t, g, short, tui.GrillTurn{Kind: tui.TurnAsk, Round: 2, Answers: []tui.GrillAnswer{{Question: "Which cards fail?", Answer: "Only 3-D Secure cards."}}}); err != nil {
 		t.Fatal(err)
 	}
 	args, prompt = claudeArgs(t, argsFile)
@@ -155,7 +156,7 @@ func TestGrillTurnRecordsNoQuestionWhenNothingIsLeft(t *testing.T) {
 	t.Parallel()
 	dir, short, _, argsFile := grillRepo(t)
 	g := grillIn(t, dir)
-	for _, turn := range []tui.GrillTurn{{Kind: tui.TurnAsk}, {Kind: tui.TurnAsk, Answer: "Only 3-D Secure cards."}} {
+	for _, turn := range []tui.GrillTurn{{Kind: tui.TurnAsk}, {Kind: tui.TurnAsk, Round: 2, Answers: []tui.GrillAnswer{{Question: "Which cards fail?", Answer: "Only 3-D Secure cards."}}}} {
 		if _, err := runTurn(t, g, short, turn); err != nil {
 			t.Fatal(err)
 		}
@@ -176,7 +177,7 @@ func TestGrillTurnStartsAgainWhenTheSessionIsLost(t *testing.T) {
 	setEnv(t, "FAKECLAUDE_RESUME_STDERR", readFile(t, claudeFixture("badresume.stderr")))
 	setEnv(t, "FAKECLAUDE_RESUME_EXIT", "1")
 
-	text, err := runTurn(t, grillIn(t, dir), short, tui.GrillTurn{Kind: tui.TurnAsk, Answer: "Only 3-D Secure cards."})
+	text, err := runTurn(t, grillIn(t, dir), short, tui.GrillTurn{Kind: tui.TurnAsk, Round: 2, Answers: []tui.GrillAnswer{{Question: "Which cards fail?", Answer: "Only 3-D Secure cards."}}})
 	if err != nil || text != "hi" {
 		t.Fatalf("turn: %q, %v", text, err)
 	}
@@ -304,7 +305,7 @@ func TestGrillSnapshotAndAnswer(t *testing.T) {
 	setEnv(t, agentEnv, "1")
 	q1 := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "--ref", "intent.md", "-m", "Which cards fail?"))
 	mustBfc(t, dir, "reply", q1, "--verbatim", "-m", "Only 3-D Secure cards.")
-	q2 := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "-m", "How do we know it worked?"))
+	q2 := strings.TrimSpace(mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "--option", "A test card", "--option", "A live card", "--recommend", "A test card", "-m", "How do we know it worked?"))
 	setEnv(t, agentEnv, "")
 	as(t, dir, benP)
 	mustBfc(t, dir, "ask", short, "--to", "ada@example.com", "-m", "Refunds too?")
@@ -317,10 +318,10 @@ func TestGrillSnapshotAndAnswer(t *testing.T) {
 		t.Fatal(err)
 	}
 	want := []tui.GrillQuestion{
-		{ID: q1, Text: "Which cards fail?", Answer: "Only 3-D Secure cards."},
-		{ID: q2, Text: "How do we know it worked?", Open: true},
+		{ID: q1, Text: "Which cards fail?", Answer: "Only 3-D Secure cards.", Round: 1},
+		{ID: q2, Text: "How do we know it worked?", Open: true, Round: 2, Options: []string{"A test card", "A live card"}, Recommended: "A test card"},
 	}
-	if !slices.Equal(snap.Questions, want) {
+	if !reflect.DeepEqual(snap.Questions, want) {
 		t.Errorf("questions = %+v, want %+v", snap.Questions, want)
 	}
 	if want := []tui.GrillMessage{{Who: "Ben Bitdiddle", Text: "Refunds too?"}, {Who: "Ben Bitdiddle", Text: "Also Maestro."}}; !slices.Equal(snap.Others, want) {
@@ -361,5 +362,35 @@ func TestGrillTurnReportsTheAgentsTools(t *testing.T) {
 	}
 	if !slices.Equal(tools, []string{"Read"}) {
 		t.Errorf("tools = %q, want the recorded Read call", tools)
+	}
+}
+
+// bfc-121s AC-15: the turn prompt names the round and the limit, asks for
+// the whole frontier with options and a recommendation, and says when the
+// round is the last.
+func TestGrillTurnPromptNamesTheRound(t *testing.T) {
+	t.Parallel()
+	dir, short, _, argsFile := grillRepo(t)
+	g := grillIn(t, dir)
+	for _, c := range []struct {
+		turn tui.GrillTurn
+		want []string
+		not  string
+	}{
+		{tui.GrillTurn{Kind: tui.TurnAsk, Round: 1}, []string{"round 1 of 3", "whole round", "--option", "--recommend", "something else"}, "last round"},
+		{tui.GrillTurn{Kind: tui.TurnAsk, Round: 3, Answers: []tui.GrillAnswer{{Question: "Q?", Answer: "A."}}}, []string{"round 3 of 3", "last round", "Answer: A."}, ""},
+	} {
+		if _, err := runTurn(t, g, short, c.turn); err != nil {
+			t.Fatal(err)
+		}
+		_, prompt := claudeArgs(t, argsFile)
+		for _, want := range c.want {
+			if !strings.Contains(prompt, want) {
+				t.Errorf("round %d: prompt lacks %q:\n%s", c.turn.Round, want, prompt)
+			}
+		}
+		if c.not != "" && strings.Contains(prompt, c.not) {
+			t.Errorf("round %d: prompt has %q:\n%s", c.turn.Round, c.not, prompt)
+		}
 	}
 }

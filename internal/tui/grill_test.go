@@ -75,6 +75,25 @@ func (f *fakeGrill) asking() *fakeGrill {
 	return f
 }
 
+// nextRound is the round new Questions belong to, like core.GrillRounds:
+// the last round while one of its Questions is open, else a new one; mu is
+// held.
+func (f *fakeGrill) nextRound() int {
+	last, open := 0, false
+	for _, q := range f.snap.Questions {
+		if q.Round > last {
+			last, open = q.Round, false
+		}
+		if q.Round == last && q.Open {
+			open = true
+		}
+	}
+	if open {
+		return last
+	}
+	return last + 1
+}
+
 // askedCount is the number of Questions asked so far; mu is held.
 func (f *fakeGrill) askedCount() int { return len(f.snap.Questions) }
 
@@ -112,12 +131,17 @@ func (f *fakeGrill) Turn(ctx context.Context, _ string, t GrillTurn) (<-chan Gri
 		if tool != "" && !send(GrillEvent{Tool: tool}) {
 			return
 		}
+		// ask holds the Questions of the round, separated by NUL.
 		record := func() {
-			if ask != "" {
-				f.mu.Lock()
+			if ask == "" {
+				return
+			}
+			f.mu.Lock()
+			defer f.mu.Unlock()
+			round := f.nextRound()
+			for _, a := range strings.Split(ask, "\x00") {
 				f.n++
-				f.snap.Questions = append(f.snap.Questions, GrillQuestion{ID: "Q" + string(rune('0'+f.n)), Text: ask, Open: true})
-				f.mu.Unlock()
+				f.snap.Questions = append(f.snap.Questions, GrillQuestion{ID: "Q" + string(rune('0'+f.n)), Text: a, Open: true, Round: round})
 			}
 		}
 		if !late {
@@ -234,7 +258,8 @@ func TestGrillAsksAndRecordsTheAnswer(t *testing.T) {
 	if want := []string{"Q1 A test-card checkout turns the order paid."}; !slices.Equal(g.answers, want) {
 		t.Errorf("answers = %q, want %q", g.answers, want)
 	}
-	if len(g.turns) != 2 || g.turns[0].Kind != TurnAsk || g.turns[0].Answer != "" || g.turns[1].Answer != "A test-card checkout turns the order paid." {
+	if len(g.turns) != 2 || g.turns[0].Kind != TurnAsk || g.turns[0].Round != 1 || len(g.turns[0].Answers) != 0 ||
+		g.turns[1].Round != 2 || len(g.turns[1].Answers) != 1 || g.turns[1].Answers[0] != (GrillAnswer{questions[0], "A test-card checkout turns the order paid."}) {
 		t.Errorf("turns = %+v", g.turns)
 	}
 }
@@ -584,7 +609,7 @@ func TestGrillStoresAnAnswerOnce(t *testing.T) {
 	}
 	g.mu.Lock()
 	defer g.mu.Unlock()
-	if len(g.answers) != 1 || len(g.turns) != 2 || g.turns[1].Answer != "Paid on its own." {
+	if len(g.answers) != 1 || len(g.turns) != 2 || len(g.turns[1].Answers) != 1 || g.turns[1].Answers[0].Answer != "Paid on its own." {
 		t.Errorf("answers = %q, turns = %+v", g.answers, g.turns)
 	}
 }

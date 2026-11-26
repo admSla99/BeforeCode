@@ -188,3 +188,96 @@ func TestAnswerOf(t *testing.T) {
 		t.Errorf("an answer to a Question that is not among msgs")
 	}
 }
+
+// bfc-121s AC-1: the options of a Question and the recommended one are
+// written in the front matter, in order, and read back the same.
+func TestEncodeMessageWritesOptions(t *testing.T) {
+	m := Message{
+		Author:      Person{Name: "Ada", Email: "ada@example.com"},
+		At:          time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC),
+		Agent:       "claude-code",
+		To:          []string{"ada@example.com"},
+		Options:     []string{"A", "B, with comma"},
+		Recommended: "A",
+		Body:        "Q?",
+	}
+	want := `---
+author:
+  name: Ada
+  email: ada@example.com
+at: 2026-11-26T09:00:00Z
+agent: claude-code
+to: [ada@example.com]
+options: [A, 'B, with comma']
+recommended: A
+---
+
+Q?
+`
+	got := EncodeMessage(m)
+	if string(got) != want {
+		t.Errorf("EncodeMessage:\n%s\nwant:\n%s", got, want)
+	}
+	back, err := ParseMessage(ulid.ULID{}, got)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Join(back.Options, "|") != "A|B, with comma" || back.Recommended != "A" {
+		t.Errorf("read back options %q, recommended %q", back.Options, back.Recommended)
+	}
+}
+
+// bfc-121s AC-4: a Message without options writes no options or
+// recommended field, and reads back with none.
+func TestMessageWithoutOptions(t *testing.T) {
+	data := EncodeMessage(Message{Author: ada, At: time.Date(2026, 11, 26, 9, 0, 0, 0, time.UTC), To: []string{"ai"}, Body: "Q?"})
+	if s := string(data); strings.Contains(s, "options") || strings.Contains(s, "recommended") {
+		t.Errorf("EncodeMessage wrote empty fields:\n%s", s)
+	}
+	m, err := ParseMessage(ulid.ULID{}, []byte(questionFile))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if m.Options != nil || m.Recommended != "" {
+		t.Errorf("options %q, recommended %q from a file without them", m.Options, m.Recommended)
+	}
+}
+
+// bfc-121s AC-2: options belong to a Question: 2 to 5 of them, each
+// non-empty, one line and unique; recommended is one of them.
+func TestCheckOptions(t *testing.T) {
+	q := func(rec string, opts ...string) Message {
+		return Message{To: []string{"ada@example.com"}, Options: opts, Recommended: rec}
+	}
+	for _, m := range []Message{
+		{To: []string{"ai"}},
+		{},
+		q("", "A", "B"),
+		q("B", "A", "B"),
+		q("", "1", "2", "3", "4", "5"),
+	} {
+		if err := CheckOptions(m); err != nil {
+			t.Errorf("CheckOptions(%q, %q): %v", m.Options, m.Recommended, err)
+		}
+	}
+	for _, c := range []struct {
+		m    Message
+		want string
+	}{
+		{Message{Options: []string{"A", "B"}}, "Question"},
+		{q("", "A"), "2 to 5"},
+		{q("", "1", "2", "3", "4", "5", "6"), "2 to 5"},
+		{q("", "A", " "), "empty"},
+		{q("", "A", "B\nC"), "one line"},
+		{q("", "A", "B\rC"), "one line"},
+		{q("", "A", "A"), "twice"},
+		{q("A"), "without options"},
+		{Message{To: []string{"ai"}, Recommended: "A"}, "without options"},
+		{q("C", "A", "B"), "not one of the options"},
+	} {
+		err := CheckOptions(c.m)
+		if err == nil || !strings.Contains(err.Error(), c.want) {
+			t.Errorf("CheckOptions(%q, %q) = %v, want an error about %q", c.m.Options, c.m.Recommended, err, c.want)
+		}
+	}
+}

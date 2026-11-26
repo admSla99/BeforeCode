@@ -24,7 +24,13 @@ type Message struct {
 	To      []string
 	ReplyTo string // ULID of the Message this one replies to
 	Ref     string // the part of the plan it is about, see CheckRef
-	Body    string
+	// Options are the likely answers of a Question, in the order the asker
+	// gave them, and Recommended is the one the asker recommends (see
+	// CheckOptions). An answer is always plain text: nothing records which
+	// option was picked.
+	Options     []string
+	Recommended string
+	Body        string
 }
 
 // IsQuestion reports whether m is addressed to someone.
@@ -46,6 +52,10 @@ type messageFile struct {
 	To      []string  `yaml:"to,flow,omitempty"`
 	ReplyTo string    `yaml:"reply_to,omitempty"`
 	Ref     string    `yaml:"ref,omitempty"`
+	// Optional fields added without a format bump (ADR 0002): older
+	// readers ignore them.
+	Options     []string `yaml:"options,flow,omitempty"`
+	Recommended string   `yaml:"recommended,omitempty"`
 }
 
 // EncodeMessage returns the file content of m, with LF line endings. The ID
@@ -58,6 +68,7 @@ func EncodeMessage(m Message) []byte {
 	err := enc.Encode(messageFile{
 		Author: m.Author, At: m.At.UTC().Truncate(time.Second),
 		Agent: m.Agent, To: m.To, ReplyTo: m.ReplyTo, Ref: m.Ref,
+		Options: m.Options, Recommended: m.Recommended,
 	})
 	if err != nil {
 		panic(err) // plain strings always encode
@@ -84,8 +95,49 @@ func ParseMessage(id ulid.ULID, data []byte) (Message, error) {
 	}
 	return Message{
 		ID: id, Author: f.Author, At: f.At, Agent: f.Agent, To: f.To, ReplyTo: f.ReplyTo, Ref: f.Ref,
-		Body: strings.TrimSpace(string(body)),
+		Options: f.Options, Recommended: f.Recommended, Body: strings.TrimSpace(string(body)),
 	}, nil
+}
+
+// MinOptions and MaxOptions bound the number of options of a Question.
+const (
+	MinOptions = 2
+	MaxOptions = 5
+)
+
+// CheckOptions reports why the options and recommended answer of m are not
+// valid: options belong only to a Question, which has MinOptions to
+// MaxOptions of them, each non-empty, one line and unique; recommended needs
+// options and must equal one of them. A Message without either is valid.
+func CheckOptions(m Message) error {
+	if len(m.Options) == 0 {
+		if m.Recommended != "" {
+			return errors.New("a recommended answer without options; give the options too")
+		}
+		return nil
+	}
+	if !m.IsQuestion() {
+		return errors.New("options belong to a Question; say whom it is for")
+	}
+	if n := len(m.Options); n < MinOptions || n > MaxOptions {
+		return fmt.Errorf("a Question has %d to %d options, not %d", MinOptions, MaxOptions, n)
+	}
+	seen := make(map[string]bool, len(m.Options))
+	for i, o := range m.Options {
+		switch {
+		case strings.TrimSpace(o) == "":
+			return fmt.Errorf("option %d is empty", i+1)
+		case strings.ContainsAny(o, "\r\n"):
+			return fmt.Errorf("option %d is not one line: %q", i+1, o)
+		case seen[o]:
+			return fmt.Errorf("option %q is given twice", o)
+		}
+		seen[o] = true
+	}
+	if m.Recommended != "" && !seen[m.Recommended] {
+		return fmt.Errorf("the recommended answer %q is not one of the options", m.Recommended)
+	}
+	return nil
 }
 
 // refAnchor is the part after "plan.md#": AC-<n>, or a GitHub-style heading

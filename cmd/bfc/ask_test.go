@@ -82,6 +82,7 @@ func TestAskReadsStdinAndPrintsJSON(t *testing.T) {
 		"author": map[string]any{"name": "Ada Lovelace", "email": "ada@example.com"},
 		"at":     q.At.UTC().Format("2006-01-02T15:04:05Z"),
 		"to":     []any{"ai"}, "body": "Which currency?\nEUR only?",
+		"options": []any{}, "recommended": nil,
 	}
 	gotJSON, _ := json.Marshal(got)
 	wantJSON, _ := json.Marshal(want)
