@@ -244,6 +244,52 @@ func TestTheApprovalPolicyComesFromTheConfigAtSubmit(t *testing.T) {
 	}
 }
 
+// Issue #143: required_approvals: 0 is self-approval (ADR 0016). The author
+// approves their own plan, and the Inbox and Prime offer it to them.
+func TestSelfApprovalLetsTheAuthorApprove(t *testing.T) {
+	t.Parallel()
+	dir, short, id := draftWithPlan(t)
+	cfg := filepath.Join(dir, ".beforecode", "config.yaml")
+	writeFile(t, cfg, strings.Replace(readFile(t, cfg), "version: 3", "version: 4", 1))
+	requireApprovals(t, dir, "0")
+
+	mustBfc(t, dir, "submit", short)
+	if e := last(t, dir, id); !e.SelfApproval || e.RequiredApprovals != 0 {
+		t.Errorf("submitted event = %+v, want an explicit required_approvals: 0", e)
+	}
+	raw := gitIn(t, dir, "show", plansRef+":"+core.PlanDir(id)+"/events/"+last(t, dir, id).ID.String()+".yaml")
+	if !strings.Contains(raw, "\nrequired_approvals: 0") {
+		t.Errorf("submitted file:\n%s", raw)
+	}
+	if got := state(t, dir, short); got != "in-review" {
+		t.Errorf("state after submit = %s, want in-review", got)
+	}
+	if out := mustBfc(t, dir, "inbox"); !strings.Contains(out, short) {
+		t.Errorf("inbox does not offer the author's own plan:\n%s", out)
+	}
+	if out := mustBfc(t, dir, "prime"); !strings.Contains(out, short) || strings.Contains(out, "Nothing waits on you") {
+		t.Errorf("prime does not offer the author's own plan:\n%s", out)
+	}
+
+	out := mustBfc(t, dir, "approve", short)
+	if !strings.Contains(out, short+"  approved") || !strings.Contains(out, "1 of 1") {
+		t.Errorf("approve by the author: %s", out)
+	}
+	if e := last(t, dir, id); e.Type != core.Approved || e.Author.Email != adaP.Email {
+		t.Errorf("approved event = %+v", e)
+	}
+}
+
+// Without self-approval the author's own plan is not offered to them.
+func TestWithoutSelfApprovalTheInboxDoesNotOfferTheOwnPlan(t *testing.T) {
+	t.Parallel()
+	dir, short, _ := draftWithPlan(t)
+	mustBfc(t, dir, "submit", short)
+	if out := mustBfc(t, dir, "inbox"); strings.Contains(out, short) {
+		t.Errorf("inbox offers the author's own plan:\n%s", out)
+	}
+}
+
 func TestSubmitWithoutAConfigFileNeedsOneApproval(t *testing.T) {
 	t.Parallel()
 	dir, short, id := draftWithPlan(t)

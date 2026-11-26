@@ -27,7 +27,7 @@ import (
 // meaning of a column changes, and whenever reading a plan gives another
 // result for the same files (core.Derive, core.ParseIntent, searchText):
 // plans whose directory did not change are not read again.
-const schemaVersion = 4
+const schemaVersion = 5
 
 // File is where the index lives, relative to the git common directory.
 const File = "beforecode/index.db"
@@ -284,6 +284,7 @@ CREATE TABLE plans (
 	author_name        TEXT NOT NULL,
 	author_email       TEXT NOT NULL,
 	required_approvals INTEGER NOT NULL,
+	self_approval      INTEGER NOT NULL, -- 1 under self-approval (ADR 0016)
 	approvers          TEXT NOT NULL,    -- JSON array
 	tasks              TEXT NOT NULL,    -- JSON object: Task ID -> core.TaskStatus
 	last_activity      INTEGER NOT NULL, -- Unix seconds; 0 when unknown
@@ -297,7 +298,7 @@ CREATE VIRTUAL TABLE plan_text USING fts5(title, intent, plan, tokenize = 'unico
 // documents, which only Plan returns.
 const (
 	headerColumns = `p.id, p.short_id, p.state, p.title, p.labels, p.author_name, p.author_email,
-	p.required_approvals, p.approvers, p.tasks, p.last_activity`
+	p.required_approvals, p.self_approval, p.approvers, p.tasks, p.last_activity`
 	docColumns = headerColumns + `, p.intent, p.plan`
 )
 
@@ -599,17 +600,18 @@ func upsert(ctx context.Context, tx *sql.Tx, p Plan, tree string) error {
 	var rowid int64
 	err = tx.QueryRowContext(ctx, `
 		INSERT INTO plans (id, tree, short_id, state, title, labels, author_name, author_email,
-			required_approvals, approvers, tasks, last_activity, intent, plan)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
+			required_approvals, self_approval, approvers, tasks, last_activity, intent, plan)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)
 		ON CONFLICT (id) DO UPDATE SET tree = excluded.tree, short_id = excluded.short_id,
 			state = excluded.state, title = excluded.title, labels = excluded.labels,
 			author_name = excluded.author_name, author_email = excluded.author_email,
-			required_approvals = excluded.required_approvals, approvers = excluded.approvers,
+			required_approvals = excluded.required_approvals, self_approval = excluded.self_approval,
+			approvers = excluded.approvers,
 			tasks = excluded.tasks,
 			intent = excluded.intent, plan = excluded.plan
 		RETURNING rowid`,
 		p.ID.String(), tree, p.Status.ShortID, string(p.Status.State), p.Title, string(labels),
-		p.Status.Author.Name, p.Status.Author.Email, p.Status.RequiredApprovals, string(appr), string(cl),
+		p.Status.Author.Name, p.Status.Author.Email, p.Status.RequiredApprovals, p.Status.SelfApproval, string(appr), string(cl),
 		nullable(p.Intent), nullable(p.Plan)).Scan(&rowid)
 	if err != nil {
 		return err
@@ -646,7 +648,7 @@ func scanPlan(rows *sql.Rows, docs bool, extra ...any) (Plan, error) {
 	var lastActivity int64
 	var intent, plan sql.NullString
 	dest := []any{&id, &p.Status.ShortID, &state, &p.Title, &labels, &p.Status.Author.Name,
-		&p.Status.Author.Email, &p.Status.RequiredApprovals, &approvers, &tasks, &lastActivity}
+		&p.Status.Author.Email, &p.Status.RequiredApprovals, &p.Status.SelfApproval, &approvers, &tasks, &lastActivity}
 	if docs {
 		dest = append(dest, &intent, &plan)
 	}

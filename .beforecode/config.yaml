@@ -1,9 +1,10 @@
 # BeforeCode configuration. Change it through a pull request.
-version: 2
+version: 4
 
 approval:
   # Approvals by people other than the plan author needed before a plan is approved.
-  required_approvals: 1
+  # 0: the plan author may approve their own plan (self-approval).
+  required_approvals: 0
 
 sync:
   # false: plans stay in this clone and are never pushed (bfc init --local).
