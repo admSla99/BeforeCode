@@ -3,6 +3,7 @@ package tui
 import (
 	"context"
 	"errors"
+	"fmt"
 	"strings"
 	"sync"
 	"testing"
@@ -69,6 +70,12 @@ type fakeTeam struct {
 	editFn func(shortID string, doc Doc)
 	syncs  int
 	syncFn func() SyncResult
+	// tip is the tip of the Plans ref the fake Watcher reports; reads
+	// counts the reads.
+	tip   int
+	reads int
+	// loads counts the calls of Load, Inbox and Detail.
+	loads int
 }
 
 func newFakeTeam() *fakeTeam {
@@ -82,18 +89,49 @@ func newFakeTeam() *fakeTeam {
 	}}
 }
 
-func (f *fakeTeam) Load(ctx context.Context) ([]PlanRow, error) { return f.plans.Load(ctx) }
+func (f *fakeTeam) Load(ctx context.Context) ([]PlanRow, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.loads++
+	return f.plans.Load(ctx)
+}
 
 func (f *fakeTeam) Inbox(ctx context.Context) (core.Waiting, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.loads++
 	return f.plans.Inbox(ctx)
+}
+
+// Tip is the fake Watcher.
+func (f *fakeTeam) Tip(context.Context) (string, error) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	f.reads++
+	return fmt.Sprintf("tip-%d", f.tip), nil
+}
+
+// outside is a write by another process: change runs with mu held, then
+// the tip moves.
+func (f *fakeTeam) outside(change func()) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	change()
+	f.tip++
+}
+
+// counts returns the number of tip reads and of loads so far.
+func (f *fakeTeam) counts() (reads, loads int) {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	return f.reads, f.loads
 }
 func (f *fakeTeam) NewPlan(title string) tea.Cmd { return f.plans.NewPlan(title) }
 
 func (f *fakeTeam) Detail(_ context.Context, shortID string) (PlanDetail, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.loads++
 	d, ok := f.details[shortID]
 	if !ok {
 		return PlanDetail{}, errors.New("no plan " + shortID)
