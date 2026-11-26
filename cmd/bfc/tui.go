@@ -11,6 +11,7 @@ import (
 	"path"
 	"slices"
 	"strings"
+	"time"
 
 	tea "charm.land/bubbletea/v2"
 	"github.com/charmbracelet/x/term"
@@ -57,15 +58,21 @@ func runTUI(cmd *cobra.Command) error {
 	}()
 	opts := tuiOptions(cmd)
 	opts.Grill = &tuiGrill{cmd: cmd}
+	opts.Watcher = &tuiWatcher{cmd: cmd}
 	app := tui.NewApp(&tuiPlans{cmd: cmd}, &tuiSyncer{cmd: cmd}, opts)
 	_, err := tea.NewProgram(app, tea.WithInput(cmd.InOrStdin()), tea.WithOutput(cmd.OutOrStdout())).Run()
 	return err
 }
 
+// tuiWatchInterval is the time between two reads of the Plans ref's tip:
+// a write by an agent shows within a few seconds, at the cost of one git
+// rev-parse.
+const tuiWatchInterval = 2 * time.Second
+
 // tuiOptions reads the sync interval and local mode from the config file.
 // Without a repository or a readable config file, the defaults apply.
 func tuiOptions(cmd *cobra.Command) tui.AppOptions {
-	opts := tui.AppOptions{Interval: config.DefaultSyncInterval}
+	opts := tui.AppOptions{Interval: config.DefaultSyncInterval, WatchInterval: tuiWatchInterval}
 	if s, err := openStore(cmd); err == nil {
 		if set, err := syncSettings(s); err == nil {
 			opts.Interval, opts.Local = set.interval, set.local
@@ -296,6 +303,30 @@ func (p *tuiPlans) Review(ctx context.Context, shortID string, a tui.ReviewActio
 	}
 	_, err = writeReview(ctx, s, shortID, reviewEvents[a], reason)
 	return err
+}
+
+// tuiWatcher is the Watcher of the TUI: it reads the tip of the local Plans
+// ref. The app reads one tip at a time, so the store opened by the first
+// read is kept without a lock.
+type tuiWatcher struct {
+	cmd *cobra.Command
+	s   *store.Store
+}
+
+// Tip returns the commit the Plans ref points to, or "" without a Plans ref.
+func (w *tuiWatcher) Tip(ctx context.Context) (string, error) {
+	if w.s == nil {
+		s, err := openStore(w.cmd)
+		if err != nil {
+			return "", err
+		}
+		w.s = s
+	}
+	tip, err := w.s.Tip(ctx)
+	if errors.Is(err, store.ErrNotInitialised) {
+		return "", nil
+	}
+	return tip, err
 }
 
 // tuiSyncer is the Syncer of the TUI: bfc sync without printing, on the

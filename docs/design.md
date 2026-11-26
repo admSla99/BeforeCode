@@ -107,6 +107,8 @@ A plan can be closed from any state; `closed` and `done` are final. A plan is `i
    - **Finishing**: `f` asks the agent for its summary (`ctrl+f` while an answer is being typed, where letters are text); an open Question stays open and is listed in it. Then `w` writes `plan.md` in one more turn, prompted with `bfc prime plan <id>` and allowed `Bash(bfc edit:*)`, through `bfc edit --stdin`. When `plan.md` is already written, the screen asks the author first; their yes is what allows the agent `--force`. After the save the app returns to the plan detail on `plan.md` and syncs.
 5. **Build**: pick a harness, start an agent on a claimed Task in a worktree, live output. Moved to phase 4 by the phase 3 grilling (#99): picking a harness makes sense only with more than one.
 
+Changes made outside the TUI on the same clone (an agent running `bfc ask`, `bfc edit`, `bfc claim` or `bfc handoff`, the CLI in another terminal) show on the open screen within a few seconds, in local mode too: the app reads the tip of the local Plans ref every 2 seconds and reloads the screens only when it moved. The selected plan or Inbox item, the open tab, the scroll position and an answer being typed stay (plan bfc-z3wd).
+
 ### Reading plans from the command line
 
 `bfc list` prints one line per plan: Short ID, state, title, author email and last activity, newest activity first. Last activity is the commit time of the newest change to any file of the plan, so an edit of `plan.md` counts. `--state <state>` filters by derived state. Closed and done plans are left out unless asked for with `--state closed`, `--state done` or `--all`, in the `--json` output too (issues #49, #111).
